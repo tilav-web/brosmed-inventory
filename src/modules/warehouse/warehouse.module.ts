@@ -1,0 +1,14 @@
+import { Module } from '@nestjs/common';
+import { TypeOrmModule } from '@nestjs/typeorm';
+import { User } from '../user/entities/user.entity';
+import { WarehouseController } from './controllers/warehouse.controller';
+import { Warehouse } from './entities/warehouse.entity';
+import { WarehouseService } from './services/warehouse.service';
+
+@Module({
+  imports: [TypeOrmModule.forFeature([Warehouse, User])],
+  controllers: [WarehouseController],
+  providers: [WarehouseService],
+  exports: [WarehouseService],
+})
+export class WarehouseModule {}

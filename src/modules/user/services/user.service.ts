@@ -133,7 +133,7 @@ export class UserService implements OnModuleInit {
         page,
         limit,
         total,
-        totalPages: Math.ceil(total / limit) || 1,
+        total_pages: Math.ceil(total / limit) || 1,
       },
     };
   }
