@@ -18,6 +18,10 @@ import { AppService } from './app.service';
         database: configService.get<string>('DB_NAME'),
         autoLoadEntities: true,
         synchronize: process.env.NODE_ENV === 'development',
+        logging:
+          process.env.NODE_ENV === 'development'
+            ? ['query', 'error']
+            : ['error'],
       }),
     }),
   ],
