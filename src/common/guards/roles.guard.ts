@@ -22,8 +22,10 @@ export class RolesGuard implements CanActivate {
       return true;
     }
 
-    const request = context.switchToHttp().getRequest();
-    const user = request.user as { role?: Role };
+    const request = context
+      .switchToHttp()
+      .getRequest<{ user?: { role?: Role } }>();
+    const user = request.user;
 
     if (!user?.role) {
       throw new ForbiddenException('Role aniqlanmadi');

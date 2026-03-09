@@ -9,7 +9,10 @@ export class AppController {
 
   @Get()
   @ApiOperation({ summary: 'Health check endpoint' })
-  @ApiOkResponse({ description: 'Server ishlayapti', schema: { example: 'Hello World!' } })
+  @ApiOkResponse({
+    description: 'Server ishlayapti',
+    schema: { example: 'Hello World!' },
+  })
   getHello(): string {
     return this.appService.getHello();
   }

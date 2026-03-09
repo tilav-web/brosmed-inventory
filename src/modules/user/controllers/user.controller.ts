@@ -26,7 +26,7 @@ export class UserController {
   }
 
   @Get('admin-area')
-  @Roles(Role.Admin)
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Faqat adminlar uchun endpoint' })
   @ApiOkResponse({ description: 'Admin area response' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
@@ -36,7 +36,7 @@ export class UserController {
   }
 
   @Get('warehouse-area')
-  @Roles(Role.Warehouse)
+  @Roles(Role.WAREHOUSE)
   @ApiOperation({ summary: 'Faqat warehouse roli uchun endpoint' })
   @ApiOkResponse({ description: 'Warehouse area response' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
