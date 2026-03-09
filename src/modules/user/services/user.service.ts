@@ -8,12 +8,13 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { hash } from 'bcrypt';
-import { Repository } from 'typeorm';
+import { Brackets, Repository } from 'typeorm';
 import { Role } from '../enums/role.enum';
 import { User } from '../entities/user.entity';
 import { AdminCreateUserDto } from '../dto/admin-create-user.dto';
 import { AdminUpdateUserDto } from '../dto/admin-update-user.dto';
 import { UpdateOwnProfileDto } from '../dto/update-own-profile.dto';
+import { AdminListUsersQueryDto } from '../dto/admin-list-users-query.dto';
 
 @Injectable()
 export class UserService implements OnModuleInit {
@@ -93,10 +94,48 @@ export class UserService implements OnModuleInit {
         password: hashedPassword,
         first_name: dto.first_name ?? '-',
         last_name: dto.last_name ?? '-',
+        role: Role.WAREHOUSE,
       }),
     );
 
     return this.sanitizeUser(createdUser);
+  }
+
+  async listUsersForAdmin(adminUserId: string, query: AdminListUsersQueryDto) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+    const search = query.search?.trim();
+
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .where('user.id != :adminUserId', { adminUserId });
+
+    if (search) {
+      qb.andWhere(
+        new Brackets((whereQb) => {
+          whereQb
+            .where('user.first_name ILIKE :search', { search: `%${search}%` })
+            .orWhere('user.last_name ILIKE :search', { search: `%${search}%` })
+            .orWhere('user.username ILIKE :search', { search: `%${search}%` });
+        }),
+      );
+    }
+
+    qb.orderBy('user.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [users, total] = await qb.getManyAndCount();
+
+    return {
+      data: users.map((user) => this.sanitizeUser(user)),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
   }
 
   async updateWarehouseUserByAdmin(userId: string, dto: AdminUpdateUserDto) {

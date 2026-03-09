@@ -7,6 +7,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
 } from '@nestjs/common';
@@ -29,6 +30,7 @@ import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { UpdateOwnProfileDto } from '../dto/update-own-profile.dto';
 import { AdminCreateUserDto } from '../dto/admin-create-user.dto';
 import { AdminUpdateUserDto } from '../dto/admin-update-user.dto';
+import { AdminListUsersQueryDto } from '../dto/admin-list-users-query.dto';
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -45,7 +47,7 @@ export class UserController {
     return req.user;
   }
 
-  @Patch('/')
+  @Patch('/update-profile')
   @ApiOperation({
     summary:
       "Joriy user ma'lumotlarini yangilash (username dan tashqari: password, first_name, last_name)",
@@ -74,6 +76,25 @@ export class UserController {
   })
   async adminCreateWarehouseUser(@Body() dto: AdminCreateUserDto) {
     return this.userService.createWarehouseUserByAdmin(dto);
+  }
+
+  @Get('admin/users')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      "Admin uchun barcha userlar ro'yxati (o'zidan tashqari) + search/pagination",
+  })
+  @ApiOkResponse({
+    description:
+      'Admin userdan tashqari barcha userlar qaytariladi. search: first_name, last_name, username',
+  })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  async adminListUsers(
+    @Req() req: { user: AuthUser },
+    @Query() query: AdminListUsersQueryDto,
+  ) {
+    return this.userService.listUsersForAdmin(req.user.id, query);
   }
 
   @Patch('admin/users/:id')
