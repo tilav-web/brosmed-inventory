@@ -32,7 +32,11 @@ export class AuthService {
       throw new NotFoundException('Username yoki password xato');
     }
 
-    return { id: user.id, username: user.username, role: user.role };
+    return {
+      id: user.id,
+      username: user.username,
+      role: user.role,
+    };
   }
 
   private isDevelopment(): boolean {
@@ -53,6 +57,16 @@ export class AuthService {
       sameSite: 'strict' as const,
       maxAge: AuthService.SEVEN_DAYS_MS,
       path: '/',
+    };
+  }
+
+  getRefreshCookieClearOptions() {
+    const cookieOptions = this.getRefreshCookieOptions();
+    return {
+      httpOnly: cookieOptions.httpOnly,
+      secure: cookieOptions.secure,
+      sameSite: cookieOptions.sameSite,
+      path: cookieOptions.path,
     };
   }
 

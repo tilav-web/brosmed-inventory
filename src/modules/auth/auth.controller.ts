@@ -109,4 +109,16 @@ export class AuthController {
       accessToken: tokens.accessToken,
     };
   }
+
+  @Post('logout')
+  @ApiOperation({ summary: 'Logout qilish va refresh token cookieni tozalash' })
+  @ApiOkResponse({ description: 'Muvaffaqiyatli logout qilindi' })
+  logout(@Res({ passthrough: true }) res: Response) {
+    res.clearCookie(
+      'refresh_token',
+      this.authService.getRefreshCookieClearOptions(),
+    );
+
+    return { message: 'Muvaffaqiyatli logout qilindi' };
+  }
 }
