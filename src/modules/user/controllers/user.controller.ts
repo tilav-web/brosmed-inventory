@@ -43,8 +43,8 @@ export class UserController {
   @ApiOperation({ summary: 'Joriy foydalanuvchi profilini olish' })
   @ApiOkResponse({ description: 'Foydalanuvchi profili' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  getProfile(@Req() req: { user: AuthUser }) {
-    return req.user;
+  async getProfile(@Req() req: { user: AuthUser }) {
+    return this.userService.findSafeByIdOrFail(req.user.id);
   }
 
   @Patch('/update-profile')

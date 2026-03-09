@@ -36,6 +36,15 @@ export class UserService implements OnModuleInit {
     return this.userRepository.findOne({ where: { id } });
   }
 
+  async findSafeByIdOrFail(id: string): Promise<Omit<User, 'password'>> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Foydalanuvchi topilmadi');
+    }
+
+    return this.sanitizeUser(user);
+  }
+
   private sanitizeUser(user: User): Omit<User, 'password'> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...safeUser } = user;

@@ -81,10 +81,12 @@ export class AuthService {
   }
 
   async login(user: AuthUser) {
+    const safeUser = await this.userService.findSafeByIdOrFail(user.id);
+
     return {
       accessToken: await this.generateAccessToken(user),
       refreshToken: await this.generateRefreshToken(user),
-      user,
+      user: safeUser,
     };
   }
 
