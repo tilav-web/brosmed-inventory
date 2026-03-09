@@ -5,7 +5,10 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { CategoryModule } from '../category/category.module';
+import { ExpenseModule } from '../expense/expense.module';
 import { ProductModule } from '../product/product.module';
+import { PurchaseOrderModule } from '../purchase-order/purchase-order.module';
+import { SupplierModule } from '../supplier/supplier.module';
 import { UnitModule } from '../unit/unit.module';
 import { UserModule } from '../user/user.module';
 import { WarehouseModule } from '../warehouse/warehouse.module';
@@ -44,7 +47,10 @@ import { AppService } from './app.service';
     UserModule,
     AuthModule,
     CategoryModule,
+    ExpenseModule,
     ProductModule,
+    PurchaseOrderModule,
+    SupplierModule,
     UnitModule,
     WarehouseModule,
   ],

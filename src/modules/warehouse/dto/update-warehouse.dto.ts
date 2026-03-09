@@ -1,11 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import {
+  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   MinLength,
 } from 'class-validator';
+import { WarehouseType } from '../enums/warehouse-type.enum';
 
 export class UpdateWarehouseDto {
   @ApiPropertyOptional({ example: 'Xo`jalik ombori' })
@@ -15,12 +17,13 @@ export class UpdateWarehouseDto {
   @MaxLength(128)
   name?: string;
 
-  @ApiPropertyOptional({ example: 'Xo`jalik' })
+  @ApiPropertyOptional({
+    enum: WarehouseType,
+    example: WarehouseType.HOUSEHOLD,
+  })
   @IsOptional()
-  @IsString()
-  @MinLength(2)
-  @MaxLength(64)
-  type?: string;
+  @IsEnum(WarehouseType)
+  type?: WarehouseType;
 
   @ApiPropertyOptional({ example: 'Korpus B, podval' })
   @IsOptional()

@@ -56,6 +56,18 @@ export class WarehouseController {
     return this.warehouseService.findById(id);
   }
 
+  @Get(':id/products')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Tanlangan warehouse dagi productlar ro`yxati',
+  })
+  @ApiOkResponse({ description: 'Warehouse productlari' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  getProductsByWarehouse(@Param('id', ParseUUIDPipe) id: string) {
+    return this.warehouseService.getProductsByWarehouseId(id);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Warehouse qo`shish (faqat admin)' })
   @ApiBody({ type: CreateWarehouseDto })

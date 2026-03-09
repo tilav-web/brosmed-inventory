@@ -1,6 +1,9 @@
+import { existsSync, mkdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
+import express from 'express';
 import { AppModule } from './modules/app/app.module';
 
 async function bootstrap() {
@@ -17,6 +20,16 @@ async function bootstrap() {
       transform: true,
     }),
   );
+
+  const uploadsDir = join(process.cwd(), 'uploads');
+  if (!existsSync(uploadsDir)) {
+    mkdirSync(uploadsDir, { recursive: true });
+  }
+  const checkUploadsDir = join(uploadsDir, 'checks');
+  if (!existsSync(checkUploadsDir)) {
+    mkdirSync(checkUploadsDir, { recursive: true });
+  }
+  app.use('/uploads', express.static(uploadsDir));
 
   const swaggerConfig = new DocumentBuilder()
     .setTitle('Brosmed Inventory API')

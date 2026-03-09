@@ -3,9 +3,11 @@ import {
   CreateDateColumn,
   Entity,
   Index,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { Role } from '../enums/role.enum';
 
 @Entity({ name: 'users' })
@@ -28,6 +30,9 @@ export class User {
 
   @Column({ type: 'enum', enum: Role })
   role: Role;
+
+  @OneToMany(() => Warehouse, (warehouse) => warehouse.manager)
+  warehouses: Warehouse[];
 
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;

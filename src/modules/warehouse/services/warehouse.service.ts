@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
+import { Product } from 'src/modules/product/entities/product.entity';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { User } from 'src/modules/user/entities/user.entity';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
@@ -20,6 +21,8 @@ export class WarehouseService {
     private readonly warehouseRepository: Repository<Warehouse>,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
   ) {}
 
   async findAll(query: ListWarehousesQueryDto) {
@@ -141,5 +144,26 @@ export class WarehouseService {
     const warehouse = await this.findById(id);
     await this.warehouseRepository.delete(warehouse.id);
     return { message: "Warehouse o'chirildi" };
+  }
+
+  async getProductsByWarehouseId(id: string) {
+    const warehouse = await this.warehouseRepository.findOne({
+      where: { id },
+    });
+
+    if (!warehouse) {
+      throw new NotFoundException('Warehouse topilmadi');
+    }
+
+    return this.productRepository.find({
+      where: {
+        warehouse: {
+          id,
+        },
+      },
+      order: {
+        name: 'ASC',
+      },
+    });
   }
 }

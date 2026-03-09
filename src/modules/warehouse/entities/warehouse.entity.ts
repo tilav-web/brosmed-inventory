@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { User } from 'src/modules/user/entities/user.entity';
+import { WarehouseType } from '../enums/warehouse-type.enum';
 
 @Entity({ name: 'warehouses' })
 export class Warehouse {
@@ -19,8 +20,12 @@ export class Warehouse {
   @Column({ type: 'varchar' })
   name: string;
 
-  @Column({ type: 'varchar' })
-  type: string;
+  @Column({
+    type: 'enum',
+    enum: WarehouseType,
+    default: WarehouseType.MEDICAL,
+  })
+  type: WarehouseType;
 
   @Column({ type: 'varchar' })
   location: string;
@@ -28,7 +33,7 @@ export class Warehouse {
   @Column({ type: 'uuid' })
   manager_id: string;
 
-  @ManyToOne(() => User, { nullable: false })
+  @ManyToOne(() => User, (user) => user.warehouses)
   @JoinColumn({ name: 'manager_id' })
   manager: User;
 

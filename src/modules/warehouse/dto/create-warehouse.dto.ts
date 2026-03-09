@@ -1,5 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsUUID, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsString,
+  IsUUID,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { WarehouseType } from '../enums/warehouse-type.enum';
 
 export class CreateWarehouseDto {
   @ApiProperty({ example: 'Kuxonnyy sklad' })
@@ -8,11 +15,9 @@ export class CreateWarehouseDto {
   @MaxLength(128)
   name: string;
 
-  @ApiProperty({ example: 'Kuxonnyy' })
-  @IsString()
-  @MinLength(2)
-  @MaxLength(64)
-  type: string;
+  @ApiProperty({ enum: WarehouseType, example: WarehouseType.KITCHEN })
+  @IsEnum(WarehouseType)
+  type: WarehouseType;
 
   @ApiProperty({ example: 'Korpus A, 1 etaj' })
   @IsString()
