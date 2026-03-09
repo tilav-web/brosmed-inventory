@@ -179,14 +179,12 @@ export class ExpenseService {
         const lineTotal = price * requested;
         totalPrice += lineTotal;
 
-        await expenseItemRepo.save(
-          expenseItemRepo.create({
-            expense: createdExpense,
-            product,
-            warehouse,
-            quantity: requested,
-          }),
-        );
+        const expenseItem = expenseItemRepo.create();
+        expenseItem.expense = createdExpense;
+        expenseItem.product = product;
+        expenseItem.warehouse = warehouse;
+        expenseItem.quantity = requested;
+        await expenseItemRepo.save(expenseItem);
 
         receiptItems.push({
           product_id: product.id,

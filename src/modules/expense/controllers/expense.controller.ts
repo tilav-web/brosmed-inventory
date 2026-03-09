@@ -27,6 +27,8 @@ import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
+import { FileFolderEnum } from 'src/modules/image/enums/file-folder.enum';
+import { ImageService } from 'src/modules/image/services/image.service';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
 import { ListExpensesQueryDto } from '../dto/list-expenses-query.dto';
@@ -38,7 +40,10 @@ import { ExpenseService } from '../services/expense.service';
 @ApiTags('expenses')
 @ApiBearerAuth('bearer')
 export class ExpenseController {
-  constructor(private readonly expenseService: ExpenseService) {}
+  constructor(
+    private readonly expenseService: ExpenseService,
+    private readonly imageService: ImageService,
+  ) {}
 
   @Get('dashboard/summary')
   @ApiOperation({ summary: 'Ombor dashboard statistikasi' })
@@ -99,18 +104,29 @@ export class ExpenseController {
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
   @UseInterceptors(
     FileInterceptor('file', {
-      dest: 'uploads/checks',
+      limits: {
+        fileSize: 10 * 1024 * 1024,
+      },
     }),
   )
   async uploadCheck(
     @Param('id', ParseUUIDPipe) id: string,
-    @UploadedFile() file?: { filename: string },
+    @UploadedFile() file?: { buffer: Buffer; mimetype?: string },
   ) {
-    if (!file?.filename) {
+    if (!file?.buffer) {
       throw new BadRequestException('Check rasmi yuborilmadi');
     }
 
-    const checkImageUrl = `/uploads/checks/${file.filename}`;
+    if (!file.mimetype?.startsWith('image/')) {
+      throw new BadRequestException('Faqat rasm fayli yuborish mumkin');
+    }
+
+    const checkImageUrl = await this.imageService.saveImage({
+      file,
+      folder: FileFolderEnum.CHECKS,
+      entityId: id,
+    });
+
     return this.expenseService.attachCheckImageAndComplete(id, checkImageUrl);
   }
 }

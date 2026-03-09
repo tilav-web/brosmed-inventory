@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -6,12 +7,19 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
+import { FileFolderEnum } from 'src/modules/image/enums/file-folder.enum';
+import { ImageService } from 'src/modules/image/services/image.service';
 import { Unit } from 'src/modules/unit/entities/unit.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { CreateProductDto } from '../dto/create-product.dto';
 import { ListProductsQueryDto } from '../dto/list-products-query.dto';
 import { UpdateProductDto } from '../dto/update-product.dto';
 import { Product } from '../entities/product.entity';
+
+interface UploadedImage {
+  buffer: Buffer;
+  mimetype: string;
+}
 
 @Injectable()
 export class ProductService {
@@ -24,6 +32,7 @@ export class ProductService {
     private readonly warehouseRepository: Repository<Warehouse>,
     @InjectRepository(Unit)
     private readonly unitRepository: Repository<Unit>,
+    private readonly imageService: ImageService,
   ) {}
 
   async findAll(query: ListProductsQueryDto) {
@@ -147,8 +156,38 @@ export class ProductService {
     );
   }
 
-  async update(id: string, dto: UpdateProductDto) {
+  async update(id: string, dto: UpdateProductDto & { image?: UploadedImage }) {
+    if (!id) {
+      throw new BadRequestException(
+        'Mahsulot id sini yuborish majburiy uni params da yuboring!',
+      );
+    }
+
+    const hasUpdateField =
+      dto.image ||
+      Object.values(dto).some((value) => value !== undefined && value !== null);
+
+    if (!hasUpdateField) {
+      throw new BadRequestException('Hech qanday maydon yuborilmadi!');
+    }
+
     const product = await this.findById(id);
+
+    if (dto.image) {
+      if (!dto.image.mimetype.startsWith('image/')) {
+        throw new BadRequestException('Faqat rasm fayli yuborish mumkin');
+      }
+
+      if (product.image) {
+        await this.imageService.deleteImage(product.image);
+      }
+
+      product.image = await this.imageService.saveImage({
+        file: dto.image,
+        folder: FileFolderEnum.PRODUCTS,
+        entityId: product.id,
+      });
+    }
 
     if (dto.name !== undefined) {
       product.name = dto.name;

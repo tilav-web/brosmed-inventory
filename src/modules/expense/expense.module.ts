@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ImageModule } from '../image/image.module';
 import { Product } from '../product/entities/product.entity';
 import { Warehouse } from '../warehouse/entities/warehouse.entity';
 import { ExpenseController } from './controllers/expense.controller';
@@ -9,6 +10,7 @@ import { ExpenseService } from './services/expense.service';
 
 @Module({
   imports: [
+    ImageModule,
     TypeOrmModule.forFeature([Expense, ExpenseItem, Product, Warehouse]),
   ],
   controllers: [ExpenseController],

@@ -8,17 +8,21 @@ import {
   Patch,
   Post,
   Query,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
@@ -27,6 +31,11 @@ import { CreateProductDto } from '../dto/create-product.dto';
 import { ListProductsQueryDto } from '../dto/list-products-query.dto';
 import { UpdateProductDto } from '../dto/update-product.dto';
 import { ProductService } from '../services/product.service';
+
+interface UploadedImage {
+  buffer: Buffer;
+  mimetype: string;
+}
 
 @Controller('products')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -65,15 +74,22 @@ export class ProductController {
   @Patch(':id')
   @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Product yangilash (faqat admin)' })
+  @ApiConsumes('multipart/form-data')
   @ApiBody({ type: UpdateProductDto })
   @ApiOkResponse({ description: 'Product yangilandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  @UseInterceptors(
+    FileInterceptor('image', {
+      limits: { fileSize: 10 * 1024 * 1024 },
+    }),
+  )
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductDto,
+    @UploadedFile() image?: UploadedImage,
   ) {
-    return this.productService.update(id, dto);
+    return this.productService.update(id, { ...dto, image });
   }
 
   @Delete(':id')

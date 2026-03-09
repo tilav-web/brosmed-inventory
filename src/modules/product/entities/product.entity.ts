@@ -33,6 +33,9 @@ export class Product {
   @Column({ type: 'date', nullable: true })
   expiration_date: Date | null;
 
+  @Column({ type: 'varchar', nullable: true })
+  image: string | null;
+
   @ManyToOne(() => Category, (category) => category.products, {
     nullable: false,
   })
