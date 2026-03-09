@@ -13,6 +13,12 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ type: 'varchar', default: '-' })
+  first_name: string;
+
+  @Column({ type: 'varchar', default: '-' })
+  last_name: string;
+
   @Index({ unique: true })
   @Column({ type: 'varchar', length: 64 })
   username: string;

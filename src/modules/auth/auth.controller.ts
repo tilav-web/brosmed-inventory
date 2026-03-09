@@ -77,7 +77,9 @@ export class AuthController {
 
   @Post('refresh-token')
   @ApiCookieAuth('refresh_token')
-  @ApiOperation({ summary: "Cookie'dagi refresh token orqali tokenlarni yangilash" })
+  @ApiOperation({
+    summary: "Cookie'dagi refresh token orqali tokenlarni yangilash",
+  })
   @ApiOkResponse({
     description: 'Yangi access token qaytarildi',
     schema: {

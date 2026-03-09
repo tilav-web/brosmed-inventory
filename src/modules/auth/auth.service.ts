@@ -40,7 +40,8 @@ export class AuthService {
   }
 
   getRefreshCookieOptions() {
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
+    const isProduction =
+      this.configService.get<string>('NODE_ENV') === 'production';
 
     return {
       httpOnly: true,
@@ -51,7 +52,10 @@ export class AuthService {
     };
   }
 
-  private createPayload(user: AuthUser, tokenType: 'access' | 'refresh'): JwtPayload {
+  private createPayload(
+    user: AuthUser,
+    tokenType: 'access' | 'refresh',
+  ): JwtPayload {
     return {
       sub: user.id,
       username: user.username,
