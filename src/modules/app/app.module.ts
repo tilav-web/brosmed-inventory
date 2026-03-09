@@ -1,5 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
+import { APP_GUARD } from '@nestjs/core';
+import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AuthModule } from '../auth/auth.module';
 import { CategoryModule } from '../category/category.module';
@@ -30,6 +32,15 @@ import { AppService } from './app.service';
             : ['error'],
       }),
     }),
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService],
+      useFactory: (configService: ConfigService) => [
+        {
+          ttl: configService.get<number>('THROTTLE_TTL', 60_000),
+          limit: configService.get<number>('THROTTLE_LIMIT', 60),
+        },
+      ],
+    }),
     UserModule,
     AuthModule,
     CategoryModule,
@@ -38,6 +49,12 @@ import { AppService } from './app.service';
     WarehouseModule,
   ],
   controllers: [AppController],
-  providers: [AppService],
+  providers: [
+    AppService,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+  ],
 })
 export class AppModule {}
