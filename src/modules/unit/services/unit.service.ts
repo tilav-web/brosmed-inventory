@@ -55,8 +55,9 @@ export class UnitService {
   }
 
   async create(dto: CreateUnitDto) {
+    const normalizedName = dto.name.trim();
     const existing = await this.unitRepository.findOne({
-      where: { name: dto.name },
+      where: { name: ILike(normalizedName) },
     });
 
     if (existing) {
@@ -65,7 +66,7 @@ export class UnitService {
 
     return this.unitRepository.save(
       this.unitRepository.create({
-        name: dto.name,
+        name: normalizedName,
       }),
     );
   }
@@ -74,13 +75,14 @@ export class UnitService {
     const unit = await this.findById(id);
 
     if (dto.name !== undefined && dto.name !== unit.name) {
+      const normalizedName = dto.name.trim();
       const existing = await this.unitRepository.findOne({
-        where: { name: dto.name },
+        where: { name: ILike(normalizedName) },
       });
       if (existing) {
         throw new ConflictException('Bunday unit name mavjud');
       }
-      unit.name = dto.name;
+      unit.name = normalizedName;
     }
 
     return this.unitRepository.save(unit);
