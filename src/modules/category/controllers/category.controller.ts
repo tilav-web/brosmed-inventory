@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -73,5 +74,15 @@ export class CategoryController {
     @Body() dto: UpdateCategoryDto,
   ) {
     return this.categoryService.update(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Category o`chirish (faqat admin)' })
+  @ApiOkResponse({ description: 'Category o`chirildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  delete(@Param('id', ParseUUIDPipe) id: string) {
+    return this.categoryService.delete(id);
   }
 }

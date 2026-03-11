@@ -93,4 +93,17 @@ export class CategoryService {
 
     return this.categoryRepository.save(category);
   }
+
+  async delete(id: string) {
+    const category = await this.findById(id);
+
+    // Set category to null for all related products
+    await this.categoryRepository.query(
+      `UPDATE products SET category_id = NULL WHERE category_id = $1`,
+      [id],
+    );
+
+    // Delete the category
+    return this.categoryRepository.remove(category);
+  }
 }

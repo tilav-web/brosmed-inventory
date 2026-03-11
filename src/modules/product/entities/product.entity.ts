@@ -37,10 +37,13 @@ export class Product {
   image: string | null;
 
   @ManyToOne(() => Category, (category) => category.products, {
-    nullable: false,
+    nullable: true,
   })
   @JoinColumn({ name: 'category_id' })
-  category: Category;
+  category: Category | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  category_id: string | null;
 
   @ManyToOne(() => Warehouse, (warehouse) => warehouse.products, {
     nullable: false,
