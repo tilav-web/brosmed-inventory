@@ -58,6 +58,7 @@ export class SeedService implements OnApplicationBootstrap {
   }
 
   private async seedAll(): Promise<void> {
+    const runId = this.buildRunId();
     const warehouseManagers = await this.seedUsers();
     const warehouses = await this.seedWarehouses(warehouseManagers);
     const units = await this.seedUnits();
@@ -70,8 +71,8 @@ export class SeedService implements OnApplicationBootstrap {
       suppliers,
     });
 
-    await this.seedPurchaseOrders({ suppliers, warehouses, products });
-    await this.seedExpenses({ warehouses, products, warehouseManagers });
+    await this.seedPurchaseOrders({ suppliers, warehouses, products, runId });
+    await this.seedExpenses({ warehouses, products, warehouseManagers, runId });
   }
 
   private async seedUsers(): Promise<User[]> {
@@ -392,6 +393,7 @@ export class SeedService implements OnApplicationBootstrap {
     suppliers: Supplier[];
     warehouses: Warehouse[];
     products: Product[];
+    runId: string;
   }): Promise<void> {
     const orders: PurchaseOrder[] = [];
     const today = new Date();
@@ -422,7 +424,7 @@ export class SeedService implements OnApplicationBootstrap {
           : null;
 
       const order = this.purchaseOrderRepository.create({
-        order_number: `PO-${2026}-${String(i + 1).padStart(4, '0')}`,
+        order_number: `PO-${input.runId}-${String(i + 1).padStart(4, '0')}`,
         status: this.pick([
           OrderStatus.PENDING,
           OrderStatus.CONFIRMED,
@@ -450,6 +452,7 @@ export class SeedService implements OnApplicationBootstrap {
     warehouses: Warehouse[];
     products: Product[];
     warehouseManagers: User[];
+    runId: string;
   }): Promise<void> {
     const expenses: Expense[] = [];
 
@@ -473,7 +476,7 @@ export class SeedService implements OnApplicationBootstrap {
       }
 
       const expense = this.expenseRepository.create({
-        expense_number: `EXP-${2026}-${String(i + 1).padStart(4, '0')}`,
+        expense_number: `EXP-${input.runId}-${String(i + 1).padStart(4, '0')}`,
         status: this.pick([
           ExpenseStatus.PENDING_ISSUE,
           ExpenseStatus.PENDING_PHOTO,
@@ -527,6 +530,12 @@ export class SeedService implements OnApplicationBootstrap {
     const result = new Date(date);
     result.setDate(result.getDate() + days);
     return result;
+  }
+
+  private buildRunId(): string {
+    const now = new Date();
+    const pad = (value: number) => String(value).padStart(2, '0');
+    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   }
 
   private daysBetween(start: Date, end: Date): number {
