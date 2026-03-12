@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import { CreateCategoryDto } from '../dto/create-category.dto';
 import { ListCategoriesQueryDto } from '../dto/list-categories-query.dto';
+import { ListCategoriesWithProductsQueryDto } from '../dto/list-categories-with-products-query.dto';
 import { UpdateCategoryDto } from '../dto/update-category.dto';
 import { Category } from '../entities/category.entity';
 
@@ -37,6 +38,69 @@ export class CategoryService {
       skip: (page - 1) * limit,
       take: limit,
     });
+
+    return {
+      data: categories,
+      meta: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  async findAllWithProducts(query: ListCategoriesWithProductsQueryDto) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+
+    const search = query.search?.trim();
+    const productName = query.product_name?.trim();
+    const batchNumber = query.batch_number?.trim();
+    const expirationDate = query.expiration_date?.trim();
+
+    const hasProductFilters = Boolean(
+      productName || batchNumber || expirationDate,
+    );
+
+    const qb = this.categoryRepository.createQueryBuilder('category');
+
+    if (hasProductFilters) {
+      qb.innerJoinAndSelect('category.products', 'product');
+    } else {
+      qb.leftJoinAndSelect('category.products', 'product');
+    }
+
+    if (search) {
+      qb.andWhere('category.name ILIKE :search', {
+        search: `%${search}%`,
+      });
+    }
+
+    if (productName) {
+      qb.andWhere('product.name ILIKE :productName', {
+        productName: `%${productName}%`,
+      });
+    }
+
+    if (batchNumber) {
+      qb.andWhere('product.batch_number ILIKE :batchNumber', {
+        batchNumber: `%${batchNumber}%`,
+      });
+    }
+
+    if (expirationDate) {
+      qb.andWhere('product.expiration_date = :expirationDate', {
+        expirationDate,
+      });
+    }
+
+    qb.orderBy('category.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit)
+      .distinct(true);
+
+    const [categories, total] = await qb.getManyAndCount();
 
     return {
       data: categories,
