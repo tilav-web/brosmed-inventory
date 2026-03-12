@@ -8,6 +8,7 @@ import {
   UpdateDateColumn,
 } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
+import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 
 @Entity({ name: 'products' })
@@ -34,6 +35,19 @@ export class Product {
   expiration_date: Date | null;
 
   @Column({ type: 'varchar', nullable: true })
+  batch_number: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  storage_conditions: string | null;
+
+  @ManyToOne(() => Supplier, { nullable: false })
+  @JoinColumn({ name: 'supplier_id' })
+  supplier: Supplier;
+
+  @Column({ type: 'uuid' })
+  supplier_id: string;
+
+  @Column({ type: 'varchar', nullable: true })
   image: string | null;
 
   @ManyToOne(() => Category, (category) => category.products, {
@@ -50,6 +64,9 @@ export class Product {
   })
   @JoinColumn({ name: 'warehouse_id' })
   warehouse: Warehouse;
+
+  @Column({ type: 'uuid' })
+  warehouse_id: string;
 
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;

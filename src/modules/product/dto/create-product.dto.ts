@@ -40,6 +40,21 @@ export class CreateProductDto {
   @IsDateString()
   expiration_date?: string;
 
+  @ApiPropertyOptional({ example: 'BATCH-2026-001' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  batch_number?: string;
+
+  @ApiPropertyOptional({ example: 'Salqin va quruq joyda saqlash' })
+  @IsOptional()
+  @IsString()
+  storage_conditions?: string;
+
+  @ApiProperty({ example: 'supplier-uuid' })
+  @IsUUID('4')
+  supplier_id: string;
+
   @ApiProperty({ example: 'category-uuid' })
   @IsUUID('4')
   category_id: string;

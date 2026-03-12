@@ -9,6 +9,7 @@ import { ILike, Repository } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { FileFolderEnum } from 'src/modules/image/enums/file-folder.enum';
 import { ImageService } from 'src/modules/image/services/image.service';
+import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
 import { Unit } from 'src/modules/unit/entities/unit.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { CreateProductDto } from '../dto/create-product.dto';
@@ -32,6 +33,8 @@ export class ProductService {
     private readonly warehouseRepository: Repository<Warehouse>,
     @InjectRepository(Unit)
     private readonly unitRepository: Repository<Unit>,
+    @InjectRepository(Supplier)
+    private readonly supplierRepository: Repository<Supplier>,
     private readonly imageService: ImageService,
   ) {}
 
@@ -48,6 +51,7 @@ export class ProductService {
         : undefined,
       relations: {
         category: true,
+        supplier: true,
         warehouse: true,
       },
       order: {
@@ -73,6 +77,7 @@ export class ProductService {
       where: { id },
       relations: {
         category: true,
+        supplier: true,
         warehouse: true,
       },
     });
@@ -118,6 +123,18 @@ export class ProductService {
     return unit.name;
   }
 
+  private async findSupplierOrFail(supplierId: string): Promise<Supplier> {
+    const supplier = await this.supplierRepository.findOne({
+      where: { id: supplierId },
+    });
+
+    if (!supplier) {
+      throw new NotFoundException('Supplier topilmadi');
+    }
+
+    return supplier;
+  }
+
   async create(dto: CreateProductDto) {
     const existing = await this.productRepository.findOne({
       where: {
@@ -134,10 +151,11 @@ export class ProductService {
       );
     }
 
-    const [category, warehouse, unitName] = await Promise.all([
+    const [category, warehouse, unitName, supplier] = await Promise.all([
       this.findCategoryOrFail(dto.category_id),
       this.findWarehouseOrFail(dto.warehouse_id),
       this.findUnitNameOrFail(dto.unit_id),
+      this.findSupplierOrFail(dto.supplier_id),
     ]);
 
     return this.productRepository.save(
@@ -149,8 +167,11 @@ export class ProductService {
         expiration_date: dto.expiration_date
           ? new Date(dto.expiration_date)
           : null,
+        batch_number: dto.batch_number ?? null,
+        storage_conditions: dto.storage_conditions ?? null,
         unit: unitName,
         category,
+        supplier,
         warehouse,
       }),
     );
@@ -204,9 +225,19 @@ export class ProductService {
     if (dto.expiration_date !== undefined) {
       product.expiration_date = new Date(dto.expiration_date);
     }
+    if (dto.batch_number !== undefined) {
+      product.batch_number = dto.batch_number;
+    }
+    if (dto.storage_conditions !== undefined) {
+      product.storage_conditions = dto.storage_conditions;
+    }
 
     if (dto.category_id !== undefined) {
       product.category = await this.findCategoryOrFail(dto.category_id);
+    }
+
+    if (dto.supplier_id !== undefined) {
+      product.supplier = await this.findSupplierOrFail(dto.supplier_id);
     }
 
     if (dto.warehouse_id !== undefined) {
