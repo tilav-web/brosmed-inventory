@@ -158,6 +158,22 @@ export class ProductService {
       this.findSupplierOrFail(dto.supplier_id),
     ]);
 
+    if (dto.expiration_alert_date && !dto.expiration_date) {
+      throw new BadRequestException(
+        'expiration_alert_date berilsa, expiration_date ham berilishi kerak',
+      );
+    }
+
+    if (dto.expiration_alert_date && dto.expiration_date) {
+      const alertDate = new Date(dto.expiration_alert_date);
+      const expirationDate = new Date(dto.expiration_date);
+      if (alertDate > expirationDate) {
+        throw new BadRequestException(
+          'expiration_alert_date expiration_date dan oldin yoki teng bo‘lishi kerak',
+        );
+      }
+    }
+
     return this.productRepository.save(
       this.productRepository.create({
         name: dto.name,
@@ -167,7 +183,9 @@ export class ProductService {
         expiration_date: dto.expiration_date
           ? new Date(dto.expiration_date)
           : null,
-        expiration_alert_days: dto.expiration_alert_days ?? 5,
+        expiration_alert_date: dto.expiration_alert_date
+          ? new Date(dto.expiration_alert_date)
+          : null,
         batch_number: dto.batch_number ?? null,
         storage_conditions: dto.storage_conditions ?? null,
         unit: unitName,
@@ -224,10 +242,14 @@ export class ProductService {
       product.min_limit = dto.min_limit;
     }
     if (dto.expiration_date !== undefined) {
-      product.expiration_date = new Date(dto.expiration_date);
+      product.expiration_date = dto.expiration_date
+        ? new Date(dto.expiration_date)
+        : null;
     }
-    if (dto.expiration_alert_days !== undefined) {
-      product.expiration_alert_days = dto.expiration_alert_days;
+    if (dto.expiration_alert_date !== undefined) {
+      product.expiration_alert_date = dto.expiration_alert_date
+        ? new Date(dto.expiration_alert_date)
+        : null;
     }
     if (dto.batch_number !== undefined) {
       product.batch_number = dto.batch_number;
@@ -250,6 +272,20 @@ export class ProductService {
 
     if (dto.unit_id !== undefined) {
       product.unit = await this.findUnitNameOrFail(dto.unit_id);
+    }
+
+    if (product.expiration_alert_date && !product.expiration_date) {
+      throw new BadRequestException(
+        'expiration_alert_date berilsa, expiration_date ham berilishi kerak',
+      );
+    }
+
+    if (product.expiration_alert_date && product.expiration_date) {
+      if (product.expiration_alert_date > product.expiration_date) {
+        throw new BadRequestException(
+          'expiration_alert_date expiration_date dan oldin yoki teng bo‘lishi kerak',
+        );
+      }
     }
 
     return this.productRepository.save(product);

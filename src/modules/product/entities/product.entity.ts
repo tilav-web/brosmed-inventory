@@ -42,9 +42,9 @@ export class Product {
   @Column({ type: 'date', nullable: true })
   expiration_date: Date | null;
 
-  // Srok tugashidan necha kun oldin ogohlantirish berish (ixtiyoriy).
-  @Column({ type: 'int', nullable: true, default: 5 })
-  expiration_alert_days: number | null;
+  // Ogohlantirish sanasi (ixtiyoriy): shu sanadan boshlab UI qizil ko'rsatishi mumkin.
+  @Column({ type: 'date', nullable: true })
+  expiration_alert_date: Date | null;
 
   // Partiya raqami (ixtiyoriy).
   @Column({ type: 'varchar', nullable: true })
