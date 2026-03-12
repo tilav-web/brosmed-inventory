@@ -16,12 +16,6 @@ export class ListCategoriesWithProductsQueryDto {
   @MaxLength(128)
   search?: string;
 
-  @ApiPropertyOptional({ example: 'amoksitsillin' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  product_name?: string;
-
   @ApiPropertyOptional({ example: 'BATCH-2026-001' })
   @IsOptional()
   @IsString()

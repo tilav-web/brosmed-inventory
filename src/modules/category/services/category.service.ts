@@ -55,13 +55,10 @@ export class CategoryService {
     const limit = Math.min(query.limit ?? 10, 100);
 
     const search = query.search?.trim();
-    const productName = query.product_name?.trim();
     const batchNumber = query.batch_number?.trim();
     const expirationDate = query.expiration_date?.trim();
 
-    const hasProductFilters = Boolean(
-      productName || batchNumber || expirationDate,
-    );
+    const hasProductFilters = Boolean(batchNumber || expirationDate);
 
     const qb = this.categoryRepository.createQueryBuilder('category');
 
@@ -76,15 +73,19 @@ export class CategoryService {
 
     if (search) {
       qb.andWhere(
-        '(category.name ILIKE :search OR product.name ILIKE :search)',
+        `(category.name ILIKE :search
+          OR product.name ILIKE :search
+          OR product.batch_number ILIKE :search
+          OR product.storage_conditions ILIKE :search
+          OR product.unit ILIKE :search
+          OR product_supplier.company_name ILIKE :search
+          OR product_supplier.contact_person ILIKE :search
+          OR product_supplier.email ILIKE :search
+          OR product_supplier.phone ILIKE :search
+          OR product_warehouse.name ILIKE :search
+          OR product_warehouse.location ILIKE :search)`,
         { search: `%${search}%` },
       );
-    }
-
-    if (productName) {
-      qb.andWhere('product.name ILIKE :productName', {
-        productName: `%${productName}%`,
-      });
     }
 
     if (batchNumber) {
