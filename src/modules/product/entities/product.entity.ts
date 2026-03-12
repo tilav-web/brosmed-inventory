@@ -42,6 +42,10 @@ export class Product {
   @Column({ type: 'date', nullable: true })
   expiration_date: Date | null;
 
+  // Srok tugashidan necha kun oldin ogohlantirish berish (ixtiyoriy).
+  @Column({ type: 'int', nullable: true, default: 5 })
+  expiration_alert_days: number | null;
+
   // Partiya raqami (ixtiyoriy).
   @Column({ type: 'varchar', nullable: true })
   batch_number: string | null;
