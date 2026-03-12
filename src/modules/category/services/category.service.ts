@@ -71,6 +71,9 @@ export class CategoryService {
       qb.leftJoinAndSelect('category.products', 'product');
     }
 
+    qb.leftJoinAndSelect('product.supplier', 'product_supplier');
+    qb.leftJoinAndSelect('product.warehouse', 'product_warehouse');
+
     if (search) {
       qb.andWhere(
         '(category.name ILIKE :search OR product.name ILIKE :search)',

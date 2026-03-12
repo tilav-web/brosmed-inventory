@@ -46,8 +46,7 @@ export class CategoryController {
 
   @Get('with-products')
   @ApiOperation({
-    summary:
-      'Categorylarni productlar bilan olish (product filterlari bilan)',
+    summary: 'Categorylarni productlar bilan olish (product filterlari bilan)',
   })
   @ApiOkResponse({ description: 'Categorylar ro`yxati (productlar bilan)' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
