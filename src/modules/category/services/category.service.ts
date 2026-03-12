@@ -72,9 +72,10 @@ export class CategoryService {
     }
 
     if (search) {
-      qb.andWhere('category.name ILIKE :search', {
-        search: `%${search}%`,
-      });
+      qb.andWhere(
+        '(category.name ILIKE :search OR product.name ILIKE :search)',
+        { search: `%${search}%` },
+      );
     }
 
     if (productName) {
