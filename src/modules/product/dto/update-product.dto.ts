@@ -42,6 +42,12 @@ export class UpdateProductDto {
   @IsDateString()
   expiration_date?: string;
 
+  @ApiPropertyOptional({ example: 5 })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  expiration_alert_days?: number;
+
   @ApiPropertyOptional({ example: 'BATCH-2026-001' })
   @IsOptional()
   @IsString()

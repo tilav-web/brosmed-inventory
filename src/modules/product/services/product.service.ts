@@ -167,6 +167,7 @@ export class ProductService {
         expiration_date: dto.expiration_date
           ? new Date(dto.expiration_date)
           : null,
+        expiration_alert_days: dto.expiration_alert_days ?? 5,
         batch_number: dto.batch_number ?? null,
         storage_conditions: dto.storage_conditions ?? null,
         unit: unitName,
@@ -224,6 +225,9 @@ export class ProductService {
     }
     if (dto.expiration_date !== undefined) {
       product.expiration_date = new Date(dto.expiration_date);
+    }
+    if (dto.expiration_alert_days !== undefined) {
+      product.expiration_alert_days = dto.expiration_alert_days;
     }
     if (dto.batch_number !== undefined) {
       product.batch_number = dto.batch_number;
