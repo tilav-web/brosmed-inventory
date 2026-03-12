@@ -14,6 +14,7 @@ import { UserModule } from '../user/user.module';
 import { WarehouseModule } from '../warehouse/warehouse.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
+import { SeedModule } from 'src/seed/seed.module';
 
 @Module({
   imports: [
@@ -53,6 +54,7 @@ import { AppService } from './app.service';
     SupplierModule,
     UnitModule,
     WarehouseModule,
+    SeedModule,
   ],
   controllers: [AppController],
   providers: [
