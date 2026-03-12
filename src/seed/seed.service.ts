@@ -52,12 +52,6 @@ export class SeedService implements OnApplicationBootstrap {
       return;
     }
 
-    const productCount = await this.productRepository.count();
-    if (productCount > 0) {
-      this.logger.log('Seed skipped: products already exist.');
-      return;
-    }
-
     this.logger.log('Seeding development data...');
     await this.seedAll();
     this.logger.log('Seed completed.');
@@ -458,7 +452,6 @@ export class SeedService implements OnApplicationBootstrap {
     warehouseManagers: User[];
   }): Promise<void> {
     const expenses: Expense[] = [];
-    const today = new Date();
 
     for (let i = 0; i < 10; i += 1) {
       const itemsCount = this.randomInt(2, 4);
