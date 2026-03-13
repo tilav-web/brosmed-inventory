@@ -25,7 +25,6 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateCategoryDto } from '../dto/create-category.dto';
 import { ListCategoriesQueryDto } from '../dto/list-categories-query.dto';
-import { ListCategoriesWithProductsQueryDto } from '../dto/list-categories-with-products-query.dto';
 import { UpdateCategoryDto } from '../dto/update-category.dto';
 import { CategoryService } from '../services/category.service';
 
@@ -42,16 +41,6 @@ export class CategoryController {
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   findAll(@Query() query: ListCategoriesQueryDto) {
     return this.categoryService.findAll(query);
-  }
-
-  @Get('with-products')
-  @ApiOperation({
-    summary: 'Categorylarni productlar bilan olish (product filterlari bilan)',
-  })
-  @ApiOkResponse({ description: 'Categorylar ro`yxati (productlar bilan)' })
-  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  findAllWithProducts(@Query() query: ListCategoriesWithProductsQueryDto) {
-    return this.categoryService.findAllWithProducts(query);
   }
 
   @Get(':id')
