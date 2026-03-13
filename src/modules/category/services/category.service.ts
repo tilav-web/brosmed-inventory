@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { Product } from 'src/modules/product/entities/product.entity';
+import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { CreateCategoryDto } from '../dto/create-category.dto';
 import { ListCategoriesQueryDto } from '../dto/list-categories-query.dto';
 import { UpdateCategoryDto } from '../dto/update-category.dto';
@@ -15,6 +17,10 @@ export class CategoryService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
+    @InjectRepository(ProductBatch)
+    private readonly productBatchRepository: Repository<ProductBatch>,
   ) {}
 
   async findAll(query: ListCategoriesQueryDto) {
@@ -36,6 +42,53 @@ export class CategoryService {
 
     const [categories, total] = await qb.getManyAndCount();
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const in30Days = new Date(today);
+    in30Days.setDate(in30Days.getDate() + 30);
+
+    const [lowStockCount, expiringSoonCount, expiredCount] = await Promise.all([
+      this.productRepository
+        .createQueryBuilder('product')
+        .where('product.quantity <= product.min_limit')
+        .getCount(),
+      this.productBatchRepository
+        .createQueryBuilder('batch')
+        .where('batch.expiration_date IS NOT NULL')
+        .andWhere('batch.expiration_date >= :today', {
+          today: today.toISOString().slice(0, 10),
+        })
+        .andWhere('batch.expiration_date <= :in30Days', {
+          in30Days: in30Days.toISOString().slice(0, 10),
+        })
+        .andWhere('batch.quantity > 0')
+        .getCount(),
+      this.productBatchRepository
+        .createQueryBuilder('batch')
+        .where('batch.expiration_date IS NOT NULL')
+        .andWhere('batch.expiration_date < :today', {
+          today: today.toISOString().slice(0, 10),
+        })
+        .andWhere('batch.quantity > 0')
+        .getCount(),
+    ]);
+
+    const notifications: string[] = [];
+    if (lowStockCount > 0) {
+      notifications.push(`Kam qolgan mahsulotlar soni: ${lowStockCount} ta`);
+    }
+    if (expiringSoonCount > 0) {
+      notifications.push(
+        `Eskirish muddati yaqinlashib qolgan mahsulotlar soni: ${expiringSoonCount} ta`,
+      );
+    }
+    if (expiredCount > 0) {
+      notifications.push(
+        `Eskirish muddati tugagan mahsulotlar soni: ${expiredCount} ta`,
+      );
+    }
+
     return {
       data: categories,
       meta: {
@@ -43,6 +96,12 @@ export class CategoryService {
         limit,
         total,
         total_pages: Math.ceil(total / limit) || 1,
+        notifications,
+        stats: {
+          low_stock: lowStockCount,
+          expiring_soon: expiringSoonCount,
+          expired: expiredCount,
+        },
       },
     };
   }
