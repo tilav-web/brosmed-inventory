@@ -25,156 +25,138 @@ export class CategoryService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
+    const hasSearch = Boolean(search);
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const in30Days = new Date(today);
-    in30Days.setDate(in30Days.getDate() + 30);
+    const today = new Date().toISOString().slice(0, 10);
+    const in30Days = new Date(Date.now() + 30 * 86400_000)
+      .toISOString()
+      .slice(0, 10);
 
     const qb = this.categoryRepository
       .createQueryBuilder('category')
-      .loadRelationCountAndMap('category.product_count', 'category.products');
+      // loadRelationCountAndMap OLIB TASHLANDI — subquery bilan almashtirildi
+      .addSelect('COUNT(*) OVER()', 'total_count')
+      .addSelect(
+        (subQb) =>
+          subQb
+            .select('COUNT(*)')
+            .from(Product, 'p')
+            .where('p.category_id = category.id')
+            .andWhere('p.quantity <= p.min_limit'),
+        'low_stock_count',
+      )
+      .addSelect(
+        (subQb) =>
+          subQb
+            .select('COUNT(*)')
+            .from(ProductBatch, 'b')
+            .innerJoin(Product, 'p', 'p.id = b.product_id')
+            .where('p.category_id = category.id')
+            .andWhere('b.expiration_date BETWEEN :today AND :in30Days')
+            .andWhere('b.quantity > 0'),
+        'expiring_soon_count',
+      )
+      .addSelect(
+        (subQb) =>
+          subQb
+            .select('COUNT(*)')
+            .from(ProductBatch, 'b')
+            .innerJoin(Product, 'p', 'p.id = b.product_id')
+            .where('p.category_id = category.id')
+            .andWhere('b.expiration_date < :today')
+            .andWhere('b.quantity > 0'),
+        'expired_count',
+      )
+      .setParameters({ today, in30Days });
 
-    qb.leftJoin('category.products', 'product');
-
-    qb.addSelect(
-      (subQb) =>
-        subQb
-          .select('COUNT(*)')
-          .from(Product, 'p')
-          .where('p.category_id = category.id')
-          .andWhere('p.quantity <= p.min_limit'),
-      'low_stock_count',
-    );
-
-    qb.addSelect(
-      (subQb) =>
-        subQb
-          .select('COUNT(*)')
-          .from(ProductBatch, 'b')
-          .innerJoin(Product, 'p', 'p.id = b.product_id')
-          .where('p.category_id = category.id')
-          .andWhere('b.expiration_date IS NOT NULL')
-          .andWhere('b.expiration_date >= :today')
-          .andWhere('b.expiration_date <= :in30Days')
-          .andWhere('b.quantity > 0'),
-      'expiring_soon_count',
-    );
-
-    qb.addSelect(
-      (subQb) =>
-        subQb
-          .select('COUNT(*)')
-          .from(ProductBatch, 'b')
-          .innerJoin(Product, 'p', 'p.id = b.product_id')
-          .where('p.category_id = category.id')
-          .andWhere('b.expiration_date IS NOT NULL')
-          .andWhere('b.expiration_date < :today')
-          .andWhere('b.quantity > 0'),
-      'expired_count',
-    );
-
-    if (search) {
-      qb.where('(category.name ILIKE :search OR product.name ILIKE :search)', {
-        search: `%${search}%`,
-      });
+    if (hasSearch) {
+      qb.leftJoin('category.products', 'product')
+        .where('(category.name ILIKE :search OR product.name ILIKE :search)', {
+          search: `%${search}%`,
+        })
+        .distinct(true);
     }
 
     qb.orderBy('category.createdAt', 'DESC')
       .skip((page - 1) * limit)
-      .take(limit)
-      .distinct(true)
-      .setParameters({
-        today: today.toISOString().slice(0, 10),
-        in30Days: in30Days.toISOString().slice(0, 10),
-      });
+      .take(limit);
 
     const { entities, raw } = await qb.getRawAndEntities<{
-      low_stock_count: string | number | null;
-      expiring_soon_count: string | number | null;
-      expired_count: string | number | null;
+      category_id: string | null;
+      total_count: string;
+      low_stock_count: string;
+      expiring_soon_count: string;
+      expired_count: string;
     }>();
-    const total = await qb.clone().getCount();
 
-    const categoryIds = entities.map((category) => category.id);
+    // Ishonchli raw ma'lumot olish — index emas, id bo'yicha
+    const rawMap = new Map(
+      raw.filter((r) => r.category_id).map((r) => [r.category_id as string, r]),
+    );
+    const total = Number(raw[0]?.total_count ?? 0);
+
+    // Search bo'lsa mahsulotlarni parallel yuklash
     const productsByCategory = new Map<string, Product[]>();
+    if (hasSearch && entities.length > 0) {
+      const categoryIds = entities.map((c) => c.id);
+      const product_page = query.product_page ?? 1;
+      const productLimit = Math.min(10, 50);
 
-    if (categoryIds.length > 0) {
-      const productPage = 1;
-      const productLimit = 10;
-      const productQb = this.productRepository
+      const products = await this.productRepository
         .createQueryBuilder('product')
         .leftJoinAndSelect('product.category', 'category')
         .leftJoinAndSelect('product.supplier', 'supplier')
         .leftJoinAndSelect('product.warehouse', 'warehouse')
         .leftJoinAndSelect('product.batches', 'batches')
         .where('product.category_id IN (:...categoryIds)', { categoryIds })
+        .andWhere('product.name ILIKE :search', { search: `%${search}%` })
         .orderBy('product.createdAt', 'DESC')
-        .skip((productPage - 1) * productLimit)
-        .take(productLimit);
+        .skip((product_page - 1) * productLimit)
+        .take(productLimit)
+        .getMany();
 
-      if (search) {
-        productQb.andWhere('product.name ILIKE :search', {
-          search: `%${search}%`,
-        });
-      }
-
-      const products = await productQb.getMany();
       for (const product of products) {
-        if (!product.category_id) {
-          continue;
-        }
+        if (!product.category_id) continue;
         const list = productsByCategory.get(product.category_id) ?? [];
         list.push(product);
         productsByCategory.set(product.category_id, list);
       }
     }
 
-    const categories = entities.map((category, index) => {
-      const lowStockCount = Number(raw[index]?.low_stock_count ?? 0);
-      const expiringSoonCount = Number(raw[index]?.expiring_soon_count ?? 0);
-      const expiredCount = Number(raw[index]?.expired_count ?? 0);
+    const categories = entities.map((category) => {
+      const r = rawMap.get(category.id);
+      const lowStockCount = Number(r?.low_stock_count ?? 0);
+      const expiringSoonCount = Number(r?.expiring_soon_count ?? 0);
+      const expiredCount = Number(r?.expired_count ?? 0);
 
-      const notifications: {
-        id: string;
-        message: string;
-        priority: number;
-      }[] = [];
-      if (lowStockCount > 0) {
-        notifications.push({
+      const notifications = [
+        lowStockCount > 0 && {
+          id: 'low-stock',
           message: 'Kam qolgan mahsulotlar mavjud',
           priority: 1,
-          id: 'low-stock',
-        });
-      }
-      if (expiringSoonCount > 0) {
-        notifications.push({
+        },
+        expiringSoonCount > 0 && {
+          id: 'expiring-soon',
           message: 'Eskirish muddati yaqinlashib qolgan mahsulotlar mavjud',
           priority: 2,
-          id: 'expiring-soon',
-        });
-      }
-      if (expiredCount > 0) {
-        notifications.push({
+        },
+        expiredCount > 0 && {
+          id: 'expired',
           message: 'Eskirish muddati tugagan mahsulotlar mavjud',
           priority: 3,
-          id: 'expired',
-        });
-      }
+        },
+      ].filter(Boolean);
 
-      const products = productsByCategory.get(category.id) ?? [];
-      return Object.assign(category, { notifications, products });
+      const extra = hasSearch
+        ? { notifications, products: productsByCategory.get(category.id) ?? [] }
+        : { notifications };
+
+      return Object.assign(category, extra);
     });
 
     return {
       data: categories,
-      meta: {
-        page,
-        limit,
-        total,
-        total_pages: Math.ceil(total / limit) || 1,
-      },
+      meta: { page, limit, total, total_pages: Math.ceil(total / limit) || 1 },
     };
   }
 
