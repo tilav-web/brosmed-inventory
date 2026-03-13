@@ -56,6 +56,7 @@ export class Product {
   // Mahsulot kategoriyasi (ixtiyoriy).
   @ManyToOne(() => Category, (category) => category.products, {
     nullable: true,
+    onDelete: 'RESTRICT',
   })
   @JoinColumn({ name: 'category_id' })
   category: Category | null;
