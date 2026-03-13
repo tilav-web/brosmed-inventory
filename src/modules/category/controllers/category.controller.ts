@@ -36,11 +36,19 @@ export class CategoryController {
   constructor(private readonly categoryService: CategoryService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Barcha categorylarni olish (admin va warehouse)' })
-  @ApiOkResponse({ description: 'Categorylar ro`yxati' })
+  @ApiOperation({ summary: 'Barcha categorylarni olish (to`liq)' })
+  @ApiOkResponse({ description: 'Categorylar ro`yxati (to`liq)' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   findAll(@Query() query: ListCategoriesQueryDto) {
     return this.categoryService.findAll(query);
+  }
+
+  @Get('simple')
+  @ApiOperation({ summary: 'Barcha categorylarni olish (faqat category)' })
+  @ApiOkResponse({ description: 'Categorylar ro`yxati (oddiy)' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  findAllSimple(@Query() query: ListCategoriesQueryDto) {
+    return this.categoryService.findAllSimple(query);
   }
 
   @Get(':id')

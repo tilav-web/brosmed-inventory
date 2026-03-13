@@ -160,6 +160,34 @@ export class CategoryService {
     };
   }
 
+  async findAllSimple(query: ListCategoriesQueryDto) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+    const search = query.search?.trim();
+
+    const qb = this.categoryRepository.createQueryBuilder('category');
+
+    if (search) {
+      qb.where('category.name ILIKE :search', { search: `%${search}%` });
+    }
+
+    qb.orderBy('category.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [categories, total] = await qb.getManyAndCount();
+
+    return {
+      data: categories,
+      meta: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
   async findById(id: string) {
     const category = await this.categoryRepository.findOne({ where: { id } });
     if (!category) {
