@@ -17,10 +17,6 @@ export class CategoryService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
-    @InjectRepository(Product)
-    private readonly productRepository: Repository<Product>,
-    @InjectRepository(ProductBatch)
-    private readonly productBatchRepository: Repository<ProductBatch>,
   ) {}
 
   async findAll(query: ListCategoriesQueryDto) {
@@ -28,9 +24,52 @@ export class CategoryService {
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const in30Days = new Date(today);
+    in30Days.setDate(in30Days.getDate() + 30);
+
     const qb = this.categoryRepository
       .createQueryBuilder('category')
       .loadRelationCountAndMap('category.product_count', 'category.products');
+
+    qb.addSelect(
+      (subQb) =>
+        subQb
+          .select('COUNT(*)')
+          .from(Product, 'p')
+          .where('p.category_id = category.id')
+          .andWhere('p.quantity <= p.min_limit'),
+      'low_stock_count',
+    );
+
+    qb.addSelect(
+      (subQb) =>
+        subQb
+          .select('COUNT(*)')
+          .from(ProductBatch, 'b')
+          .innerJoin(Product, 'p', 'p.id = b.product_id')
+          .where('p.category_id = category.id')
+          .andWhere('b.expiration_date IS NOT NULL')
+          .andWhere('b.expiration_date >= :today')
+          .andWhere('b.expiration_date <= :in30Days')
+          .andWhere('b.quantity > 0'),
+      'expiring_soon_count',
+    );
+
+    qb.addSelect(
+      (subQb) =>
+        subQb
+          .select('COUNT(*)')
+          .from(ProductBatch, 'b')
+          .innerJoin(Product, 'p', 'p.id = b.product_id')
+          .where('p.category_id = category.id')
+          .andWhere('b.expiration_date IS NOT NULL')
+          .andWhere('b.expiration_date < :today')
+          .andWhere('b.quantity > 0'),
+      'expired_count',
+    );
 
     if (search) {
       qb.where('category.name ILIKE :search', { search: `%${search}%` });
@@ -38,56 +77,39 @@ export class CategoryService {
 
     qb.orderBy('category.createdAt', 'DESC')
       .skip((page - 1) * limit)
-      .take(limit);
+      .take(limit)
+      .setParameters({
+        today: today.toISOString().slice(0, 10),
+        in30Days: in30Days.toISOString().slice(0, 10),
+      });
 
-    const [categories, total] = await qb.getManyAndCount();
+    const { entities, raw } = await qb.getRawAndEntities<{
+      low_stock_count: string | number | null;
+      expiring_soon_count: string | number | null;
+      expired_count: string | number | null;
+    }>();
+    const total = await qb.clone().getCount();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const categories = entities.map((category, index) => {
+      const lowStockCount = Number(raw[index]?.low_stock_count ?? 0);
+      const expiringSoonCount = Number(raw[index]?.expiring_soon_count ?? 0);
+      const expiredCount = Number(raw[index]?.expired_count ?? 0);
 
-    const in30Days = new Date(today);
-    in30Days.setDate(in30Days.getDate() + 30);
+      const notifications: string[] = [];
+      if (lowStockCount > 0) {
+        notifications.push('Kam qolgan mahsulotlar mavjud');
+      }
+      if (expiringSoonCount > 0) {
+        notifications.push(
+          'Eskirish muddati yaqinlashib qolgan mahsulotlar mavjud',
+        );
+      }
+      if (expiredCount > 0) {
+        notifications.push('Eskirish muddati tugagan mahsulotlar mavjud');
+      }
 
-    const [lowStockCount, expiringSoonCount, expiredCount] = await Promise.all([
-      this.productRepository
-        .createQueryBuilder('product')
-        .where('product.quantity <= product.min_limit')
-        .getCount(),
-      this.productBatchRepository
-        .createQueryBuilder('batch')
-        .where('batch.expiration_date IS NOT NULL')
-        .andWhere('batch.expiration_date >= :today', {
-          today: today.toISOString().slice(0, 10),
-        })
-        .andWhere('batch.expiration_date <= :in30Days', {
-          in30Days: in30Days.toISOString().slice(0, 10),
-        })
-        .andWhere('batch.quantity > 0')
-        .getCount(),
-      this.productBatchRepository
-        .createQueryBuilder('batch')
-        .where('batch.expiration_date IS NOT NULL')
-        .andWhere('batch.expiration_date < :today', {
-          today: today.toISOString().slice(0, 10),
-        })
-        .andWhere('batch.quantity > 0')
-        .getCount(),
-    ]);
-
-    const notifications: string[] = [];
-    if (lowStockCount > 0) {
-      notifications.push(`Kam qolgan mahsulotlar soni: ${lowStockCount} ta`);
-    }
-    if (expiringSoonCount > 0) {
-      notifications.push(
-        `Eskirish muddati yaqinlashib qolgan mahsulotlar soni: ${expiringSoonCount} ta`,
-      );
-    }
-    if (expiredCount > 0) {
-      notifications.push(
-        `Eskirish muddati tugagan mahsulotlar soni: ${expiredCount} ta`,
-      );
-    }
+      return Object.assign(category, { notifications });
+    });
 
     return {
       data: categories,
@@ -96,12 +118,6 @@ export class CategoryService {
         limit,
         total,
         total_pages: Math.ceil(total / limit) || 1,
-        notifications,
-        stats: {
-          low_stock: lowStockCount,
-          expiring_soon: expiringSoonCount,
-          expired: expiredCount,
-        },
       },
     };
   }
