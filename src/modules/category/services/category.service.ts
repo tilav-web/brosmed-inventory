@@ -17,8 +17,6 @@ export class CategoryService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
-    @InjectRepository(Product)
-    private readonly productRepository: Repository<Product>,
   ) {}
 
   async findAll(query: ListCategoriesQueryDto) {
@@ -34,8 +32,6 @@ export class CategoryService {
 
     const qb = this.categoryRepository
       .createQueryBuilder('category')
-      // loadRelationCountAndMap OLIB TASHLANDI — subquery bilan almashtirildi
-      .addSelect('COUNT(*) OVER()', 'total_count')
       .addSelect(
         (subQb) =>
           subQb
@@ -69,21 +65,23 @@ export class CategoryService {
       )
       .setParameters({ today, in30Days });
 
+    qb.leftJoin('category.products', 'product');
+
     if (hasSearch) {
-      qb.leftJoin('category.products', 'product')
-        .where('(category.name ILIKE :search OR product.name ILIKE :search)', {
-          search: `%${search}%`,
-        })
-        .distinct(true);
+      qb.where('(category.name ILIKE :search OR product.name ILIKE :search)', {
+        search: `%${search}%`,
+      });
     }
+
+    const total = await qb.clone().distinct(true).getCount();
 
     qb.orderBy('category.createdAt', 'DESC')
       .skip((page - 1) * limit)
-      .take(limit);
+      .take(limit)
+      .distinct(true);
 
     const { entities, raw } = await qb.getRawAndEntities<{
       category_id: string | null;
-      total_count: string;
       low_stock_count: string;
       expiring_soon_count: string;
       expired_count: string;
@@ -93,36 +91,6 @@ export class CategoryService {
     const rawMap = new Map(
       raw.filter((r) => r.category_id).map((r) => [r.category_id as string, r]),
     );
-    const total = Number(raw[0]?.total_count ?? 0);
-
-    // Search bo'lsa mahsulotlarni parallel yuklash
-    const productsByCategory = new Map<string, Product[]>();
-    if (hasSearch && entities.length > 0) {
-      const categoryIds = entities.map((c) => c.id);
-      const product_page = query.product_page ?? 1;
-      const productLimit = Math.min(10, 50);
-
-      const products = await this.productRepository
-        .createQueryBuilder('product')
-        .leftJoinAndSelect('product.category', 'category')
-        .leftJoinAndSelect('product.supplier', 'supplier')
-        .leftJoinAndSelect('product.warehouse', 'warehouse')
-        .leftJoinAndSelect('product.batches', 'batches')
-        .where('product.category_id IN (:...categoryIds)', { categoryIds })
-        .andWhere('product.name ILIKE :search', { search: `%${search}%` })
-        .orderBy('product.createdAt', 'DESC')
-        .skip((product_page - 1) * productLimit)
-        .take(productLimit)
-        .getMany();
-
-      for (const product of products) {
-        if (!product.category_id) continue;
-        const list = productsByCategory.get(product.category_id) ?? [];
-        list.push(product);
-        productsByCategory.set(product.category_id, list);
-      }
-    }
-
     const categories = entities.map((category) => {
       const r = rawMap.get(category.id);
       const lowStockCount = Number(r?.low_stock_count ?? 0);
@@ -147,9 +115,7 @@ export class CategoryService {
         },
       ].filter(Boolean);
 
-      const extra = hasSearch
-        ? { notifications, products: productsByCategory.get(category.id) ?? [] }
-        : { notifications };
+      const extra = { notifications };
 
       return Object.assign(category, extra);
     });
