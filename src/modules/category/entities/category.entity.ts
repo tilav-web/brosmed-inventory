@@ -17,8 +17,7 @@ export class Category {
   id: string;
 
   // Kategoriya nomi (unikal).
-  @Index({ unique: true })
-  @Column({ type: 'varchar', length: 128 })
+  @Column({ type: 'varchar', length: 128, unique: true })
   name: string;
 
   // Kategoriya haqida ixtiyoriy izoh.
