@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { FileFolderEnum } from 'src/modules/image/enums/file-folder.enum';
 import { ImageService } from 'src/modules/image/services/image.service';
@@ -42,24 +42,28 @@ export class ProductService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
+    const categoryId = query.category_id;
 
-    const [products, total] = await this.productRepository.findAndCount({
-      where: search
-        ? {
-            name: ILike(`%${search}%`),
-          }
-        : undefined,
-      relations: {
-        category: true,
-        supplier: true,
-        warehouse: true,
-      },
-      order: {
-        createdAt: 'DESC',
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.supplier', 'supplier')
+      .leftJoinAndSelect('product.warehouse', 'warehouse')
+      .leftJoinAndSelect('product.batches', 'batches');
+
+    if (search) {
+      qb.andWhere('product.name ILIKE :search', { search: `%${search}%` });
+    }
+
+    if (categoryId) {
+      qb.andWhere('product.category_id = :categoryId', { categoryId });
+    }
+
+    qb.orderBy('product.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [products, total] = await qb.getManyAndCount();
 
     return {
       data: products,

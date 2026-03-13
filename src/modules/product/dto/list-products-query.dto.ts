@@ -1,6 +1,13 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import {
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  MaxLength,
+  Min,
+} from 'class-validator';
 
 export class ListProductsQueryDto {
   @ApiPropertyOptional({ example: 'amoksitsillin' })
@@ -8,6 +15,11 @@ export class ListProductsQueryDto {
   @IsString()
   @MaxLength(255)
   search?: string;
+
+  @ApiPropertyOptional({ example: 'category-uuid' })
+  @IsOptional()
+  @IsUUID('4')
+  category_id?: string;
 
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()

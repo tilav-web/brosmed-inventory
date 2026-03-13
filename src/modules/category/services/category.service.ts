@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { ILike, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { CreateCategoryDto } from '../dto/create-category.dto';
 import { ListCategoriesQueryDto } from '../dto/list-categories-query.dto';
 import { UpdateCategoryDto } from '../dto/update-category.dto';
@@ -22,21 +22,19 @@ export class CategoryService {
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
 
-    const [categories, total] = await this.categoryRepository.findAndCount({
-      where: search
-        ? {
-            name: ILike(`%${search}%`),
-          }
-        : undefined,
-      relations: {
-        products: true,
-      },
-      order: {
-        createdAt: 'DESC',
-      },
-      skip: (page - 1) * limit,
-      take: limit,
-    });
+    const qb = this.categoryRepository
+      .createQueryBuilder('category')
+      .loadRelationCountAndMap('category.product_count', 'category.products');
+
+    if (search) {
+      qb.where('category.name ILIKE :search', { search: `%${search}%` });
+    }
+
+    qb.orderBy('category.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [categories, total] = await qb.getManyAndCount();
 
     return {
       data: categories,
