@@ -8,6 +8,7 @@ import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
 import { ExpenseStatus } from 'src/modules/expense/enums/expense-status.enum';
 import { Product } from 'src/modules/product/entities/product.entity';
+import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { OrderItem } from 'src/modules/purchase-order/entities/order-item.entity';
 import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
 import { OrderStatus } from 'src/modules/purchase-order/enums/order-status.enum';
@@ -36,6 +37,8 @@ export class SeedService implements OnApplicationBootstrap {
     private readonly supplierRepository: Repository<Supplier>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(ProductBatch)
+    private readonly productBatchRepository: Repository<ProductBatch>,
     @InjectRepository(PurchaseOrder)
     private readonly purchaseOrderRepository: Repository<PurchaseOrder>,
     @InjectRepository(OrderItem)
@@ -69,6 +72,7 @@ export class SeedService implements OnApplicationBootstrap {
       units,
       categories,
       suppliers,
+      runId,
     });
 
     await this.seedPurchaseOrders({ suppliers, warehouses, products, runId });
@@ -314,6 +318,7 @@ export class SeedService implements OnApplicationBootstrap {
     units: Unit[];
     categories: Category[];
     suppliers: Supplier[];
+    runId: string;
   }): Promise<Product[]> {
     const productNames = [
       'Amoksitsillin 500mg',
@@ -352,30 +357,11 @@ export class SeedService implements OnApplicationBootstrap {
     const today = new Date();
 
     for (let i = 0; i < productNames.length; i += 1) {
-      const expirationDate =
-        Math.random() < 0.2
-          ? null
-          : this.addDays(today, this.randomInt(30, 360));
-      const expirationAlertDate =
-        expirationDate && Math.random() < 0.9
-          ? this.addDays(
-              expirationDate,
-              -this.randomInt(
-                5,
-                Math.min(30, this.daysBetween(today, expirationDate)),
-              ),
-            )
-          : null;
-
       toCreate.push(
         this.productRepository.create({
           name: productNames[i],
-          price: this.randomNumber(5000, 150000, 2),
-          quantity: this.randomInt(0, 250),
+          quantity: 0,
           min_limit: this.randomInt(5, 30),
-          expiration_date: expirationDate,
-          expiration_alert_date: expirationAlertDate,
-          batch_number: `BATCH-${2026}-${String(i + 1).padStart(3, '0')}`,
           storage_conditions: 'Quruq va salqin joyda saqlash',
           unit: this.pick(input.units).name,
           category: this.pick(input.categories),
@@ -385,8 +371,58 @@ export class SeedService implements OnApplicationBootstrap {
       );
     }
 
-    await this.productRepository.save(toCreate);
-    return toCreate;
+    const createdProducts = await this.productRepository.save(toCreate);
+    const batches: ProductBatch[] = [];
+
+    for (let i = 0; i < createdProducts.length; i += 1) {
+      const product = createdProducts[i];
+      const batchesCount = this.randomInt(1, 3);
+      let totalQty = 0;
+
+      for (let j = 0; j < batchesCount; j += 1) {
+        const expirationDate =
+          Math.random() < 0.2
+            ? null
+            : this.addDays(today, this.randomInt(30, 360));
+        const expirationAlertDate =
+          expirationDate && Math.random() < 0.9
+            ? this.addDays(
+                expirationDate,
+                -this.randomInt(
+                  5,
+                  Math.min(30, this.daysBetween(today, expirationDate)),
+                ),
+              )
+            : null;
+        const quantity = this.randomInt(10, 120);
+
+        totalQty += quantity;
+        batches.push(
+          this.productBatchRepository.create({
+            product,
+            product_id: product.id,
+            warehouse: product.warehouse,
+            warehouse_id: product.warehouse_id,
+            supplier: product.supplier,
+            supplier_id: product.supplier_id,
+            quantity,
+            price_at_purchase: this.randomNumber(5000, 150000, 2),
+            expiration_date: expirationDate,
+            expiration_alert_date: expirationAlertDate,
+            batch_number: `BATCH-${input.runId}-${String(i + 1).padStart(3, '0')}-${String(j + 1).padStart(2, '0')}`,
+          }),
+        );
+      }
+
+      product.quantity = totalQty;
+    }
+
+    if (batches.length > 0) {
+      await this.productBatchRepository.save(batches);
+    }
+
+    await this.productRepository.save(createdProducts);
+    return createdProducts;
   }
 
   private async seedPurchaseOrders(input: {
@@ -407,12 +443,29 @@ export class SeedService implements OnApplicationBootstrap {
         const product = this.pick(input.products);
         const quantity = this.randomInt(5, 40);
         const price = this.randomNumber(3000, 120000, 2);
+        const expirationDate =
+          Math.random() < 0.2
+            ? null
+            : this.addDays(today, this.randomInt(30, 360));
+        const expirationAlertDate =
+          expirationDate && Math.random() < 0.9
+            ? this.addDays(
+                expirationDate,
+                -this.randomInt(
+                  5,
+                  Math.min(30, this.daysBetween(today, expirationDate)),
+                ),
+              )
+            : null;
         total += quantity * price;
         items.push(
           this.orderItemRepository.create({
             product,
             quantity,
             price_at_purchase: price,
+            expiration_date: expirationDate,
+            expiration_alert_date: expirationAlertDate,
+            batch_number: `BATCH-${input.runId}-${String(i + 1).padStart(4, '0')}-${String(j + 1).padStart(2, '0')}`,
           }),
         );
       }
@@ -470,7 +523,7 @@ export class SeedService implements OnApplicationBootstrap {
           this.expenseItemRepository.create({
             product,
             quantity,
-            warehouse: this.pick(input.warehouses),
+            warehouse: product.warehouse,
           }),
         );
       }

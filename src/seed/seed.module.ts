@@ -5,6 +5,7 @@ import { Category } from 'src/modules/category/entities/category.entity';
 import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
 import { Product } from 'src/modules/product/entities/product.entity';
+import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { OrderItem } from 'src/modules/purchase-order/entities/order-item.entity';
 import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
@@ -23,6 +24,7 @@ import { SeedService } from './seed.service';
       Unit,
       Supplier,
       Product,
+      ProductBatch,
       PurchaseOrder,
       OrderItem,
       Expense,
