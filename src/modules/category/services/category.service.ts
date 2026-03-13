@@ -95,17 +95,31 @@ export class CategoryService {
       const expiringSoonCount = Number(raw[index]?.expiring_soon_count ?? 0);
       const expiredCount = Number(raw[index]?.expired_count ?? 0);
 
-      const notifications: string[] = [];
+      const notifications: {
+        id: string;
+        message: string;
+        priority: number;
+      }[] = [];
       if (lowStockCount > 0) {
-        notifications.push('Kam qolgan mahsulotlar mavjud');
+        notifications.push({
+          message: 'Kam qolgan mahsulotlar mavjud',
+          priority: 1,
+          id: 'low-stock',
+        });
       }
       if (expiringSoonCount > 0) {
-        notifications.push(
-          'Eskirish muddati yaqinlashib qolgan mahsulotlar mavjud',
-        );
+        notifications.push({
+          message: 'Eskirish muddati yaqinlashib qolgan mahsulotlar mavjud',
+          priority: 2,
+          id: 'expiring-soon',
+        });
       }
       if (expiredCount > 0) {
-        notifications.push('Eskirish muddati tugagan mahsulotlar mavjud');
+        notifications.push({
+          message: 'Eskirish muddati tugagan mahsulotlar mavjud',
+          priority: 3,
+          id: 'expired',
+        });
       }
 
       return Object.assign(category, { notifications });
