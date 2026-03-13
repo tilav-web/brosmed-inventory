@@ -4,12 +4,14 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
+import { ProductBatch } from './product-batch.entity';
 
 // Product: ombor va savdo jarayonlari uchun asosiy mahsulot yozuvi.
 @Entity({ name: 'products' })
@@ -22,12 +24,8 @@ export class Product {
   @Column({ type: 'varchar' })
   name: string;
 
-  // Mahsulot narxi.
-  @Column({ type: 'decimal', precision: 15, scale: 2 })
-  price: number;
-
-  // Ombordagi miqdor.
-  @Column({ type: 'int', default: 0 })
+  // Ombordagi umumiy miqdor (partiyalar yig`indisi).
+  @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   quantity: number;
 
   // O`lchov birligi nomi (snapshot).
@@ -37,18 +35,6 @@ export class Product {
   // Minimal qoldiq (qayta buyurtma nuqtasi).
   @Column({ type: 'int', default: 10 })
   min_limit: number;
-
-  // Yaroqlilik muddati (ixtiyoriy).
-  @Column({ type: 'date', nullable: true })
-  expiration_date: Date | null;
-
-  // Ogohlantirish sanasi (ixtiyoriy): shu sanadan boshlab UI qizil ko'rsatishi mumkin.
-  @Column({ type: 'date', nullable: true })
-  expiration_alert_date: Date | null;
-
-  // Partiya raqami (ixtiyoriy).
-  @Column({ type: 'varchar', nullable: true })
-  batch_number: string | null;
 
   // Saqlash sharoitlari (ixtiyoriy).
   @Column({ type: 'text', nullable: true })
@@ -88,6 +74,10 @@ export class Product {
   // Warehouse ID.
   @Column({ type: 'uuid' })
   warehouse_id: string;
+
+  // Mahsulot partiyalari (omborga kirimlar).
+  @OneToMany(() => ProductBatch, (batch) => batch.product)
+  batches: ProductBatch[];
 
   // Yaratilgan vaqt.
   @CreateDateColumn({ type: 'timestamp' })

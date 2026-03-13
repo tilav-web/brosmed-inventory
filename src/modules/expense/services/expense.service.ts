@@ -6,6 +6,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import { Product } from 'src/modules/product/entities/product.entity';
+import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { User } from 'src/modules/user/entities/user.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
@@ -22,6 +23,8 @@ export class ExpenseService {
     private readonly expenseRepository: Repository<Expense>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(ProductBatch)
+    private readonly productBatchRepository: Repository<ProductBatch>,
   ) {}
 
   async findAll(query: ListExpensesQueryDto) {
@@ -98,11 +101,27 @@ export class ExpenseService {
     return `EXP-${year}-${next}`;
   }
 
+  private async findAvailableBatches(
+    repo: Repository<ProductBatch>,
+    productId: string,
+    warehouseId: string,
+  ) {
+    return repo
+      .createQueryBuilder('batch')
+      .where('batch.product_id = :productId', { productId })
+      .andWhere('batch.warehouse_id = :warehouseId', { warehouseId })
+      .andWhere('batch.quantity > 0')
+      .orderBy('batch.expiration_date', 'ASC', 'NULLS LAST')
+      .addOrderBy('batch.received_at', 'ASC')
+      .getMany();
+  }
+
   async createAndGetReceipt(dto: CreateExpenseDto, managerId?: string) {
     return this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
       const expenseItemRepo = manager.getRepository(ExpenseItem);
       const productRepo = manager.getRepository(Product);
+      const productBatchRepo = manager.getRepository(ProductBatch);
       const warehouseRepo = manager.getRepository(Warehouse);
       const userRepo = manager.getRepository(User);
 
@@ -163,7 +182,15 @@ export class ExpenseService {
         }
 
         const requested = Number(item.quantity);
-        const available = Number(product.quantity);
+        const batches = await this.findAvailableBatches(
+          productBatchRepo,
+          product.id,
+          warehouse.id,
+        );
+        const available = batches.reduce(
+          (sum, batch) => sum + Number(batch.quantity),
+          0,
+        );
 
         if (!Number.isFinite(requested) || requested <= 0) {
           throw new BadRequestException('Quantity musbat son bo`lishi kerak');
@@ -175,8 +202,18 @@ export class ExpenseService {
           );
         }
 
-        const price = Number(product.price);
-        const lineTotal = price * requested;
+        let remaining = requested;
+        let lineTotal = 0;
+
+        for (const batch of batches) {
+          if (remaining <= 0) break;
+          const batchQty = Number(batch.quantity);
+          const take = Math.min(remaining, batchQty);
+          lineTotal += take * Number(batch.price_at_purchase);
+          remaining -= take;
+        }
+
+        const price = Number((lineTotal / requested).toFixed(2));
         totalPrice += lineTotal;
 
         const expenseItem = expenseItemRepo.create();
@@ -194,7 +231,7 @@ export class ExpenseService {
           quantity: requested,
           unit: product.unit,
           price,
-          line_total: lineTotal,
+          line_total: Number(lineTotal.toFixed(2)),
         });
       }
 
@@ -237,6 +274,7 @@ export class ExpenseService {
     return this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
       const productRepo = manager.getRepository(Product);
+      const productBatchRepo = manager.getRepository(ProductBatch);
 
       const expense = await expenseRepo.findOne({
         where: { id },
@@ -274,7 +312,15 @@ export class ExpenseService {
           );
         }
 
-        const available = Number(product.quantity);
+        const batches = await this.findAvailableBatches(
+          productBatchRepo,
+          product.id,
+          item.warehouse.id,
+        );
+        const available = batches.reduce(
+          (sum, batch) => sum + Number(batch.quantity),
+          0,
+        );
         const requested = Number(item.quantity);
 
         if (requested > available) {
@@ -283,7 +329,18 @@ export class ExpenseService {
           );
         }
 
-        product.quantity = available - requested;
+        let remaining = requested;
+
+        for (const batch of batches) {
+          if (remaining <= 0) break;
+          const batchQty = Number(batch.quantity);
+          const take = Math.min(remaining, batchQty);
+          batch.quantity = Number((batchQty - take).toFixed(2));
+          remaining -= take;
+          await productBatchRepo.save(batch);
+        }
+
+        product.quantity = Number((available - requested).toFixed(2));
         await productRepo.save(product);
       }
 
@@ -332,15 +389,16 @@ export class ExpenseService {
     const in30Days = new Date(today);
     in30Days.setDate(in30Days.getDate() + 30);
 
-    const expiringSoonCount = await this.productRepository
-      .createQueryBuilder('product')
-      .where('product.expiration_date IS NOT NULL')
-      .andWhere('product.expiration_date >= :today', {
+    const expiringSoonCount = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .where('batch.expiration_date IS NOT NULL')
+      .andWhere('batch.expiration_date >= :today', {
         today: today.toISOString().slice(0, 10),
       })
-      .andWhere('product.expiration_date <= :in30Days', {
+      .andWhere('batch.expiration_date <= :in30Days', {
         in30Days: in30Days.toISOString().slice(0, 10),
       })
+      .andWhere('batch.quantity > 0')
       .getCount();
 
     return {

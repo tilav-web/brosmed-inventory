@@ -64,8 +64,10 @@ export class CategoryService {
 
     if (hasProductFilters) {
       qb.innerJoinAndSelect('category.products', 'product');
+      qb.innerJoinAndSelect('product.batches', 'batch');
     } else {
       qb.leftJoinAndSelect('category.products', 'product');
+      qb.leftJoinAndSelect('product.batches', 'batch');
     }
 
     qb.leftJoinAndSelect('product.supplier', 'product_supplier');
@@ -75,7 +77,7 @@ export class CategoryService {
       qb.andWhere(
         `(category.name ILIKE :search
           OR product.name ILIKE :search
-          OR product.batch_number ILIKE :search
+          OR batch.batch_number ILIKE :search
           OR product.storage_conditions ILIKE :search
           OR product.unit ILIKE :search
           OR product_supplier.company_name ILIKE :search
@@ -89,13 +91,13 @@ export class CategoryService {
     }
 
     if (batchNumber) {
-      qb.andWhere('product.batch_number ILIKE :batchNumber', {
+      qb.andWhere('batch.batch_number ILIKE :batchNumber', {
         batchNumber: `%${batchNumber}%`,
       });
     }
 
     if (expirationDate) {
-      qb.andWhere('product.expiration_date = :expirationDate', {
+      qb.andWhere('batch.expiration_date = :expirationDate', {
         expirationDate,
       });
     }

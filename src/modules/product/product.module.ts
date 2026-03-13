@@ -7,12 +7,20 @@ import { Unit } from '../unit/entities/unit.entity';
 import { Warehouse } from '../warehouse/entities/warehouse.entity';
 import { ProductController } from './controllers/product.controller';
 import { Product } from './entities/product.entity';
+import { ProductBatch } from './entities/product-batch.entity';
 import { ProductService } from './services/product.service';
 
 @Module({
   imports: [
     ImageModule,
-    TypeOrmModule.forFeature([Product, Category, Warehouse, Unit, Supplier]),
+    TypeOrmModule.forFeature([
+      Product,
+      ProductBatch,
+      Category,
+      Warehouse,
+      Unit,
+      Supplier,
+    ]),
   ],
   controllers: [ProductController],
   providers: [ProductService],

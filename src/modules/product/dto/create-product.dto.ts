@@ -1,8 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
-  IsDateString,
   IsInt,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
@@ -18,38 +16,11 @@ export class CreateProductDto {
   @MaxLength(255)
   name: string;
 
-  @ApiProperty({ example: 15000.5 })
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  price: number;
-
-  @ApiPropertyOptional({ example: 0, default: 0 })
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  quantity?: number;
-
   @ApiPropertyOptional({ example: 10, default: 10 })
   @IsOptional()
   @IsInt()
   @Min(0)
   min_limit?: number;
-
-  @ApiPropertyOptional({ example: '2027-12-31' })
-  @IsOptional()
-  @IsDateString()
-  expiration_date?: string;
-
-  @ApiPropertyOptional({ example: '2026-02-22' })
-  @IsOptional()
-  @IsDateString()
-  expiration_alert_date?: string;
-
-  @ApiPropertyOptional({ example: 'BATCH-2026-001' })
-  @IsOptional()
-  @IsString()
-  @MaxLength(255)
-  batch_number?: string;
 
   @ApiPropertyOptional({ example: 'Salqin va quruq joyda saqlash' })
   @IsOptional()
