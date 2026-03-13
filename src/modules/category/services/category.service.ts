@@ -17,6 +17,8 @@ export class CategoryService {
   constructor(
     @InjectRepository(Category)
     private readonly categoryRepository: Repository<Category>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
   ) {}
 
   async findAll(query: ListCategoriesQueryDto) {
@@ -33,6 +35,8 @@ export class CategoryService {
     const qb = this.categoryRepository
       .createQueryBuilder('category')
       .loadRelationCountAndMap('category.product_count', 'category.products');
+
+    qb.leftJoin('category.products', 'product');
 
     qb.addSelect(
       (subQb) =>
@@ -72,12 +76,15 @@ export class CategoryService {
     );
 
     if (search) {
-      qb.where('category.name ILIKE :search', { search: `%${search}%` });
+      qb.where('(category.name ILIKE :search OR product.name ILIKE :search)', {
+        search: `%${search}%`,
+      });
     }
 
     qb.orderBy('category.createdAt', 'DESC')
       .skip((page - 1) * limit)
       .take(limit)
+      .distinct(true)
       .setParameters({
         today: today.toISOString().slice(0, 10),
         in30Days: in30Days.toISOString().slice(0, 10),
@@ -89,6 +96,40 @@ export class CategoryService {
       expired_count: string | number | null;
     }>();
     const total = await qb.clone().getCount();
+
+    const categoryIds = entities.map((category) => category.id);
+    const productsByCategory = new Map<string, Product[]>();
+
+    if (categoryIds.length > 0) {
+      const productPage = 1;
+      const productLimit = 10;
+      const productQb = this.productRepository
+        .createQueryBuilder('product')
+        .leftJoinAndSelect('product.category', 'category')
+        .leftJoinAndSelect('product.supplier', 'supplier')
+        .leftJoinAndSelect('product.warehouse', 'warehouse')
+        .leftJoinAndSelect('product.batches', 'batches')
+        .where('product.category_id IN (:...categoryIds)', { categoryIds })
+        .orderBy('product.createdAt', 'DESC')
+        .skip((productPage - 1) * productLimit)
+        .take(productLimit);
+
+      if (search) {
+        productQb.andWhere('product.name ILIKE :search', {
+          search: `%${search}%`,
+        });
+      }
+
+      const products = await productQb.getMany();
+      for (const product of products) {
+        if (!product.category_id) {
+          continue;
+        }
+        const list = productsByCategory.get(product.category_id) ?? [];
+        list.push(product);
+        productsByCategory.set(product.category_id, list);
+      }
+    }
 
     const categories = entities.map((category, index) => {
       const lowStockCount = Number(raw[index]?.low_stock_count ?? 0);
@@ -122,7 +163,8 @@ export class CategoryService {
         });
       }
 
-      return Object.assign(category, { notifications });
+      const products = productsByCategory.get(category.id) ?? [];
+      return Object.assign(category, { notifications, products });
     });
 
     return {

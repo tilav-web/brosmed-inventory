@@ -6,9 +6,11 @@ import { Supplier } from '../supplier/entities/supplier.entity';
 import { Unit } from '../unit/entities/unit.entity';
 import { Warehouse } from '../warehouse/entities/warehouse.entity';
 import { ProductController } from './controllers/product.controller';
+import { ProductBatchController } from './controllers/product-batch.controller';
 import { Product } from './entities/product.entity';
 import { ProductBatch } from './entities/product-batch.entity';
 import { ProductService } from './services/product.service';
+import { ProductBatchService } from './services/product-batch.service';
 
 @Module({
   imports: [
@@ -22,8 +24,8 @@ import { ProductService } from './services/product.service';
       Supplier,
     ]),
   ],
-  controllers: [ProductController],
-  providers: [ProductService],
+  controllers: [ProductController, ProductBatchController],
+  providers: [ProductService, ProductBatchService],
   exports: [ProductService],
 })
 export class ProductModule {}
