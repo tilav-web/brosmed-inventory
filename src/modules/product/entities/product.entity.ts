@@ -87,7 +87,7 @@ export class Product {
     enum: ProductStatus,
     enumName: 'product_status_enum',
     array: true,
-    default: () => 'ARRAY[]::product_status_enum[]',
+    default: () => "'{}'::product_status_enum[]",
   })
   statuses: ProductStatus[];
 

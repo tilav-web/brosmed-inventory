@@ -7,6 +7,7 @@ import { Category } from 'src/modules/category/entities/category.entity';
 import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
 import { ExpenseStatus } from 'src/modules/expense/enums/expense-status.enum';
+import { ExpenseType } from 'src/modules/expense/enums/expense-type.enum';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { OrderItem } from 'src/modules/purchase-order/entities/order-item.entity';
@@ -431,6 +432,11 @@ export class SeedService implements OnApplicationBootstrap {
     products: Product[];
     runId: string;
   }): Promise<void> {
+    const existingCount = await this.purchaseOrderRepository.count();
+    if (existingCount > 0) {
+      return;
+    }
+
     const orders: PurchaseOrder[] = [];
     const today = new Date();
 
@@ -507,6 +513,11 @@ export class SeedService implements OnApplicationBootstrap {
     warehouseManagers: User[];
     runId: string;
   }): Promise<void> {
+    const existingCount = await this.expenseRepository.count();
+    if (existingCount > 0) {
+      return;
+    }
+
     const expenses: Expense[] = [];
 
     for (let i = 0; i < 10; i += 1) {
@@ -535,6 +546,7 @@ export class SeedService implements OnApplicationBootstrap {
           ExpenseStatus.PENDING_PHOTO,
           ExpenseStatus.COMPLETED,
         ]),
+        type: ExpenseType.USAGE,
         check_image_url: null,
         total_price: Number(total.toFixed(2)),
         manager:
@@ -588,7 +600,9 @@ export class SeedService implements OnApplicationBootstrap {
   private buildRunId(): string {
     const now = new Date();
     const pad = (value: number) => String(value).padStart(2, '0');
-    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+    const ms = String(now.getMilliseconds()).padStart(3, '0');
+    const rand = String(Math.floor(Math.random() * 100)).padStart(2, '0');
+    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}${ms}${rand}`;
   }
 
   private daysBetween(start: Date, end: Date): number {
