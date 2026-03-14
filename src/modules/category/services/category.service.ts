@@ -23,6 +23,7 @@ export class CategoryService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
+    const offset = (page - 1) * limit;
 
     const today = new Date().toISOString().slice(0, 10);
     const in30Days = new Date(Date.now() + 30 * 86400_000)
@@ -31,7 +32,16 @@ export class CategoryService {
 
     const qb = this.categoryRepository
       .createQueryBuilder('category')
-      // ✅ COUNT(*) o'rniga FILTER ishlatish — bitta aggregation, 3 ta emas
+
+      // 1️⃣ Mahsulotlar soni + kam qolganlar — bitta subquery (product jadvalidan)
+      .addSelect(
+        (sub) =>
+          sub
+            .select('COUNT(*)')
+            .from(Product, 'p')
+            .where('p.category_id = category.id'),
+        'product_count',
+      )
       .addSelect(
         (sub) =>
           sub
@@ -40,93 +50,114 @@ export class CategoryService {
             .where('p.category_id = category.id'),
         'low_stock_count',
       )
+
+      // 2️⃣ Muddati yaqin partiyalar — faqat haqiqatan muddati o'tmagan (expiration_date >= today)
       .addSelect(
         (sub) =>
           sub
             .select(
-              `SUM(CASE WHEN b.expiration_date BETWEEN :today AND :in30Days AND b.quantity > 0 THEN 1 ELSE 0 END)`,
+              `SUM(CASE
+              WHEN b.quantity > 0
+               AND b.expiration_date >= :today
+               AND (
+                 b.expiration_date     BETWEEN :today AND :in30Days
+                 OR
+                 b.expiration_alert_date BETWEEN :today AND :in30Days
+               )
+              THEN 1 ELSE 0
+            END)`,
             )
             .from(ProductBatch, 'b')
             .innerJoin(Product, 'p', 'p.id = b.product_id')
             .where('p.category_id = category.id'),
         'expiring_soon_count',
       )
+
+      // 3️⃣ Muddati o'tgan partiyalar — faqat expiration_date bo'yicha (asosiy mezon)
       .addSelect(
         (sub) =>
           sub
             .select(
-              `SUM(CASE WHEN b.expiration_date < :today AND b.quantity > 0 THEN 1 ELSE 0 END)`,
+              `SUM(CASE
+              WHEN b.quantity > 0
+               AND b.expiration_date < :today
+              THEN 1 ELSE 0
+            END)`,
             )
             .from(ProductBatch, 'b')
             .innerJoin(Product, 'p', 'p.id = b.product_id')
             .where('p.category_id = category.id'),
         'expired_count',
       )
+
       .setParameters({ today, in30Days });
 
+    // 4️⃣ Search — faqat category nomi bo'yicha (products JOIN kerak emas)
     if (search) {
-      // ✅ EXISTS ishlatish — leftJoin + DISTINCT o'rniga (ancha tez)
-      qb.where(
-        `(category.name ILIKE :search OR EXISTS (
-        SELECT 1 FROM products p
-        WHERE p.category_id = category.id
-        AND p.name ILIKE :search
-      ))`,
-        { search: `%${search}%` },
-      );
+      qb.where('category.name ILIKE :search', { search: `%${search}%` });
     }
 
-    // ✅ total va data ni bitta query bilan olish (window function)
-    qb.addSelect('COUNT(*) OVER()', 'total_count')
-      .orderBy('category.createdAt', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit);
+    // 5️⃣ total — alohida clone() bilan (COUNT(*) OVER() pagination bilan ishlamaydi)
+    const total = await qb.clone().getCount();
+
+    // 6️⃣ Asosiy query
+    qb.orderBy('category.createdAt', 'DESC').skip(offset).take(limit);
 
     const { entities, raw } = await qb.getRawAndEntities<{
       category_id: string;
+      product_count: string;
       low_stock_count: string;
       expiring_soon_count: string;
       expired_count: string;
-      total_count: string;
     }>();
 
-    // ✅ total_count birinchi raw'dan olinadi — alohida query yo'q
-    const total = Number(raw[0]?.total_count ?? 0);
-
+    // 7️⃣ raw'ni id bo'yicha map — index xatosidan himoya
     const rawMap = new Map(
-      raw.filter((r) => r.category_id).map((r) => [r.category_id, r]),
+      raw.filter((r) => r.category_id != null).map((r) => [r.category_id, r]),
     );
 
     const categories = entities.map((category) => {
       const r = rawMap.get(category.id);
+
       const lowStockCount = Number(r?.low_stock_count ?? 0);
+      const productCount = Number(r?.product_count ?? 0);
       const expiringSoonCount = Number(r?.expiring_soon_count ?? 0);
       const expiredCount = Number(r?.expired_count ?? 0);
 
-      const notifications = [
-        lowStockCount > 0 && {
-          id: 'low-stock',
-          message: 'Kam qolgan mahsulotlar mavjud',
-          priority: 1,
-        },
-        expiringSoonCount > 0 && {
-          id: 'expiring-soon',
-          message: 'Eskirish muddati yaqinlashib qolgan mahsulotlar mavjud',
-          priority: 2,
-        },
-        expiredCount > 0 && {
-          id: 'expired',
-          message: 'Eskirish muddati tugagan mahsulotlar mavjud',
-          priority: 3,
-        },
-      ].filter(Boolean);
+      const notifications = (
+        [
+          lowStockCount > 0 && {
+            id: 'low-stock',
+            message: 'Kam qolgan mahsulotlar mavjud',
+            priority: 1,
+          },
+          expiringSoonCount > 0 && {
+            id: 'expiring-soon',
+            message: 'Eskirish muddati yaqinlashib qolgan mahsulotlar mavjud',
+            priority: 2,
+          },
+          expiredCount > 0 && {
+            id: 'expired',
+            message: 'Eskirish muddati tugagan mahsulotlar mavjud',
+            priority: 3,
+          },
+        ] as const
+      ).filter(Boolean);
 
-      return Object.assign(category, { notifications });
+      return Object.assign(category, {
+        notifications,
+        product_count: productCount,
+      });
     });
 
     return {
       data: categories,
-      meta: { page, limit, total, total_pages: Math.ceil(total / limit) || 1 },
+      meta: {
+        page,
+        limit,
+        total,
+        total_pages: Math.ceil(total / limit) || 1,
+      },
     };
   }
 
