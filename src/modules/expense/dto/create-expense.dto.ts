@@ -3,6 +3,7 @@ import { Type } from 'class-transformer';
 import {
   ArrayMinSize,
   IsArray,
+  IsEnum,
   IsInt,
   IsOptional,
   IsString,
@@ -12,6 +13,7 @@ import {
   MinLength,
   ValidateNested,
 } from 'class-validator';
+import { ExpenseType } from '../enums/expense-type.enum';
 
 export class CreateExpenseItemDto {
   @ApiProperty({ example: 'product-uuid' })
@@ -40,6 +42,11 @@ export class CreateExpenseDto {
   @IsString()
   @MaxLength(1000)
   purpose?: string;
+
+  @ApiPropertyOptional({ enum: ExpenseType, example: ExpenseType.USAGE })
+  @IsOptional()
+  @IsEnum(ExpenseType)
+  type?: ExpenseType;
 
   @ApiProperty({ type: [CreateExpenseItemDto] })
   @IsArray()

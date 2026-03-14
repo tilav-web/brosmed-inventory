@@ -1,0 +1,190 @@
+import { Injectable, Logger } from '@nestjs/common';
+import { Cron, CronExpression } from '@nestjs/schedule';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
+import { ExpenseService } from 'src/modules/expense/services/expense.service';
+import { ExpenseType } from 'src/modules/expense/enums/expense-type.enum';
+import { Product } from '../entities/product.entity';
+import { ProductBatch } from '../entities/product-batch.entity';
+import { ProductStatus } from '../enums/product-status.enum';
+
+@Injectable()
+export class ProductStatusSchedulerService {
+  private readonly logger = new Logger(ProductStatusSchedulerService.name);
+
+  constructor(
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
+    @InjectRepository(ProductBatch)
+    private readonly productBatchRepository: Repository<ProductBatch>,
+    private readonly expenseService: ExpenseService,
+  ) {}
+
+  @Cron(CronExpression.EVERY_DAY_AT_1AM)
+  async handleDailyRefresh() {
+    const today = this.getTodayDateString();
+
+    try {
+      await this.writeOffExpiredBatches(today);
+    } catch (error) {
+      this.logger.error('Expired write-off failed', error);
+    }
+
+    try {
+      await this.refreshProductStatuses(today);
+    } catch (error) {
+      this.logger.error('Product status refresh failed', error);
+    }
+  }
+
+  private getTodayDateString() {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return today.toISOString().slice(0, 10);
+  }
+
+  private async writeOffExpiredBatches(today: string) {
+    const expiredGroups = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .select('batch.product_id', 'product_id')
+      .addSelect('batch.warehouse_id', 'warehouse_id')
+      .addSelect('SUM(batch.quantity)', 'quantity')
+      .where('batch.quantity > 0')
+      .andWhere('batch.expiration_date IS NOT NULL')
+      .andWhere('batch.expiration_date < :today', { today })
+      .groupBy('batch.product_id')
+      .addGroupBy('batch.warehouse_id')
+      .getRawMany<{
+        product_id: string;
+        warehouse_id: string;
+        quantity: string;
+      }>();
+
+    const items = expiredGroups
+      .map((group) => ({
+        product_id: group.product_id,
+        warehouse_id: group.warehouse_id,
+        quantity: Number(group.quantity),
+      }))
+      .filter((item) => Number.isFinite(item.quantity) && item.quantity > 0);
+
+    if (items.length === 0) return;
+
+    const { expense } = await this.expenseService.createAndGetReceipt({
+      staff_name: 'SYSTEM',
+      purpose: 'Auto: expired batch write-off',
+      type: ExpenseType.EXPIRED,
+      items,
+    });
+
+    await this.expenseService.issueExpense(expense.id);
+    await this.expenseService.attachCheckImageAndComplete(
+      expense.id,
+      'SYSTEM_AUTO',
+    );
+  }
+
+  private async refreshProductStatuses(today: string) {
+    const expiredIds = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .select('DISTINCT batch.product_id', 'id')
+      .where('batch.quantity > 0')
+      .andWhere('batch.expiration_date IS NOT NULL')
+      .andWhere('batch.expiration_date < :today', { today })
+      .getRawMany<{ id: string }>();
+
+    const expiringSoonIds = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .select('DISTINCT batch.product_id', 'id')
+      .where('batch.quantity > 0')
+      .andWhere('batch.expiration_alert_date IS NOT NULL')
+      .andWhere('batch.expiration_alert_date <= :today', { today })
+      .andWhere(
+        '(batch.expiration_date IS NULL OR batch.expiration_date >= :today)',
+        { today },
+      )
+      .getRawMany<{ id: string }>();
+
+    const lowStockIds = await this.productRepository
+      .createQueryBuilder('product')
+      .select('product.id', 'id')
+      .where('product.quantity <= product.min_limit')
+      .getRawMany<{ id: string }>();
+
+    const inStockIds = await this.productRepository
+      .createQueryBuilder('product')
+      .select('product.id', 'id')
+      .where('product.quantity > 0')
+      .getRawMany<{ id: string }>();
+
+    const flaggedIds = await this.productRepository
+      .createQueryBuilder('product')
+      .select('product.id', 'id')
+      .where('COALESCE(array_length(product.statuses, 1), 0) > 0')
+      .getRawMany<{ id: string }>();
+
+    const expiredSet = new Set(expiredIds.map((row) => row.id));
+    const expiringSet = new Set(expiringSoonIds.map((row) => row.id));
+    const lowStockSet = new Set(lowStockIds.map((row) => row.id));
+    const inStockSet = new Set(inStockIds.map((row) => row.id));
+
+    const targetIds = new Set<string>();
+    for (const row of [
+      ...expiredIds,
+      ...expiringSoonIds,
+      ...lowStockIds,
+      ...inStockIds,
+      ...flaggedIds,
+    ]) {
+      targetIds.add(row.id);
+    }
+
+    if (targetIds.size === 0) return;
+
+    const ids = Array.from(targetIds);
+    const chunkSize = 500;
+    const productsToSave: Product[] = [];
+
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const products = await this.productRepository.findBy({
+        id: In(chunk),
+      });
+
+      for (const product of products) {
+        const nextStatuses: ProductStatus[] = [];
+
+        if (expiredSet.has(product.id)) {
+          nextStatuses.push(ProductStatus.EXPIRED);
+        }
+        if (expiringSet.has(product.id)) {
+          nextStatuses.push(ProductStatus.EXPIRING_SOON);
+        }
+        if (lowStockSet.has(product.id)) {
+          nextStatuses.push(ProductStatus.LOW_STOCK);
+        }
+        if (inStockSet.has(product.id)) {
+          nextStatuses.push(ProductStatus.IN_STOCK);
+        }
+
+        if (!this.sameStatusList(product.statuses, nextStatuses)) {
+          product.statuses = nextStatuses;
+          productsToSave.push(product);
+        }
+      }
+    }
+
+    if (productsToSave.length > 0) {
+      await this.productRepository.save(productsToSave);
+    }
+  }
+
+  private sameStatusList(
+    left: ProductStatus[] | null | undefined,
+    right: ProductStatus[] | null | undefined,
+  ) {
+    const normalize = (list?: ProductStatus[]) =>
+      (list ?? []).slice().sort().join('|');
+    return normalize(left ?? []) === normalize(right ?? []);
+  }
+}

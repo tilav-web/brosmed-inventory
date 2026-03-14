@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { User } from 'src/modules/user/entities/user.entity';
 import { ExpenseStatus } from '../enums/expense-status.enum';
+import { ExpenseType } from '../enums/expense-type.enum';
 import { ExpenseItem } from './expense-item.entity';
 
 // Expense: chiqimlar bo`yicha hujjat/smeta. Bir nechta itemlardan iborat.
@@ -30,6 +31,14 @@ export class Expense {
     default: ExpenseStatus.PENDING_ISSUE,
   })
   status: ExpenseStatus;
+
+  // Chiqim turi (ishlatilgan yoki muddati o`tgan).
+  @Column({
+    type: 'enum',
+    enum: ExpenseType,
+    default: ExpenseType.USAGE,
+  })
+  type: ExpenseType;
 
   // Chek/rasm URL (ixtiyoriy).
   @Column({ type: 'varchar', nullable: true })

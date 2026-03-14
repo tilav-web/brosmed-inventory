@@ -12,6 +12,7 @@ import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
 import { ListExpensesQueryDto } from '../dto/list-expenses-query.dto';
 import { ExpenseStatus } from '../enums/expense-status.enum';
+import { ExpenseType } from '../enums/expense-type.enum';
 import { ExpenseItem } from '../entities/expense-item.entity';
 import { Expense } from '../entities/expense.entity';
 
@@ -50,6 +51,10 @@ export class ExpenseService {
 
     if (query.status) {
       qb.andWhere('expense.status = :status', { status: query.status });
+    }
+
+    if (query.type) {
+      qb.andWhere('expense.type = :type', { type: query.type });
     }
 
     qb.orderBy('expense.createdAt', 'DESC')
@@ -105,12 +110,29 @@ export class ExpenseService {
     repo: Repository<ProductBatch>,
     productId: string,
     warehouseId: string,
+    type: ExpenseType,
   ) {
-    return repo
+    const qb = repo
       .createQueryBuilder('batch')
       .where('batch.product_id = :productId', { productId })
       .andWhere('batch.warehouse_id = :warehouseId', { warehouseId })
-      .andWhere('batch.quantity > 0')
+      .andWhere('batch.quantity > 0');
+
+    const today = new Date().toISOString().slice(0, 10);
+
+    if (type === ExpenseType.EXPIRED) {
+      qb.andWhere('batch.expiration_date IS NOT NULL').andWhere(
+        'batch.expiration_date < :today',
+        { today },
+      );
+    } else {
+      qb.andWhere(
+        '(batch.expiration_date IS NULL OR batch.expiration_date >= :today)',
+        { today },
+      );
+    }
+
+    return qb
       .orderBy('batch.expiration_date', 'ASC', 'NULLS LAST')
       .addOrderBy('batch.received_at', 'ASC')
       .getMany();
@@ -130,11 +152,13 @@ export class ExpenseService {
         : null;
 
       const expenseNumber = await this.generateExpenseNumber(manager);
+      const expenseType = dto.type ?? ExpenseType.USAGE;
 
       const createdExpense = await expenseRepo.save(
         expenseRepo.create({
           expense_number: expenseNumber,
           status: ExpenseStatus.PENDING_ISSUE,
+          type: expenseType,
           check_image_url: null,
           total_price: 0,
           staff_name: dto.staff_name,
@@ -186,6 +210,7 @@ export class ExpenseService {
           productBatchRepo,
           product.id,
           warehouse.id,
+          expenseType,
         );
         const available = batches.reduce(
           (sum, batch) => sum + Number(batch.quantity),
@@ -316,6 +341,7 @@ export class ExpenseService {
           productBatchRepo,
           product.id,
           item.warehouse.id,
+          expense.type,
         );
         const available = batches.reduce(
           (sum, batch) => sum + Number(batch.quantity),
@@ -336,11 +362,20 @@ export class ExpenseService {
           const batchQty = Number(batch.quantity);
           const take = Math.min(remaining, batchQty);
           batch.quantity = Number((batchQty - take).toFixed(2));
+          if (batch.quantity <= 0 && !batch.depleted_at) {
+            batch.depleted_at = new Date();
+          }
           remaining -= take;
           await productBatchRepo.save(batch);
         }
 
-        product.quantity = Number((available - requested).toFixed(2));
+        const totalRaw = await productBatchRepo
+          .createQueryBuilder('batch')
+          .select('COALESCE(SUM(batch.quantity), 0)', 'total')
+          .where('batch.product_id = :productId', { productId: product.id })
+          .getRawOne<{ total: string }>();
+
+        product.quantity = Number(Number(totalRaw?.total ?? 0).toFixed(2));
         await productRepo.save(product);
       }
 

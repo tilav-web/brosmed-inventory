@@ -12,6 +12,7 @@ import { Category } from 'src/modules/category/entities/category.entity';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { ProductBatch } from './product-batch.entity';
+import { ProductStatus } from '../enums/product-status.enum';
 
 // Product: ombor va savdo jarayonlari uchun asosiy mahsulot yozuvi.
 @Entity({ name: 'products' })
@@ -79,6 +80,16 @@ export class Product {
   // Mahsulot partiyalari (omborga kirimlar).
   @OneToMany(() => ProductBatch, (batch) => batch.product)
   batches: ProductBatch[];
+
+  // Mahsulot holatlari (tarkibiy hisob-kitoblar uchun).
+  @Column({
+    type: 'enum',
+    enum: ProductStatus,
+    enumName: 'product_status_enum',
+    array: true,
+    default: () => 'ARRAY[]::product_status_enum[]',
+  })
+  statuses: ProductStatus[];
 
   // Yaratilgan vaqt.
   @CreateDateColumn({ type: 'timestamp' })

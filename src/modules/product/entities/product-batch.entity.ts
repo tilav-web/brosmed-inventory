@@ -21,6 +21,10 @@ export class ProductBatch {
   @Column({ type: 'decimal', precision: 10, scale: 2, default: 0 })
   quantity: number;
 
+  // Partiya tugagan vaqt (ixtiyoriy).
+  @Column({ type: 'timestamp', nullable: true })
+  depleted_at: Date | null;
+
   // Sotib olingan paytdagi narx (snapshot).
   @Column({ type: 'decimal', precision: 12, scale: 2 })
   price_at_purchase: number;

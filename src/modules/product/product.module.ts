@@ -5,16 +5,19 @@ import { ImageModule } from '../image/image.module';
 import { Supplier } from '../supplier/entities/supplier.entity';
 import { Unit } from '../unit/entities/unit.entity';
 import { Warehouse } from '../warehouse/entities/warehouse.entity';
+import { ExpenseModule } from '../expense/expense.module';
 import { ProductController } from './controllers/product.controller';
 import { ProductBatchController } from './controllers/product-batch.controller';
 import { Product } from './entities/product.entity';
 import { ProductBatch } from './entities/product-batch.entity';
 import { ProductService } from './services/product.service';
 import { ProductBatchService } from './services/product-batch.service';
+import { ProductStatusSchedulerService } from './services/product-status-scheduler.service';
 
 @Module({
   imports: [
     ImageModule,
+    ExpenseModule,
     TypeOrmModule.forFeature([
       Product,
       ProductBatch,
@@ -25,7 +28,11 @@ import { ProductBatchService } from './services/product-batch.service';
     ]),
   ],
   controllers: [ProductController, ProductBatchController],
-  providers: [ProductService, ProductBatchService],
+  providers: [
+    ProductService,
+    ProductBatchService,
+    ProductStatusSchedulerService,
+  ],
   exports: [ProductService],
 })
 export class ProductModule {}

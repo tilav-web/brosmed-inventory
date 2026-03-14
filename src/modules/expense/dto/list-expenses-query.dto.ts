@@ -9,6 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { ExpenseStatus } from '../enums/expense-status.enum';
+import { ExpenseType } from '../enums/expense-type.enum';
 
 export class ListExpensesQueryDto {
   @ApiPropertyOptional({ example: 'ali' })
@@ -38,4 +39,12 @@ export class ListExpensesQueryDto {
   @IsOptional()
   @IsEnum(ExpenseStatus)
   status?: ExpenseStatus;
+
+  @ApiPropertyOptional({
+    enum: ExpenseType,
+    example: ExpenseType.USAGE,
+  })
+  @IsOptional()
+  @IsEnum(ExpenseType)
+  type?: ExpenseType;
 }
