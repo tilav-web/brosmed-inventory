@@ -65,9 +65,8 @@ export class CategoryService {
       )
       .setParameters({ today, in30Days });
 
-    qb.leftJoin('category.products', 'product');
-
     if (hasSearch) {
+      qb.leftJoin('category.products', 'product');
       qb.where('(category.name ILIKE :search OR product.name ILIKE :search)', {
         search: `%${search}%`,
       });
