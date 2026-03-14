@@ -87,9 +87,9 @@ export class Product {
     enum: ProductStatus,
     enumName: 'product_status_enum',
     array: true,
-    default: () => "'{}'::product_status_enum[]",
+    nullable: true,
   })
-  statuses: ProductStatus[];
+  statuses: ProductStatus[] | null;
 
   // Yaratilgan vaqt.
   @CreateDateColumn({ type: 'timestamp' })
