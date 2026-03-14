@@ -10,6 +10,7 @@ import { ExpenseStatus } from 'src/modules/expense/enums/expense-status.enum';
 import { ExpenseType } from 'src/modules/expense/enums/expense-type.enum';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
+import { ProductStatus } from 'src/modules/product/enums/product-status.enum';
 import { OrderItem } from 'src/modules/purchase-order/entities/order-item.entity';
 import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
 import { OrderStatus } from 'src/modules/purchase-order/enums/order-status.enum';
@@ -416,6 +417,7 @@ export class SeedService implements OnApplicationBootstrap {
       }
 
       product.quantity = totalQty;
+      product.statuses = totalQty > 0 ? [ProductStatus.IN_STOCK] : null;
     }
 
     if (batches.length > 0) {

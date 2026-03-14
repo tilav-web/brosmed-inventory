@@ -108,7 +108,8 @@ export class ProductStatusSchedulerService {
     const lowStockIds = await this.productRepository
       .createQueryBuilder('product')
       .select('product.id', 'id')
-      .where('product.quantity <= product.min_limit')
+      .where('product.quantity > 0')
+      .andWhere('product.quantity <= product.min_limit')
       .getRawMany<{ id: string }>();
 
     const inStockIds = await this.productRepository
@@ -167,8 +168,10 @@ export class ProductStatusSchedulerService {
           nextStatuses.push(ProductStatus.IN_STOCK);
         }
 
-        if (!this.sameStatusList(product.statuses, nextStatuses)) {
-          product.statuses = nextStatuses;
+        const nextValue = nextStatuses.length > 0 ? nextStatuses : null;
+
+        if (!this.sameStatusList(product.statuses, nextValue)) {
+          product.statuses = nextValue;
           productsToSave.push(product);
         }
       }
@@ -185,6 +188,14 @@ export class ProductStatusSchedulerService {
   ) {
     const normalize = (list?: ProductStatus[]) =>
       (list ?? []).slice().sort().join('|');
+
+    const leftEmpty = !left || left.length === 0;
+    const rightEmpty = !right || right.length === 0;
+
+    if (leftEmpty && rightEmpty) {
+      return left === null && right === null;
+    }
+
     return normalize(left ?? []) === normalize(right ?? []);
   }
 }
