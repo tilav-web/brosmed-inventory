@@ -26,14 +26,11 @@ export class CategoryService {
     const offset = (page - 1) * limit;
 
     const today = new Date().toISOString().slice(0, 10);
-    const in30Days = new Date(Date.now() + 30 * 86400_000)
-      .toISOString()
-      .slice(0, 10);
 
     const qb = this.categoryRepository
       .createQueryBuilder('category')
 
-      // 1️⃣ Mahsulotlar soni + kam qolganlar — bitta subquery (product jadvalidan)
+      // 1️⃣ Umumiy mahsulotlar soni
       .addSelect(
         (sub) =>
           sub
@@ -42,6 +39,8 @@ export class CategoryService {
             .where('p.category_id = category.id'),
         'product_count',
       )
+
+      // 2️⃣ Kam qolgan mahsulotlar (quantity <= min_limit)
       .addSelect(
         (sub) =>
           sub
@@ -51,19 +50,19 @@ export class CategoryService {
         'low_stock_count',
       )
 
-      // 2️⃣ Muddati yaqin partiyalar — faqat haqiqatan muddati o'tmagan (expiration_date >= today)
+      // 3️⃣ Eskirishiga kam qolgan partiyalar
+      //    — ogohlantirish sanasi kelgan (alert_date <= today)
+      //    — lekin hali muddati o'tmagan (expiration_date >= today)
       .addSelect(
         (sub) =>
           sub
             .select(
               `SUM(CASE
               WHEN b.quantity > 0
+               AND b.expiration_date IS NOT NULL
                AND b.expiration_date >= :today
-               AND (
-                 b.expiration_date     BETWEEN :today AND :in30Days
-                 OR
-                 b.expiration_alert_date BETWEEN :today AND :in30Days
-               )
+               AND b.expiration_alert_date IS NOT NULL
+               AND b.expiration_alert_date <= :today
               THEN 1 ELSE 0
             END)`,
             )
@@ -73,13 +72,14 @@ export class CategoryService {
         'expiring_soon_count',
       )
 
-      // 3️⃣ Muddati o'tgan partiyalar — faqat expiration_date bo'yicha (asosiy mezon)
+      // 4️⃣ Muddati o'tgan partiyalar (expiration_date < today)
       .addSelect(
         (sub) =>
           sub
             .select(
               `SUM(CASE
               WHEN b.quantity > 0
+               AND b.expiration_date IS NOT NULL
                AND b.expiration_date < :today
               THEN 1 ELSE 0
             END)`,
@@ -90,17 +90,15 @@ export class CategoryService {
         'expired_count',
       )
 
-      .setParameters({ today, in30Days });
+      .setParameters({ today });
 
-    // 4️⃣ Search — faqat category nomi bo'yicha (products JOIN kerak emas)
     if (search) {
       qb.where('category.name ILIKE :search', { search: `%${search}%` });
     }
 
-    // 5️⃣ total — alohida clone() bilan (COUNT(*) OVER() pagination bilan ishlamaydi)
+    // 5️⃣ Alohida count — COUNT(*) OVER() pagination bilan noto'g'ri ishlaydi
     const total = await qb.clone().getCount();
 
-    // 6️⃣ Asosiy query
     qb.orderBy('category.createdAt', 'DESC').skip(offset).take(limit);
 
     const { entities, raw } = await qb.getRawAndEntities<{
@@ -111,7 +109,6 @@ export class CategoryService {
       expired_count: string;
     }>();
 
-    // 7️⃣ raw'ni id bo'yicha map — index xatosidan himoya
     const rawMap = new Map(
       raw.filter((r) => r.category_id != null).map((r) => [r.category_id, r]),
     );
@@ -119,30 +116,28 @@ export class CategoryService {
     const categories = entities.map((category) => {
       const r = rawMap.get(category.id);
 
-      const lowStockCount = Number(r?.low_stock_count ?? 0);
       const productCount = Number(r?.product_count ?? 0);
+      const lowStockCount = Number(r?.low_stock_count ?? 0);
       const expiringSoonCount = Number(r?.expiring_soon_count ?? 0);
       const expiredCount = Number(r?.expired_count ?? 0);
 
-      const notifications = (
-        [
-          lowStockCount > 0 && {
-            id: 'low-stock',
-            message: 'Kam qolgan mahsulotlar mavjud',
-            priority: 1,
-          },
-          expiringSoonCount > 0 && {
-            id: 'expiring-soon',
-            message: 'Eskirish muddati yaqinlashib qolgan mahsulotlar mavjud',
-            priority: 2,
-          },
-          expiredCount > 0 && {
-            id: 'expired',
-            message: 'Eskirish muddati tugagan mahsulotlar mavjud',
-            priority: 3,
-          },
-        ] as const
-      ).filter(Boolean);
+      const notifications = [
+        lowStockCount > 0 && {
+          id: 'low-stock',
+          message: 'Kam qolgan mahsulotlar mavjud',
+          priority: 1,
+        },
+        expiringSoonCount > 0 && {
+          id: 'expiring-soon',
+          message: 'Eskirish muddati yaqinlashib qolgan mahsulotlar mavjud',
+          priority: 2,
+        },
+        expiredCount > 0 && {
+          id: 'expired',
+          message: 'Eskirish muddati tugagan mahsulotlar mavjud',
+          priority: 3,
+        },
+      ].filter(Boolean);
 
       return Object.assign(category, {
         notifications,
