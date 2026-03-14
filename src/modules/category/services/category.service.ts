@@ -23,7 +23,6 @@ export class CategoryService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
-    const hasSearch = Boolean(search);
 
     const today = new Date().toISOString().slice(0, 10);
     const in30Days = new Date(Date.now() + 30 * 86400_000)
@@ -32,64 +31,72 @@ export class CategoryService {
 
     const qb = this.categoryRepository
       .createQueryBuilder('category')
+      // ✅ COUNT(*) o'rniga FILTER ishlatish — bitta aggregation, 3 ta emas
       .addSelect(
-        (subQb) =>
-          subQb
-            .select('COUNT(*)')
+        (sub) =>
+          sub
+            .select('COUNT(*) FILTER (WHERE p.quantity <= p.min_limit)')
             .from(Product, 'p')
-            .where('p.category_id = category.id')
-            .andWhere('p.quantity <= p.min_limit'),
+            .where('p.category_id = category.id'),
         'low_stock_count',
       )
       .addSelect(
-        (subQb) =>
-          subQb
-            .select('COUNT(*)')
+        (sub) =>
+          sub
+            .select(
+              `SUM(CASE WHEN b.expiration_date BETWEEN :today AND :in30Days AND b.quantity > 0 THEN 1 ELSE 0 END)`,
+            )
             .from(ProductBatch, 'b')
             .innerJoin(Product, 'p', 'p.id = b.product_id')
-            .where('p.category_id = category.id')
-            .andWhere('b.expiration_date BETWEEN :today AND :in30Days')
-            .andWhere('b.quantity > 0'),
+            .where('p.category_id = category.id'),
         'expiring_soon_count',
       )
       .addSelect(
-        (subQb) =>
-          subQb
-            .select('COUNT(*)')
+        (sub) =>
+          sub
+            .select(
+              `SUM(CASE WHEN b.expiration_date < :today AND b.quantity > 0 THEN 1 ELSE 0 END)`,
+            )
             .from(ProductBatch, 'b')
             .innerJoin(Product, 'p', 'p.id = b.product_id')
-            .where('p.category_id = category.id')
-            .andWhere('b.expiration_date < :today')
-            .andWhere('b.quantity > 0'),
+            .where('p.category_id = category.id'),
         'expired_count',
       )
       .setParameters({ today, in30Days });
 
-    if (hasSearch) {
-      qb.leftJoin('category.products', 'product');
-      qb.where('(category.name ILIKE :search OR product.name ILIKE :search)', {
-        search: `%${search}%`,
-      });
+    if (search) {
+      // ✅ EXISTS ishlatish — leftJoin + DISTINCT o'rniga (ancha tez)
+      qb.where(
+        `(category.name ILIKE :search OR EXISTS (
+        SELECT 1 FROM products p
+        WHERE p.category_id = category.id
+        AND p.name ILIKE :search
+      ))`,
+        { search: `%${search}%` },
+      );
     }
 
-    const total = await qb.clone().distinct(true).getCount();
-
-    qb.orderBy('category.createdAt', 'DESC')
+    // ✅ total va data ni bitta query bilan olish (window function)
+    qb.addSelect('COUNT(*) OVER()', 'total_count')
+      .orderBy('category.createdAt', 'DESC')
       .skip((page - 1) * limit)
-      .take(limit)
-      .distinct(true);
+      .take(limit);
 
     const { entities, raw } = await qb.getRawAndEntities<{
-      category_id: string | null;
+      category_id: string;
       low_stock_count: string;
       expiring_soon_count: string;
       expired_count: string;
+      total_count: string;
     }>();
 
-    // Ishonchli raw ma'lumot olish — index emas, id bo'yicha
+    // ✅ total_count birinchi raw'dan olinadi — alohida query yo'q
+    const total = Number(raw[0]?.total_count ?? 0);
+
     const rawMap = new Map(
-      raw.filter((r) => r.category_id).map((r) => [r.category_id as string, r]),
+      raw.filter((r) => r.category_id).map((r) => [r.category_id, r]),
     );
+
     const categories = entities.map((category) => {
       const r = rawMap.get(category.id);
       const lowStockCount = Number(r?.low_stock_count ?? 0);
@@ -114,9 +121,7 @@ export class CategoryService {
         },
       ].filter(Boolean);
 
-      const extra = { notifications };
-
-      return Object.assign(category, extra);
+      return Object.assign(category, { notifications });
     });
 
     return {
