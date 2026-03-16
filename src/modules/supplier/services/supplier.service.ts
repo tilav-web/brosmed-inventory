@@ -23,14 +23,7 @@ export class SupplierService {
     const search = query.search?.trim();
 
     const [suppliers, total] = await this.supplierRepository.findAndCount({
-      where: search
-        ? [
-            { company_name: ILike(`%${search}%`) },
-            { contact_person: ILike(`%${search}%`) },
-            { email: ILike(`%${search}%`) },
-            { phone: ILike(`%${search}%`) },
-          ]
-        : undefined,
+      where: search ? [{ company_name: ILike(`%${search}%`) }] : undefined,
       order: {
         createdAt: 'DESC',
       },
