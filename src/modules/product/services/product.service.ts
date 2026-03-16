@@ -17,7 +17,7 @@ import { ListProductsQueryDto } from '../dto/list-products-query.dto';
 import { UpdateProductDto } from '../dto/update-product.dto';
 import { Product } from '../entities/product.entity';
 
-interface UploadedImage {
+export interface UploadedImage {
   buffer: Buffer;
   mimetype: string;
 }
@@ -138,40 +138,50 @@ export class ProductService {
   }
 
   async create(dto: CreateProductDto) {
+    // 1. Check for existing product in the specific warehouse
     const existing = await this.productRepository.findOne({
       where: {
         name: dto.name,
-      },
-      relations: {
-        warehouse: true,
+        warehouse: { id: dto.warehouse_id }, // Cleaner way to filter by relation ID
       },
     });
 
-    if (existing && existing.warehouse?.id === dto.warehouse_id) {
+    if (existing) {
       throw new ConflictException(
         'Bu omborda bunday product allaqachon mavjud',
       );
     }
 
-    const [category, warehouse, unitName, supplier] = await Promise.all([
+    // 2. Resolve dependencies in parallel for speed
+    const [category, warehouse, unit, supplier] = await Promise.all([
       this.findCategoryOrFail(dto.category_id),
       this.findWarehouseOrFail(dto.warehouse_id),
       this.findUnitNameOrFail(dto.unit_id),
       this.findSupplierOrFail(dto.supplier_id),
     ]);
 
-    return this.productRepository.save(
-      this.productRepository.create({
-        name: dto.name,
-        quantity: 0,
-        min_limit: dto.min_limit ?? 10,
-        storage_conditions: dto.storage_conditions ?? null,
-        unit: unitName,
-        category,
-        supplier,
-        warehouse,
-      }),
-    );
+    // 3. Initialize the product instance first
+    const product = this.productRepository.create({
+      name: dto.name,
+      quantity: 0,
+      min_limit: dto.min_limit ?? 10,
+      storage_conditions: dto.storage_conditions ?? null,
+      unit,
+      category,
+      supplier,
+      warehouse,
+    });
+
+    if (dto.image) {
+      product.image = await this.imageService.saveImage({
+        file: dto.image,
+        folder: FileFolderEnum.PRODUCTS,
+        entityId: dto.name,
+      });
+    }
+
+    // 5. Final Save
+    return this.productRepository.save(product);
   }
 
   async update(id: string, dto: UpdateProductDto & { image?: UploadedImage }) {

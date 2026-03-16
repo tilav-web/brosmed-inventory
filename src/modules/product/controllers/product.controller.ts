@@ -67,6 +67,7 @@ export class ProductController {
   @ApiOkResponse({ description: 'Product yaratildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  @UseInterceptors(FileInterceptor('image'))
   create(@Body() dto: CreateProductDto) {
     return this.productService.create(dto);
   }
