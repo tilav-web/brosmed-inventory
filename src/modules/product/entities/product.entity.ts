@@ -91,6 +91,14 @@ export class Product {
   })
   statuses: ProductStatus[] | null;
 
+  // Yaroqlilik muddati (ixtiyoriy).
+  @Column({ type: 'date', nullable: true })
+  expiration_date: Date | null;
+
+  // Ogohlantirish sanasi (ixtiyoriy).
+  @Column({ type: 'date', nullable: true })
+  expiration_alert_date: Date | null;
+
   // Yaratilgan vaqt.
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;

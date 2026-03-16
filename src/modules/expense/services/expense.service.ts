@@ -118,7 +118,7 @@ export class ExpenseService {
       .andWhere('batch.warehouse_id = :warehouseId', { warehouseId })
       .andWhere('batch.quantity > 0');
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = this.getLocalDateString();
 
     if (type === ExpenseType.EXPIRED) {
       qb.andWhere('batch.expiration_date IS NOT NULL').andWhere(
@@ -428,10 +428,10 @@ export class ExpenseService {
       .createQueryBuilder('batch')
       .where('batch.expiration_date IS NOT NULL')
       .andWhere('batch.expiration_date >= :today', {
-        today: today.toISOString().slice(0, 10),
+        today: this.getLocalDateString(today),
       })
       .andWhere('batch.expiration_date <= :in30Days', {
-        in30Days: in30Days.toISOString().slice(0, 10),
+        in30Days: this.getLocalDateString(in30Days),
       })
       .andWhere('batch.quantity > 0')
       .getCount();
@@ -442,5 +442,12 @@ export class ExpenseService {
       low_stock: lowStockCount,
       expiring_soon: expiringSoonCount,
     };
+  }
+
+  private getLocalDateString(date: Date = new Date()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 }

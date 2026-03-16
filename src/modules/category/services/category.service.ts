@@ -25,7 +25,7 @@ export class CategoryService {
     const search = query.search?.trim();
     const offset = (page - 1) * limit;
 
-    const today = new Date().toISOString().slice(0, 10);
+    const today = this.getTodayDateString();
 
     const qb = this.categoryRepository
       .createQueryBuilder('category')
@@ -190,6 +190,14 @@ export class CategoryService {
       throw new NotFoundException('Category topilmadi');
     }
     return category;
+  }
+
+  private getTodayDateString() {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   async create(dto: CreateCategoryDto) {

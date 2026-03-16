@@ -31,6 +31,12 @@ export class ProductStatusSchedulerService {
     }
 
     try {
+      await this.refreshProductExpirationDates(today);
+    } catch (error) {
+      this.logger.error('Product expiration sync failed', error);
+    }
+
+    try {
       await this.refreshProductStatuses(today);
     } catch (error) {
       this.logger.error('Product status refresh failed', error);
@@ -39,8 +45,21 @@ export class ProductStatusSchedulerService {
 
   private getTodayDateString() {
     const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    return today.toISOString().slice(0, 10);
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  private formatLocalDate(value?: Date | string | null) {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      return value.slice(0, 10);
+    }
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
   }
 
   private async writeOffExpiredBatches(today: string) {
@@ -172,6 +191,94 @@ export class ProductStatusSchedulerService {
 
         if (!this.sameStatusList(product.statuses, nextValue)) {
           product.statuses = nextValue;
+          productsToSave.push(product);
+        }
+      }
+    }
+
+    if (productsToSave.length > 0) {
+      await this.productRepository.save(productsToSave);
+    }
+  }
+
+  private async refreshProductExpirationDates(today: string) {
+    const earliestActiveBatches = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .distinctOn(['batch.product_id'])
+      .select('batch.product_id', 'product_id')
+      .addSelect('batch.expiration_date', 'expiration_date')
+      .addSelect('batch.expiration_alert_date', 'expiration_alert_date')
+      .where('batch.quantity > 0')
+      .andWhere('batch.expiration_date IS NOT NULL')
+      .andWhere('batch.expiration_date >= :today', { today })
+      .orderBy('batch.product_id', 'ASC')
+      .addOrderBy('batch.received_at', 'ASC')
+      .getRawMany<{
+        product_id: string;
+        expiration_date: Date | null;
+        expiration_alert_date: Date | null;
+      }>();
+
+    const activeMap = new Map(
+      earliestActiveBatches.map((row) => [
+        row.product_id,
+        {
+          expiration_date: row.expiration_date ?? null,
+          expiration_alert_date: row.expiration_alert_date ?? null,
+          expiration_date_key: this.formatLocalDate(row.expiration_date),
+          expiration_alert_date_key: this.formatLocalDate(
+            row.expiration_alert_date,
+          ),
+        },
+      ]),
+    );
+
+    const flaggedProductIds = await this.productRepository
+      .createQueryBuilder('product')
+      .select('product.id', 'id')
+      .where(
+        'product.expiration_date IS NOT NULL OR product.expiration_alert_date IS NOT NULL',
+      )
+      .getRawMany<{ id: string }>();
+
+    const targetIds = new Set<string>();
+    for (const row of earliestActiveBatches) {
+      targetIds.add(row.product_id);
+    }
+    for (const row of flaggedProductIds) {
+      targetIds.add(row.id);
+    }
+
+    if (targetIds.size === 0) return;
+
+    const ids = Array.from(targetIds);
+    const chunkSize = 500;
+    const productsToSave: Product[] = [];
+
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const products = await this.productRepository.findBy({
+        id: In(chunk),
+      });
+
+      for (const product of products) {
+        const next = activeMap.get(product.id) ?? {
+          expiration_date: null,
+          expiration_alert_date: null,
+          expiration_date_key: null,
+          expiration_alert_date_key: null,
+        };
+
+        const sameExpirationDate =
+          this.formatLocalDate(product.expiration_date) ===
+          next.expiration_date_key;
+        const sameAlertDate =
+          this.formatLocalDate(product.expiration_alert_date) ===
+          next.expiration_alert_date_key;
+
+        if (!sameExpirationDate || !sameAlertDate) {
+          product.expiration_date = next.expiration_date;
+          product.expiration_alert_date = next.expiration_alert_date;
           productsToSave.push(product);
         }
       }
