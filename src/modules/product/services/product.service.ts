@@ -46,10 +46,8 @@ export class ProductService {
 
     const qb = this.productRepository
       .createQueryBuilder('product')
-      .leftJoinAndSelect('product.category', 'category')
       .leftJoinAndSelect('product.supplier', 'supplier')
-      .leftJoinAndSelect('product.warehouse', 'warehouse')
-      .leftJoinAndSelect('product.batches', 'batches');
+      .leftJoinAndSelect('product.warehouse', 'warehouse');
 
     if (search) {
       qb.andWhere('product.name ILIKE :search', { search: `%${search}%` });
