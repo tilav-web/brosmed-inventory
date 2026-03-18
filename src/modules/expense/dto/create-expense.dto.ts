@@ -24,9 +24,13 @@ export class CreateExpenseItemDto {
   @IsUUID('4')
   warehouse_id: string;
 
-  @ApiProperty({ example: 2 })
-  @IsInt()
-  @Min(1)
+  @ApiProperty({ example: 'product-batch-uuid' })
+  @IsUUID('4')
+  product_batch_id: string;
+
+  @ApiProperty({ example: 5 })
+  @IsNumber()
+  @Min(0.01)
   quantity: number;
 }
 

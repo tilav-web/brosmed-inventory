@@ -16,6 +16,18 @@ import { ExpenseType } from '../enums/expense-type.enum';
 import { ExpenseItem } from '../entities/expense-item.entity';
 import { Expense } from '../entities/expense.entity';
 
+interface ReceiptItem {
+  product_id: string;
+  product_name: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  batch_id: string;
+  quantity: number;
+  unit: string;
+  price: number;
+  line_total: number;
+}
+
 @Injectable()
 export class ExpenseService {
   constructor(
@@ -82,6 +94,7 @@ export class ExpenseService {
         items: {
           product: true,
           warehouse: true,
+          product_batch: true,
         },
       },
     });
@@ -104,38 +117,6 @@ export class ExpenseService {
 
     const next = String(totalThisYear + 1).padStart(3, '0');
     return `EXP-${year}-${next}`;
-  }
-
-  private async findAvailableBatches(
-    repo: Repository<ProductBatch>,
-    productId: string,
-    warehouseId: string,
-    type: ExpenseType,
-  ) {
-    const qb = repo
-      .createQueryBuilder('batch')
-      .where('batch.product_id = :productId', { productId })
-      .andWhere('batch.warehouse_id = :warehouseId', { warehouseId })
-      .andWhere('batch.quantity > 0');
-
-    const today = this.getLocalDateString();
-
-    if (type === ExpenseType.EXPIRED) {
-      qb.andWhere('batch.expiration_date IS NOT NULL').andWhere(
-        'batch.expiration_date < :today',
-        { today },
-      );
-    } else {
-      qb.andWhere(
-        '(batch.expiration_date IS NULL OR batch.expiration_date >= :today)',
-        { today },
-      );
-    }
-
-    return qb
-      .orderBy('batch.expiration_date', 'ASC', 'NULLS LAST')
-      .addOrderBy('batch.received_at', 'ASC')
-      .getMany();
   }
 
   async createAndGetReceipt(dto: CreateExpenseDto, managerId?: string) {
@@ -167,85 +148,53 @@ export class ExpenseService {
         }),
       );
 
-      const receiptItems: Array<{
-        product_id: string;
-        product_name: string;
-        warehouse_id: string;
-        warehouse_name: string;
-        quantity: number;
-        unit: string;
-        price: number;
-        line_total: number;
-      }> = [];
-
+      const receiptItems: ReceiptItem[] = [];
       let totalPrice = 0;
 
       for (const item of dto.items) {
-        const [product, warehouse] = await Promise.all([
+        const [product, warehouse, batch] = await Promise.all([
           productRepo.findOne({
             where: { id: item.product_id },
-            relations: { warehouse: true },
           }),
           warehouseRepo.findOne({ where: { id: item.warehouse_id } }),
+          productBatchRepo.findOne({
+            where: { id: item.product_batch_id },
+            relations: { product: true, warehouse: true },
+          }),
         ]);
 
-        if (!product) {
-          throw new NotFoundException(`Product topilmadi: ${item.product_id}`);
-        }
-
-        if (!warehouse) {
+        if (!product || !warehouse || !batch) {
           throw new NotFoundException(
-            `Warehouse topilmadi: ${item.warehouse_id}`,
+            `Ma'lumot topilmadi: Product=${item.product_id}, Warehouse=${item.warehouse_id}, Batch=${item.product_batch_id}`,
           );
         }
 
-        if (product.warehouse?.id !== warehouse.id) {
+        if (batch.product_id !== product.id || batch.warehouse_id !== warehouse.id) {
           throw new BadRequestException(
-            `Product ${product.id} tanlangan warehousega tegishli emas`,
+            `Tanlangan partiya (Batch: ${batch.id}) tanlangan mahsulot yoki omborga tegishli emas`,
           );
         }
 
-        const requested = Number(item.quantity);
-        const batches = await this.findAvailableBatches(
-          productBatchRepo,
-          product.id,
-          warehouse.id,
-          expenseType,
-        );
-        const available = batches.reduce(
-          (sum, batch) => sum + Number(batch.quantity),
-          0,
-        );
+        const requestedQty = Number(item.quantity);
+        const batchQty = Number(batch.quantity);
 
-        if (!Number.isFinite(requested) || requested <= 0) {
-          throw new BadRequestException('Quantity musbat son bo`lishi kerak');
-        }
-
-        if (requested > available) {
+        if (requestedQty > batchQty) {
           throw new BadRequestException(
-            `Mahsulot yetarli emas: ${product.name}. Mavjud: ${available}, kerak: ${requested}`,
+            `Partiyada mahsulot yetarli emas: ${product.name}. Mavjud: ${batchQty}, kerak: ${requestedQty}`,
           );
         }
 
-        let remaining = requested;
-        let lineTotal = 0;
-
-        for (const batch of batches) {
-          if (remaining <= 0) break;
-          const batchQty = Number(batch.quantity);
-          const take = Math.min(remaining, batchQty);
-          lineTotal += take * Number(batch.price_at_purchase);
-          remaining -= take;
-        }
-
-        const price = Number((lineTotal / requested).toFixed(2));
+        const lineTotal = requestedQty * Number(batch.price_at_purchase);
         totalPrice += lineTotal;
 
-        const expenseItem = expenseItemRepo.create();
-        expenseItem.expense = createdExpense;
-        expenseItem.product = product;
-        expenseItem.warehouse = warehouse;
-        expenseItem.quantity = requested;
+        const expenseItem = expenseItemRepo.create({
+          expense: createdExpense,
+          product: product,
+          warehouse: warehouse,
+          product_batch: batch,
+          product_batch_id: batch.id,
+          quantity: requestedQty,
+        });
         await expenseItemRepo.save(expenseItem);
 
         receiptItems.push({
@@ -253,9 +202,10 @@ export class ExpenseService {
           product_name: product.name,
           warehouse_id: warehouse.id,
           warehouse_name: warehouse.name,
-          quantity: requested,
+          batch_id: batch.id,
+          quantity: requestedQty,
           unit: product.unit,
-          price,
+          price: Number(batch.price_at_purchase),
           line_total: Number(lineTotal.toFixed(2)),
         });
       }
@@ -270,6 +220,7 @@ export class ExpenseService {
           items: {
             product: true,
             warehouse: true,
+            product_batch: true,
           },
         },
       });
@@ -307,6 +258,7 @@ export class ExpenseService {
           items: {
             product: true,
             warehouse: true,
+            product_batch: true,
           },
         },
       });
@@ -317,66 +269,52 @@ export class ExpenseService {
 
       if (expense.status !== ExpenseStatus.PENDING_ISSUE) {
         throw new BadRequestException(
-          "Faqat 'ожидает выдачи' statusdagi expense berilishi mumkin",
+          "Faqat 'PENDING_ISSUE' statusdagi expense berilishi mumkin",
         );
       }
 
       for (const item of expense.items) {
-        const product = await productRepo.findOne({
-          where: { id: item.product.id },
-          relations: { warehouse: true },
+        const batch = item.product_batch;
+        if (!batch) {
+          throw new BadRequestException(`Item ${item.id} uchun partiya bog'lanmagan`);
+        }
+
+        const currentBatch = await productBatchRepo.findOne({
+          where: { id: batch.id },
         });
 
-        if (!product) {
-          throw new NotFoundException(`Product topilmadi: ${item.product.id}`);
+        if (!currentBatch) {
+          throw new NotFoundException(`Batch topilmadi: ${batch.id}`);
         }
 
-        if (product.warehouse?.id !== item.warehouse.id) {
-          throw new BadRequestException(
-            `Product ${product.id} expense item warehouseiga mos emas`,
-          );
-        }
-
-        const batches = await this.findAvailableBatches(
-          productBatchRepo,
-          product.id,
-          item.warehouse.id,
-          expense.type,
-        );
-        const available = batches.reduce(
-          (sum, batch) => sum + Number(batch.quantity),
-          0,
-        );
         const requested = Number(item.quantity);
+        const available = Number(currentBatch.quantity);
 
         if (requested > available) {
           throw new BadRequestException(
-            `Mahsulot yetarli emas: ${product.name}. Mavjud: ${available}, kerak: ${requested}`,
+            `Partiyada mahsulot yetarli emas: Batch ID: ${batch.id}. Mavjud: ${available}, kerak: ${requested}`,
           );
         }
 
-        let remaining = requested;
-
-        for (const batch of batches) {
-          if (remaining <= 0) break;
-          const batchQty = Number(batch.quantity);
-          const take = Math.min(remaining, batchQty);
-          batch.quantity = Number((batchQty - take).toFixed(2));
-          if (batch.quantity <= 0 && !batch.depleted_at) {
-            batch.depleted_at = new Date();
-          }
-          remaining -= take;
-          await productBatchRepo.save(batch);
+        // Partiyadan chegirish
+        currentBatch.quantity = Number((available - requested).toFixed(2));
+        if (currentBatch.quantity <= 0 && !currentBatch.depleted_at) {
+          currentBatch.depleted_at = new Date();
         }
+        await productBatchRepo.save(currentBatch);
 
+        // Mahsulotning umumiy miqdorini yangilash
         const totalRaw = await productBatchRepo
           .createQueryBuilder('batch')
-          .select('COALESCE(SUM(batch.quantity), 0)', 'total')
-          .where('batch.product_id = :productId', { productId: product.id })
-          .getRawOne<{ total: string }>();
+          .select('SUM(batch.quantity)', 'total')
+          .where('batch.product_id = :productId', { productId: item.product.id })
+          .getRawOne<{ total: string | null }>();
 
-        product.quantity = Number(Number(totalRaw?.total ?? 0).toFixed(2));
-        await productRepo.save(product);
+        const product = await productRepo.findOne({ where: { id: item.product.id } });
+        if (product) {
+          product.quantity = Number(Number(totalRaw?.total ?? 0).toFixed(2));
+          await productRepo.save(product);
+        }
       }
 
       expense.status = ExpenseStatus.PENDING_PHOTO;
@@ -394,7 +332,7 @@ export class ExpenseService {
 
     if (expense.status !== ExpenseStatus.PENDING_PHOTO) {
       throw new BadRequestException(
-        "Faqat 'ожидает подтверждения' statusdagi expense yakunlanishi mumkin",
+        "Faqat 'PENDING_PHOTO' statusdagi expense yakunlanishi mumkin",
       );
     }
 
@@ -418,21 +356,17 @@ export class ExpenseService {
       .where('product.quantity <= product.min_limit')
       .getCount();
 
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
+    const today = this.getLocalDateString();
 
-    const in30Days = new Date(today);
-    in30Days.setDate(in30Days.getDate() + 30);
+    const in30DaysDate = new Date();
+    in30DaysDate.setDate(in30DaysDate.getDate() + 30);
+    const in30Days = this.getLocalDateString(in30DaysDate);
 
     const expiringSoonCount = await this.productBatchRepository
       .createQueryBuilder('batch')
       .where('batch.expiration_date IS NOT NULL')
-      .andWhere('batch.expiration_date >= :today', {
-        today: this.getLocalDateString(today),
-      })
-      .andWhere('batch.expiration_date <= :in30Days', {
-        in30Days: this.getLocalDateString(in30Days),
-      })
+      .andWhere('batch.expiration_date >= :today', { today })
+      .andWhere('batch.expiration_date <= :in30Days', { in30Days })
       .andWhere('batch.quantity > 0')
       .getCount();
 
@@ -444,7 +378,7 @@ export class ExpenseService {
     };
   }
 
-  private getLocalDateString(date: Date = new Date()) {
+  private getLocalDateString(date: Date = new Date()): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
