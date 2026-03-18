@@ -1,11 +1,13 @@
 import {
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
+import Redis from 'ioredis';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { Role } from 'src/modules/user/enums/role.enum';
@@ -26,6 +28,8 @@ export class WarehouseService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
+    @Inject('REDIS_CLIENT')
+    private readonly redis: Redis,
   ) {}
 
   async findAll(query: ListWarehousesQueryDto) {
@@ -33,10 +37,16 @@ export class WarehouseService {
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
 
+    const cacheKey = `warehouses:all:${page}:${limit}:${search ?? 'none'}`;
+    const cachedData = await this.redis.get(cacheKey);
+
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+
     const qb = this.warehouseRepository
       .createQueryBuilder('warehouse')
       .leftJoinAndSelect('warehouse.manager', 'manager')
-      // ProductBatch larni join qilib, jami qiymatni hisoblaymiz
       .leftJoin(
         'product_batches',
         'batch',
@@ -95,12 +105,10 @@ export class WarehouseService {
         first_name: row.manager_first_name,
         last_name: row.manager_last_name,
       },
-      total_inventory_value: Number(
-        Number(row.total_inventory_value).toFixed(2),
-      ),
+      total_inventory_value: Number(Number(row.total_inventory_value).toFixed(2)),
     }));
 
-    return {
+    const result = {
       data: warehouses,
       meta: {
         page,
@@ -109,9 +117,21 @@ export class WarehouseService {
         total_pages: Math.ceil(total / limit) || 1,
       },
     };
+
+    // 5 daqiqaga keshga saqlash
+    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 300);
+
+    return result;
   }
 
   async findById(id: string) {
+    const cacheKey = `warehouse:${id}`;
+    const cachedData = await this.redis.get(cacheKey);
+
+    if (cachedData) {
+      return JSON.parse(cachedData);
+    }
+
     const warehouse = await this.warehouseRepository.findOne({
       where: { id },
       relations: {
@@ -123,7 +143,6 @@ export class WarehouseService {
       throw new NotFoundException('Warehouse topilmadi');
     }
 
-    // Bitta ombor uchun ham jami qiymatni hisoblaymiz
     const totalValueRaw = await this.productBatchRepository
       .createQueryBuilder('batch')
       .select('SUM(batch.quantity * batch.price_at_purchase)', 'total')
@@ -131,12 +150,21 @@ export class WarehouseService {
       .andWhere('batch.quantity > 0')
       .getRawOne<{ total: string | null }>();
 
-    return {
+    const result = {
       ...warehouse,
-      total_inventory_value: Number(
-        Number(totalValueRaw?.total ?? 0).toFixed(2),
-      ),
+      total_inventory_value: Number(Number(totalValueRaw?.total ?? 0).toFixed(2)),
     };
+
+    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 300);
+
+    return result;
+  }
+
+  private async clearCache() {
+    const keys = await this.redis.keys('warehouses:*');
+    if (keys.length > 0) {
+      await this.redis.del(...keys);
+    }
   }
 
   private async ensureWarehouseManager(managerId: string): Promise<User> {
@@ -167,7 +195,7 @@ export class WarehouseService {
 
     const manager = await this.ensureWarehouseManager(dto.manager_id);
 
-    return this.warehouseRepository.save(
+    const saved = await this.warehouseRepository.save(
       this.warehouseRepository.create({
         name: dto.name,
         type: dto.type,
@@ -175,14 +203,14 @@ export class WarehouseService {
         manager_id: manager.id,
       }),
     );
+
+    await this.clearCache();
+    return saved;
   }
 
   async update(id: string, dto: UpdateWarehouseDto) {
     const warehouseResult = await this.findById(id);
-    // findById endi obyekt qaytaradi, bizga entitiy kerak
-    const warehouse = await this.warehouseRepository.findOne({
-      where: { id: warehouseResult.id },
-    });
+    const warehouse = await this.warehouseRepository.findOne({ where: { id: warehouseResult.id } });
     if (!warehouse) throw new NotFoundException('Warehouse topilmadi');
 
     if (dto.name !== undefined && dto.name !== warehouse.name) {
@@ -209,13 +237,18 @@ export class WarehouseService {
       warehouse.manager = manager;
     }
 
-    return this.warehouseRepository.save(warehouse);
+    const saved = await this.warehouseRepository.save(warehouse);
+    await this.redis.del(`warehouse:${id}`);
+    await this.clearCache();
+    return saved;
   }
 
   async delete(id: string) {
     const warehouse = await this.warehouseRepository.findOne({ where: { id } });
     if (!warehouse) throw new NotFoundException('Warehouse topilmadi');
     await this.warehouseRepository.delete(warehouse.id);
+    await this.redis.del(`warehouse:${id}`);
+    await this.clearCache();
     return { message: "Warehouse o'chirildi" };
   }
 

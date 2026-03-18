@@ -13,6 +13,7 @@ import { SupplierModule } from '../supplier/supplier.module';
 import { UnitModule } from '../unit/unit.module';
 import { UserModule } from '../user/user.module';
 import { WarehouseModule } from '../warehouse/warehouse.module';
+import { RedisModule } from 'src/common/redis/redis.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SeedModule } from 'src/seed/seed.module';
@@ -56,6 +57,7 @@ import { SeedModule } from 'src/seed/seed.module';
     SupplierModule,
     UnitModule,
     WarehouseModule,
+    RedisModule,
     SeedModule,
   ],
   controllers: [AppController],
