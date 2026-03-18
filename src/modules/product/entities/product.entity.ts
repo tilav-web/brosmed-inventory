@@ -45,6 +45,24 @@ export class Product {
   @Column({ type: 'text', nullable: true })
   storage_conditions: string | null;
 
+  // Mahsulot holatlari (tarkibiy hisob-kitoblar uchun).
+  @Column({
+    type: 'enum',
+    enum: ProductStatus,
+    enumName: 'product_status_enum',
+    array: true,
+    nullable: true,
+  })
+  statuses: ProductStatus[] | null;
+
+  // Yaroqlilik muddati (ixtiyoriy).
+  @Column({ type: 'date', nullable: true })
+  expiration_date: Date | null;
+
+  // Ogohlantirish sanasi (ixtiyoriy).
+  @Column({ type: 'date', nullable: true })
+  expiration_alert_date: Date | null;
+
   // Mahsulotni yetkazib beruvchi.
   @ManyToOne(() => Supplier, { nullable: false })
   @JoinColumn({ name: 'supplier_id' })
@@ -53,10 +71,6 @@ export class Product {
   // Supplier ID.
   @Column({ type: 'uuid' })
   supplier_id: string;
-
-  // Mahsulot rasmi (ixtiyoriy).
-  @Column({ type: 'varchar', nullable: true })
-  image: string | null;
 
   // Mahsulot kategoriyasi (ixtiyoriy).
   @ManyToOne(() => Category, (category) => category.products, {
@@ -84,24 +98,6 @@ export class Product {
   // Mahsulot partiyalari (omborga kirimlar).
   @OneToMany(() => ProductBatch, (batch) => batch.product)
   batches: ProductBatch[];
-
-  // Mahsulot holatlari (tarkibiy hisob-kitoblar uchun).
-  @Column({
-    type: 'enum',
-    enum: ProductStatus,
-    enumName: 'product_status_enum',
-    array: true,
-    nullable: true,
-  })
-  statuses: ProductStatus[] | null;
-
-  // Yaroqlilik muddati (ixtiyoriy).
-  @Column({ type: 'date', nullable: true })
-  expiration_date: Date | null;
-
-  // Ogohlantirish sanasi (ixtiyoriy).
-  @Column({ type: 'date', nullable: true })
-  expiration_alert_date: Date | null;
 
   // Yaratilgan vaqt.
   @CreateDateColumn({ type: 'timestamp' })

@@ -12,8 +12,9 @@ import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { CreatePurchaseOrderDto } from '../dto/create-purchase-order.dto';
 import { ListPurchaseOrdersQueryDto } from '../dto/list-purchase-orders-query.dto';
 import {
-  UpdateOrderItemDeliveryDto,
   UpdatePurchaseOrderStatusDto,
+  ReceivePurchaseOrderDto,
+  ReceiveOrderItemDto,
 } from '../dto/update-purchase-order-status.dto';
 import { OrderStatus } from '../enums/order-status.enum';
 import { OrderItem } from '../entities/order-item.entity';
@@ -155,22 +156,6 @@ export class PurchaseOrderService {
           );
         }
 
-        if (item.expiration_alert_date && !item.expiration_date) {
-          throw new BadRequestException(
-            'expiration_alert_date berilsa, expiration_date ham berilishi kerak',
-          );
-        }
-
-        if (item.expiration_alert_date && item.expiration_date) {
-          const alertDate = new Date(item.expiration_alert_date);
-          const expirationDate = new Date(item.expiration_date);
-          if (alertDate > expirationDate) {
-            throw new BadRequestException(
-              'expiration_alert_date expiration_date dan oldin yoki teng bo‘lishi kerak',
-            );
-          }
-        }
-
         const priceAtPurchase =
           item.price_at_purchase !== undefined
             ? Number(item.price_at_purchase)
@@ -185,13 +170,6 @@ export class PurchaseOrderService {
             product,
             quantity: item.quantity,
             price_at_purchase: Number(priceAtPurchase.toFixed(2)),
-            expiration_date: item.expiration_date
-              ? new Date(item.expiration_date)
-              : null,
-            expiration_alert_date: item.expiration_alert_date
-              ? new Date(item.expiration_alert_date)
-              : null,
-            batch_number: item.batch_number ?? null,
           }),
         );
       }
@@ -204,9 +182,44 @@ export class PurchaseOrderService {
   }
 
   async updateStatus(id: string, dto: UpdatePurchaseOrderStatusDto) {
+    const order = await this.purchaseOrderRepository.findOne({
+      where: { id },
+    });
+
+    if (!order) {
+      throw new NotFoundException('Purchase order topilmadi');
+    }
+
+    if (order.status === OrderStatus.CANCELLED) {
+      throw new BadRequestException(
+        'Bekor qilingan buyurtma statusini o`zgartirib bo`lmaydi',
+      );
+    }
+
+    if (
+      order.status === OrderStatus.DELIVERED &&
+      dto.status !== OrderStatus.DELIVERED
+    ) {
+      throw new BadRequestException(
+        'Delivered bo`lgan buyurtmani boshqa statusga qaytarib bo`lmaydi',
+      );
+    }
+
+    order.status = dto.status;
+
+    if (dto.delivery_date !== undefined) {
+      order.delivery_date = dto.delivery_date
+        ? new Date(dto.delivery_date)
+        : null;
+    }
+
+    await this.purchaseOrderRepository.save(order);
+    return this.findById(order.id);
+  }
+
+  async receiveOrder(id: string, dto: ReceivePurchaseOrderDto) {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
-      const orderItemRepo = manager.getRepository(OrderItem);
       const productRepo = manager.getRepository(Product);
       const productBatchRepo = manager.getRepository(ProductBatch);
 
@@ -225,115 +238,97 @@ export class PurchaseOrderService {
         throw new NotFoundException('Purchase order topilmadi');
       }
 
-      if (order.status === OrderStatus.CANCELLED) {
+      if (order.status !== OrderStatus.DELIVERED) {
         throw new BadRequestException(
-          'Bekor qilingan buyurtma statusini o`zgartirib bo`lmaydi',
+          'Faqat DELIVERED statusidagi buyurtmalarni omborga qabul qilish mumkin',
         );
       }
 
-      if (
-        order.status === OrderStatus.DELIVERED &&
-        dto.status !== OrderStatus.DELIVERED
-      ) {
+      if (order.is_received) {
         throw new BadRequestException(
-          'Delivered bo`lgan buyurtmani boshqa statusga qaytarib bo`lmaydi',
+          'Ushbu buyurtma allaqachon omborga qabul qilingan',
         );
       }
 
-      if (
-        order.status === OrderStatus.DELIVERED &&
-        dto.status === OrderStatus.DELIVERED
-      ) {
-        throw new BadRequestException('Buyurtma allaqachon delivered bo`lgan');
-      }
+      const itemUpdates = new Map<string, ReceiveOrderItemDto>();
+      const orderItemIds = new Set(order.items.map((i) => i.id));
 
-      if (
-        dto.status === OrderStatus.DELIVERED &&
-        order.status !== OrderStatus.DELIVERED
-      ) {
-        const itemUpdates = new Map<string, UpdateOrderItemDeliveryDto>();
-        if (dto.items) {
-          const orderItemIds = new Set(order.items.map((i) => i.id));
-          for (const update of dto.items) {
-            if (!orderItemIds.has(update.order_item_id)) {
-              throw new BadRequestException(
-                `Order item topilmadi: ${update.order_item_id}`,
-              );
-            }
-            itemUpdates.set(update.order_item_id, update);
-          }
+      for (const update of dto.items) {
+        if (!orderItemIds.has(update.order_item_id)) {
+          throw new BadRequestException(
+            `Order item topilmadi: ${update.order_item_id}`,
+          );
         }
+        itemUpdates.set(update.order_item_id, update);
+      }
 
-        for (const item of order.items) {
-          const product = await productRepo.findOne({
-            where: { id: item.product.id },
-          });
+      for (const item of order.items) {
+        const update = itemUpdates.get(item.id);
 
-          if (!product) {
-            throw new NotFoundException(
-              `Product topilmadi: ${item.product.id}`,
+        let expiration_date: Date | null = null;
+        let expiration_alert_date: Date | null = null;
+        let batch_number: string | null = null;
+        let serial_number: string | null = null;
+
+        if (update) {
+          if (update.expiration_alert_date && !update.expiration_date) {
+            throw new BadRequestException(
+              `Item ${item.id}: expiration_alert_date berilsa, expiration_date ham berilishi kerak`,
             );
           }
 
-          const update = itemUpdates.get(item.id);
-          if (update) {
-            if (update.expiration_alert_date && !update.expiration_date) {
+          if (update.expiration_alert_date && update.expiration_date) {
+            const alertDate = new Date(update.expiration_alert_date);
+            const expirationDate = new Date(update.expiration_date);
+            if (alertDate > expirationDate) {
               throw new BadRequestException(
-                'expiration_alert_date berilsa, expiration_date ham berilishi kerak',
+                `Item ${item.id}: expiration_alert_date expiration_date dan oldin bo‘lishi kerak`,
               );
             }
-
-            if (update.expiration_alert_date && update.expiration_date) {
-              const alertDate = new Date(update.expiration_alert_date);
-              const expirationDate = new Date(update.expiration_date);
-              if (alertDate > expirationDate) {
-                throw new BadRequestException(
-                  'expiration_alert_date expiration_date dan oldin yoki teng bo‘lishi kerak',
-                );
-              }
-            }
-
-            item.expiration_date = update.expiration_date
-              ? new Date(update.expiration_date)
-              : null;
-            item.expiration_alert_date = update.expiration_alert_date
-              ? new Date(update.expiration_alert_date)
-              : null;
-            item.batch_number = update.batch_number ?? null;
-
-            await orderItemRepo.save(item);
           }
 
-          await productBatchRepo.save(
-            productBatchRepo.create({
-              product,
-              product_id: product.id,
-              warehouse: order.warehouse,
-              warehouse_id: order.warehouse_id,
-              supplier: order.supplier ?? null,
-              supplier_id: order.supplier_id ?? null,
-              quantity: Number(item.quantity),
-              price_at_purchase: Number(item.price_at_purchase),
-              expiration_date: item.expiration_date ?? null,
-              expiration_alert_date: item.expiration_alert_date ?? null,
-              batch_number: item.batch_number ?? null,
-            }),
-          );
-
-          product.quantity = Number(product.quantity) + Number(item.quantity);
-          await productRepo.save(product);
+          expiration_date = update.expiration_date
+            ? new Date(update.expiration_date)
+            : null;
+          expiration_alert_date = update.expiration_alert_date
+            ? new Date(update.expiration_alert_date)
+            : null;
+          batch_number = update.batch_number ?? null;
+          serial_number = update.serial_number ?? null;
         }
+
+        const product = await productRepo.findOne({
+          where: { id: item.product.id },
+        });
+
+        if (!product) {
+          throw new NotFoundException(`Product topilmadi: ${item.product.id}`);
+        }
+
+        await productBatchRepo.save(
+          productBatchRepo.create({
+            product,
+            product_id: product.id,
+            warehouse: order.warehouse,
+            warehouse_id: order.warehouse_id,
+            supplier: order.supplier ?? null,
+            supplier_id: order.supplier_id ?? null,
+            quantity: Number(item.quantity),
+            price_at_purchase: Number(item.price_at_purchase),
+            expiration_date,
+            expiration_alert_date,
+            batch_number,
+            serial_number,
+          }),
+        );
+
+        product.quantity = Number(product.quantity) + Number(item.quantity);
+        await productRepo.save(product);
       }
 
-      order.status = dto.status;
-
-      if (dto.delivery_date !== undefined) {
-        order.delivery_date = dto.delivery_date
-          ? new Date(dto.delivery_date)
-          : null;
-      }
-
+      order.is_received = true;
       await orderRepo.save(order);
+
       return this.findById(order.id);
     });
   }

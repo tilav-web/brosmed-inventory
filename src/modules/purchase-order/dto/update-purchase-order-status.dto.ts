@@ -12,8 +12,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 import { OrderStatus } from '../enums/order-status.enum';
-
-export class UpdateOrderItemDeliveryDto {
+export class ReceiveOrderItemDto {
   @ApiProperty({ example: 'order-item-uuid' })
   @IsUUID('4')
   order_item_id: string;
@@ -33,6 +32,21 @@ export class UpdateOrderItemDeliveryDto {
   @IsString()
   @MaxLength(255)
   batch_number?: string;
+
+  @ApiPropertyOptional({ example: 'SN-12345678' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  serial_number?: string;
+}
+
+export class ReceivePurchaseOrderDto {
+  @ApiProperty({ type: [ReceiveOrderItemDto] })
+  @IsArray()
+  @ArrayMinSize(1)
+  @ValidateNested({ each: true })
+  @Type(() => ReceiveOrderItemDto)
+  items: ReceiveOrderItemDto[];
 }
 
 export class UpdatePurchaseOrderStatusDto {
@@ -42,13 +56,6 @@ export class UpdatePurchaseOrderStatusDto {
 
   @ApiProperty({ required: false, example: '2026-03-15T12:00:00.000Z' })
   @IsOptional()
+  @IsDateString()
   delivery_date?: string;
-
-  @ApiPropertyOptional({ type: [UpdateOrderItemDeliveryDto] })
-  @IsOptional()
-  @IsArray()
-  @ArrayMinSize(1)
-  @ValidateNested({ each: true })
-  @Type(() => UpdateOrderItemDeliveryDto)
-  items?: UpdateOrderItemDeliveryDto[];
 }

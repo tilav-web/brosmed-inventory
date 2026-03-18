@@ -24,7 +24,10 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreatePurchaseOrderDto } from '../dto/create-purchase-order.dto';
 import { ListPurchaseOrdersQueryDto } from '../dto/list-purchase-orders-query.dto';
-import { UpdatePurchaseOrderStatusDto } from '../dto/update-purchase-order-status.dto';
+import {
+  UpdatePurchaseOrderStatusDto,
+  ReceivePurchaseOrderDto,
+} from '../dto/update-purchase-order-status.dto';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 
 @Controller('purchase-orders')
@@ -77,5 +80,19 @@ export class PurchaseOrderController {
     @Body() dto: UpdatePurchaseOrderStatusDto,
   ) {
     return this.purchaseOrderService.updateStatus(id, dto);
+  }
+
+  @Post(':id/receive')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({ summary: 'Purchase orderni omborga qabul qilish (receive)' })
+  @ApiBody({ type: ReceivePurchaseOrderDto })
+  @ApiOkResponse({ description: 'Purchase order omborga qabul qilindi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  receive(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReceivePurchaseOrderDto,
+  ) {
+    return this.purchaseOrderService.receiveOrder(id, dto);
   }
 }

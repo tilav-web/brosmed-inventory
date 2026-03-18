@@ -28,6 +28,10 @@ export class PurchaseOrder {
   @Column({ type: 'enum', enum: OrderStatus, default: OrderStatus.PENDING })
   status: OrderStatus;
 
+  // Buyurtma omborga jismonan qabul qilinganmi (ProductBatch yaratilganmi).
+  @Column({ type: 'boolean', default: false })
+  is_received: boolean;
+
   // Buyurtma berilgan sana/vaqt.
   @Column({ type: 'timestamp' })
   order_date: Date;

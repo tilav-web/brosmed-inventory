@@ -8,7 +8,6 @@ import {
   Min,
   MinLength,
 } from 'class-validator';
-import { type UploadedImage } from '../services/product.service';
 
 export class CreateProductDto {
   @ApiProperty({ example: 'Antibiotik Amoksitsillin 500mg' })
@@ -48,12 +47,4 @@ export class CreateProductDto {
   @ApiProperty({ example: 'unit-uuid' })
   @IsUUID('4')
   unit_id: string;
-
-  @ApiPropertyOptional({
-    type: 'string',
-    format: 'binary',
-    description: 'Mahsulot rasmi',
-  })
-  @IsOptional()
-  image?: UploadedImage;
 }

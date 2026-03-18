@@ -7,7 +7,6 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
-import { FileFolderEnum } from 'src/modules/image/enums/file-folder.enum';
 import { ImageService } from 'src/modules/image/services/image.service';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
 import { Unit } from 'src/modules/unit/entities/unit.entity';
@@ -172,15 +171,6 @@ export class ProductService {
       warehouse,
     });
 
-    if (dto.image) {
-      product.image = await this.imageService.saveImage({
-        file: dto.image,
-        folder: FileFolderEnum.PRODUCTS,
-        entityId: dto.name,
-      });
-    }
-
-    // 5. Final Save
     return this.productRepository.save(product);
   }
 
@@ -200,22 +190,6 @@ export class ProductService {
     }
 
     const product = await this.findById(id);
-
-    if (dto.image) {
-      if (!dto.image.mimetype.startsWith('image/')) {
-        throw new BadRequestException('Faqat rasm fayli yuborish mumkin');
-      }
-
-      if (product.image) {
-        await this.imageService.deleteImage(product.image);
-      }
-
-      product.image = await this.imageService.saveImage({
-        file: dto.image,
-        folder: FileFolderEnum.PRODUCTS,
-        entityId: product.id,
-      });
-    }
 
     if (dto.name !== undefined) {
       product.name = dto.name;
