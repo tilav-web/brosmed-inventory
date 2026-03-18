@@ -71,7 +71,7 @@ export class ProductBatchService {
 
     const [data, total] = await this.productBatchRepository.findAndCount({
       order: {
-        expiration_date: 'ASC',
+        expiration_date: 'ASC', // Muddati yaqinlar birinchi
       },
       take: limit,
       skip: skip,
@@ -80,9 +80,10 @@ export class ProductBatchService {
     return {
       data,
       meta: {
+        page: Number(page),
+        limit: Number(limit),
         total,
-        page,
-        last_page: Math.ceil(total / limit),
+        total_pages: Math.ceil(total / limit) || 1,
       },
     };
   }
