@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
@@ -19,6 +19,13 @@ export class ListPurchaseOrdersQueryDto {
 
   @ApiPropertyOptional({ enum: OrderStatus, example: OrderStatus.PENDING })
   @IsOptional()
+  // Qavslarni va qiymatni tekshirishni quyidagicha yozing:
+  @Transform(({ value }) => {
+    if (value === '' || value === null || value === 'undefined') {
+      return undefined;
+    }
+    return value as OrderStatus;
+  })
   @IsEnum(OrderStatus)
   status?: OrderStatus;
 
