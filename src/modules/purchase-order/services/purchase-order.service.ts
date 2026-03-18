@@ -50,9 +50,7 @@ export class PurchaseOrderService {
     const qb = this.purchaseOrderRepository
       .createQueryBuilder('po')
       .leftJoinAndSelect('po.supplier', 'supplier')
-      .leftJoinAndSelect('po.warehouse', 'warehouse')
-      .leftJoinAndSelect('po.items', 'item')
-      .leftJoinAndSelect('item.product', 'product');
+      .leftJoinAndSelect('po.warehouse', 'warehouse');
 
     if (search) {
       qb.andWhere(
