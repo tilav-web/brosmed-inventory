@@ -7,6 +7,7 @@ import {
 } from 'typeorm';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
+import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { Expense } from './expense.entity';
 
 // ExpenseItem: chiqim ichidagi alohida mahsulot satri.
@@ -35,6 +36,13 @@ export class ExpenseItem {
   @JoinColumn({ name: 'warehouse_id' })
   warehouse: Warehouse;
 
-  @Column({ type: 'uuid' })
-  product_batch_id: string;
+  // Qaysi partiyadan chiqim qilingan.
+  @ManyToOne(() => ProductBatch, (batch) => batch.expense_items, {
+    nullable: true,
+  })
+  @JoinColumn({ name: 'product_batch_id' })
+  product_batch: ProductBatch | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  product_batch_id: string | null;
 }
