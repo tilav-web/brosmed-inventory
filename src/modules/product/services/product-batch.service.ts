@@ -70,7 +70,6 @@ export class ProductBatchService {
     const skip = (page - 1) * limit;
 
     const [data, total] = await this.productBatchRepository.findAndCount({
-      relations: ['product', 'warehouse'],
       order: {
         expiration_date: 'ASC',
       },
