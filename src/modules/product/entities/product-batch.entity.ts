@@ -4,11 +4,13 @@ import {
   Entity,
   JoinColumn,
   ManyToOne,
+  OneToMany,
   PrimaryGeneratedColumn,
 } from 'typeorm';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
+import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
 
 // ProductBatch: omborga kirib kelgan mahsulot partiyasi (narx + yaroqlilik muddati).
 @Entity({ name: 'product_batches' })
@@ -53,6 +55,10 @@ export class ProductBatch {
   // Product ID.
   @Column({ type: 'uuid' })
   product_id: string;
+
+  // Ushbu partiyadan qilingan chiqimlar ro'yxati.
+  @OneToMany(() => ExpenseItem, (expenseItem) => expenseItem.product_batch_id)
+  expense_items: ExpenseItem[];
 
   // Qaysi omborga kirgan.
   @ManyToOne(() => Warehouse, { nullable: false })

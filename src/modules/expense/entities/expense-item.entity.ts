@@ -34,4 +34,7 @@ export class ExpenseItem {
   @ManyToOne(() => Warehouse, { nullable: false })
   @JoinColumn({ name: 'warehouse_id' })
   warehouse: Warehouse;
+
+  @Column({ type: 'uuid' })
+  product_batch_id: string;
 }
