@@ -103,6 +103,33 @@ export class PurchaseOrderService {
     return order;
   }
 
+  async getStatistics() {
+    const stats = await this.purchaseOrderRepository
+      .createQueryBuilder('po')
+      .select('po.status', 'status')
+      .addSelect('COUNT(po.id)', 'count')
+      .groupBy('po.status')
+      .getRawMany<{ status: OrderStatus; count: string }>();
+
+    const result: Record<string, number> = {
+      [OrderStatus.PENDING]: 0,
+      [OrderStatus.CONFIRMED]: 0,
+      [OrderStatus.DELIVERED]: 0,
+      [OrderStatus.CANCELLED]: 0,
+      total: 0,
+    };
+
+    let total = 0;
+    stats.forEach((stat) => {
+      const count = parseInt(stat.count, 10);
+      result[stat.status] = count;
+      total += count;
+    });
+
+    result.total = total;
+    return result;
+  }
+
   async create(dto: CreatePurchaseOrderDto) {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);

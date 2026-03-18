@@ -49,6 +49,15 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.findAll(query);
   }
 
+  @Get('statistics')
+  @ApiOperation({ summary: 'Purchase order statuslar bo`yicha statistikasi' })
+  @ApiOkResponse({ description: 'Statistika muvaffaqiyatli olindi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  getStatistics() {
+    return this.purchaseOrderService.getStatistics();
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Bitta purchase orderni id bo`yicha olish' })
   @ApiOkResponse({ description: 'Purchase order topildi' })
