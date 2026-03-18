@@ -17,6 +17,11 @@ export class UpdateProductDto {
   @MaxLength(255)
   name?: string;
 
+  @ApiPropertyOptional({ example: 'MXIK code' })
+  @IsString()
+  @MaxLength(255)
+  mxik_code?: string;
+
   @ApiPropertyOptional({ example: 5 })
   @IsOptional()
   @IsInt()

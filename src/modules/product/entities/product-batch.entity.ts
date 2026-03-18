@@ -41,6 +41,10 @@ export class ProductBatch {
   @Column({ type: 'varchar', nullable: true })
   batch_number: string | null;
 
+  // Mahsulotning seriya raqami (ixtiyoriy).
+  @Column({ type: 'varchar', nullable: true })
+  serial_number: string | null;
+
   // Qaysi mahsulot partiyasi.
   @ManyToOne(() => Product, (product) => product.batches, { nullable: false })
   @JoinColumn({ name: 'product_id' })

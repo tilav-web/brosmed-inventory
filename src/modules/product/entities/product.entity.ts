@@ -37,6 +37,10 @@ export class Product {
   @Column({ type: 'int', default: 10 })
   min_limit: number;
 
+  // MXIK kodi (Mahsulotlar va xizmatlarning identifikatsiya kodi - 17 xonali).
+  @Column({ type: 'varchar', length: 17, nullable: true })
+  mxik_code: string | null;
+
   // Saqlash sharoitlari (ixtiyoriy).
   @Column({ type: 'text', nullable: true })
   storage_conditions: string | null;

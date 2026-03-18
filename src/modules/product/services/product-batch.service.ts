@@ -7,6 +7,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { UpdateProductBatchDto } from '../dto/update-product-batch.dto';
 import { ProductBatch } from '../entities/product-batch.entity';
+import { ListProductBatchsQueryDto } from '../dto/list-product-batch-query.dto';
 
 @Injectable()
 export class ProductBatchService {
@@ -62,5 +63,28 @@ export class ProductBatchService {
     }
 
     return this.productBatchRepository.save(batch);
+  }
+
+  async findAll(query: ListProductBatchsQueryDto) {
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
+
+    const [data, total] = await this.productBatchRepository.findAndCount({
+      relations: ['product', 'warehouse'],
+      order: {
+        expiration_date: 'ASC',
+      },
+      take: limit,
+      skip: skip,
+    });
+
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        last_page: Math.ceil(total / limit),
+      },
+    };
   }
 }

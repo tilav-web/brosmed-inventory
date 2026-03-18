@@ -17,6 +17,11 @@ export class CreateProductDto {
   @MaxLength(255)
   name: string;
 
+  @ApiProperty({ example: 'MXIK code' })
+  @IsString()
+  @MaxLength(255)
+  mxik_code?: string;
+
   @ApiPropertyOptional({ example: 10, default: 10 })
   @IsOptional()
   @IsInt()

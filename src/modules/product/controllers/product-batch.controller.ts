@@ -1,9 +1,11 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   ParseUUIDPipe,
   Patch,
+  Query,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -12,6 +14,7 @@ import {
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiResponse,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -21,6 +24,7 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { UpdateProductBatchDto } from '../dto/update-product-batch.dto';
 import { ProductBatchService } from '../services/product-batch.service';
+import { ListProductBatchsQueryDto } from '../dto/list-product-batch-query.dto';
 
 @Controller('product-batches')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -41,5 +45,15 @@ export class ProductBatchController {
     @Body() dto: UpdateProductBatchDto,
   ) {
     return this.productBatchService.update(id, dto);
+  }
+
+  @Get()
+  @ApiOperation({ summary: 'Barcha partiyalarni pagination bilan olish' })
+  @ApiResponse({ status: 200, description: 'Muvaffaqiyatli qaytarildi.' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  async findAll(@Query() query: ListProductBatchsQueryDto) {
+    return await this.productBatchService.findAll(query);
   }
 }
