@@ -4,13 +4,11 @@ import {
   ArrayMinSize,
   IsArray,
   IsEnum,
-  IsInt,
+  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
-  MaxLength,
   Min,
-  MinLength,
   ValidateNested,
 } from 'class-validator';
 import { ExpenseType } from '../enums/expense-type.enum';
@@ -37,14 +35,11 @@ export class CreateExpenseItemDto {
 export class CreateExpenseDto {
   @ApiProperty({ example: 'Ali Valiyev' })
   @IsString()
-  @MinLength(2)
-  @MaxLength(255)
   staff_name: string;
 
-  @ApiPropertyOptional({ example: 'Jarrohlik bo`limi uchun' })
+  @ApiPropertyOptional({ example: 'Klinika ehtiyojlari uchun' })
   @IsOptional()
   @IsString()
-  @MaxLength(1000)
   purpose?: string;
 
   @ApiPropertyOptional({ enum: ExpenseType, example: ExpenseType.USAGE })

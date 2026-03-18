@@ -63,31 +63,22 @@ export class ProductStatusSchedulerService {
   }
 
   private async writeOffExpiredBatches(today: string) {
-    const expiredGroups = await this.productBatchRepository
+    // Muddati o'tgan partiyalarni alohida-alohida olamiz
+    const expiredBatches = await this.productBatchRepository
       .createQueryBuilder('batch')
-      .select('batch.product_id', 'product_id')
-      .addSelect('batch.warehouse_id', 'warehouse_id')
-      .addSelect('SUM(batch.quantity)', 'quantity')
       .where('batch.quantity > 0')
       .andWhere('batch.expiration_date IS NOT NULL')
       .andWhere('batch.expiration_date < :today', { today })
-      .groupBy('batch.product_id')
-      .addGroupBy('batch.warehouse_id')
-      .getRawMany<{
-        product_id: string;
-        warehouse_id: string;
-        quantity: string;
-      }>();
+      .getMany();
 
-    const items = expiredGroups
-      .map((group) => ({
-        product_id: group.product_id,
-        warehouse_id: group.warehouse_id,
-        quantity: Number(group.quantity),
-      }))
-      .filter((item) => Number.isFinite(item.quantity) && item.quantity > 0);
+    if (expiredBatches.length === 0) return;
 
-    if (items.length === 0) return;
+    const items = expiredBatches.map((batch) => ({
+      product_id: batch.product_id,
+      warehouse_id: batch.warehouse_id,
+      product_batch_id: batch.id, // Endi majburiy
+      quantity: Number(batch.quantity),
+    }));
 
     const { expense } = await this.expenseService.createAndGetReceipt({
       staff_name: 'SYSTEM',
@@ -100,6 +91,10 @@ export class ProductStatusSchedulerService {
     await this.expenseService.attachCheckImageAndComplete(
       expense.id,
       'SYSTEM_AUTO',
+    );
+
+    this.logger.log(
+      `Auto write-off completed for ${expiredBatches.length} batches.`,
     );
   }
 

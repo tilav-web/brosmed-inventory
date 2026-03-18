@@ -16,7 +16,7 @@ import { ExpenseType } from '../enums/expense-type.enum';
 import { ExpenseItem } from '../entities/expense-item.entity';
 import { Expense } from '../entities/expense.entity';
 
-interface ReceiptItem {
+export interface ReceiptItem {
   product_id: string;
   product_name: string;
   warehouse_id: string;
