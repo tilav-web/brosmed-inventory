@@ -451,29 +451,13 @@ export class SeedService implements OnApplicationBootstrap {
         const product = this.pick(input.products);
         const quantity = this.randomInt(5, 40);
         const price = this.randomNumber(3000, 120000, 2);
-        const expirationDate =
-          Math.random() < 0.2
-            ? null
-            : this.addDays(today, this.randomInt(30, 360));
-        const expirationAlertDate =
-          expirationDate && Math.random() < 0.9
-            ? this.addDays(
-                expirationDate,
-                -this.randomInt(
-                  5,
-                  Math.min(30, this.daysBetween(today, expirationDate)),
-                ),
-              )
-            : null;
+        
         total += quantity * price;
         items.push(
           this.orderItemRepository.create({
             product,
             quantity,
             price_at_purchase: price,
-            expiration_date: expirationDate,
-            expiration_alert_date: expirationAlertDate,
-            batch_number: `BATCH-${input.runId}-${String(i + 1).padStart(4, '0')}-${String(j + 1).padStart(2, '0')}`,
           }),
         );
       }
