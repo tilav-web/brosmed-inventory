@@ -82,8 +82,12 @@ export class PurchaseOrderService {
     };
   }
 
-  async findById(id: string) {
-    const order = await this.purchaseOrderRepository.findOne({
+  async findById(id: string, manager?: EntityManager) {
+    const repo = manager
+      ? manager.getRepository(PurchaseOrder)
+      : this.purchaseOrderRepository;
+
+    const order = await repo.findOne({
       where: { id },
       relations: {
         supplier: true,
@@ -202,7 +206,7 @@ export class PurchaseOrderService {
       order.total_amount = Number(totalAmount.toFixed(2));
       await orderRepo.save(order);
 
-      return this.findById(order.id);
+      return this.findById(order.id, manager);
     });
   }
 
@@ -354,7 +358,7 @@ export class PurchaseOrderService {
       order.is_received = true;
       await orderRepo.save(order);
 
-      return this.findById(order.id);
+      return this.findById(order.id, manager);
     });
   }
 }
