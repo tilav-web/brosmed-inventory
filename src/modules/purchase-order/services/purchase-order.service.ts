@@ -33,13 +33,20 @@ export class PurchaseOrderService {
   private async generateOrderNumber(manager: EntityManager): Promise<string> {
     const year = new Date().getFullYear();
 
-    const totalThisYear = await manager
+    // Serialize order number generation per year to avoid duplicates
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `purchase_order:${year}`,
+    ]);
+
+    const result = await manager
       .getRepository(PurchaseOrder)
       .createQueryBuilder('po')
-      .where('EXTRACT(YEAR FROM po.createdAt) = :year', { year })
-      .getCount();
+      .select('MAX(CAST(SPLIT_PART(po.order_number, \'-\', 3) AS int))', 'max')
+      .where('po.order_number LIKE :prefix', { prefix: `PO-${year}-%` })
+      .getRawOne<{ max: string | null }>();
 
-    return `PO-${year}-${String(totalThisYear + 1).padStart(3, '0')}`;
+    const last = result?.max ? parseInt(result.max, 10) : 0;
+    return `PO-${year}-${String(last + 1).padStart(3, '0')}`;
   }
 
   async findAll(query: ListPurchaseOrdersQueryDto) {
