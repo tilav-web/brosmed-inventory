@@ -314,6 +314,7 @@ export class PurchaseOrderService {
   async deleteOrder(id: string) {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
+      const orderItemRepo = manager.getRepository(OrderItem);
 
       const order = await orderRepo.findOne({
         where: { id },
@@ -332,7 +333,14 @@ export class PurchaseOrderService {
         );
       }
 
-      await orderRepo.remove(order);
+      await orderItemRepo
+        .createQueryBuilder()
+        .delete()
+        .from(OrderItem)
+        .where('purchase_order_id = :id', { id: order.id })
+        .execute();
+
+      await orderRepo.delete(order.id);
       return { message: 'Purchase order o`chirildi' };
     });
   }
