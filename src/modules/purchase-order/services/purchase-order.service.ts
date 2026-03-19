@@ -213,10 +213,25 @@ export class PurchaseOrderService {
   async updateStatus(id: string, dto: UpdatePurchaseOrderStatusDto) {
     const order = await this.purchaseOrderRepository.findOne({
       where: { id },
+      relations: {
+        items: {
+          product: {
+            warehouse: true,
+          },
+        },
+        supplier: true,
+        warehouse: true,
+      },
     });
 
     if (!order) {
       throw new NotFoundException('Purchase order topilmadi');
+    }
+
+    if (order.is_received) {
+      throw new BadRequestException(
+        'Qabul qilingan buyurtmani o`zgartirib bo`lmaydi',
+      );
     }
 
     if (order.status === OrderStatus.CANCELLED) {
@@ -234,6 +249,43 @@ export class PurchaseOrderService {
       );
     }
 
+    if (dto.supplier_id) {
+      const supplier = await this.dataSource
+        .getRepository(Supplier)
+        .findOne({ where: { id: dto.supplier_id } });
+      if (!supplier) {
+        throw new NotFoundException('Supplier topilmadi');
+      }
+      order.supplier = supplier;
+      order.supplier_id = supplier.id;
+    }
+
+    if (dto.warehouse_id) {
+      const warehouse = await this.dataSource
+        .getRepository(Warehouse)
+        .findOne({ where: { id: dto.warehouse_id } });
+      if (!warehouse) {
+        throw new NotFoundException('Warehouse topilmadi');
+      }
+
+      for (const item of order.items ?? []) {
+        if (item.product?.warehouse?.id !== warehouse.id) {
+          throw new BadRequestException(
+            `Product ${item.product?.id} tanlangan warehousega tegishli emas`,
+          );
+        }
+      }
+
+      order.warehouse = warehouse;
+      order.warehouse_id = warehouse.id;
+    }
+
+    if (dto.order_date !== undefined) {
+      order.order_date = dto.order_date
+        ? new Date(dto.order_date)
+        : order.order_date;
+    }
+
     order.status = dto.status;
 
     if (dto.delivery_date !== undefined) {
@@ -244,6 +296,73 @@ export class PurchaseOrderService {
 
     await this.purchaseOrderRepository.save(order);
     return this.findById(order.id);
+  }
+
+  async deleteOrder(id: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(PurchaseOrder);
+
+      const order = await orderRepo.findOne({
+        where: { id },
+        relations: {
+          items: true,
+        },
+      });
+
+      if (!order) {
+        throw new NotFoundException('Purchase order topilmadi');
+      }
+
+      if (order.is_received || order.status === OrderStatus.DELIVERED) {
+        throw new BadRequestException(
+          'Delivered/qabul qilingan buyurtmani o`chirib bo`lmaydi',
+        );
+      }
+
+      await orderRepo.remove(order);
+      return { message: 'Purchase order o`chirildi' };
+    });
+  }
+
+  async deleteOrderItem(orderId: string, itemId: string) {
+    return this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(PurchaseOrder);
+      const orderItemRepo = manager.getRepository(OrderItem);
+
+      const order = await orderRepo.findOne({
+        where: { id: orderId },
+        relations: { items: true },
+      });
+
+      if (!order) {
+        throw new NotFoundException('Purchase order topilmadi');
+      }
+
+      if (order.is_received || order.status === OrderStatus.DELIVERED) {
+        throw new BadRequestException(
+          'Delivered/qabul qilingan buyurtma itemini o`chirib bo`lmaydi',
+        );
+      }
+
+      const item = order.items?.find((i) => i.id === itemId);
+      if (!item) {
+        throw new NotFoundException('Order item topilmadi');
+      }
+
+      await orderItemRepo.remove(item);
+
+      const totalAmount = (order.items ?? [])
+        .filter((i) => i.id !== itemId)
+        .reduce((sum, i) => {
+          const price = Number(i.price_at_purchase);
+          return sum + price * Number(i.quantity);
+        }, 0);
+
+      order.total_amount = Number(totalAmount.toFixed(2));
+      await orderRepo.save(order);
+
+      return this.findById(order.id, manager);
+    });
   }
 
   async receiveOrder(id: string, dto: ReceivePurchaseOrderDto) {

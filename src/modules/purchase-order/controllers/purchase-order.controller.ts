@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
@@ -103,5 +104,30 @@ export class PurchaseOrderController {
     @Body() dto: ReceivePurchaseOrderDto,
   ) {
     return this.purchaseOrderService.receiveOrder(id, dto);
+  }
+
+  @Delete(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Purchase orderni o`chirish (faqat admin)' })
+  @ApiOkResponse({ description: 'Purchase order o`chirildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  remove(@Param('id', ParseUUIDPipe) id: string) {
+    return this.purchaseOrderService.deleteOrder(id);
+  }
+
+  @Delete(':id/items/:itemId')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Purchase order itemini o`chirish (faqat admin)',
+  })
+  @ApiOkResponse({ description: 'Order item o`chirildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  removeItem(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('itemId', ParseUUIDPipe) itemId: string,
+  ) {
+    return this.purchaseOrderService.deleteOrderItem(id, itemId);
   }
 }

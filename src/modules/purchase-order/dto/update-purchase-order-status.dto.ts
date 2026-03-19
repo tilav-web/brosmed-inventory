@@ -54,6 +54,21 @@ export class UpdatePurchaseOrderStatusDto {
   @IsEnum(OrderStatus)
   status: OrderStatus;
 
+  @ApiPropertyOptional({ example: 'supplier-uuid' })
+  @IsOptional()
+  @IsUUID('4')
+  supplier_id?: string;
+
+  @ApiPropertyOptional({ example: 'warehouse-uuid' })
+  @IsOptional()
+  @IsUUID('4')
+  warehouse_id?: string;
+
+  @ApiPropertyOptional({ example: '2026-03-09T12:00:00.000Z' })
+  @IsOptional()
+  @IsDateString()
+  order_date?: string;
+
   @ApiProperty({ required: false, example: '2026-03-15T12:00:00.000Z' })
   @IsOptional()
   @IsDateString()
