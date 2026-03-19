@@ -29,7 +29,7 @@ import {
   UpdatePurchaseOrderStatusDto,
   ReceivePurchaseOrderDto,
 } from '../dto/update-purchase-order-status.dto';
-import { DeletePurchaseOrderItemsDto } from '../dto/delete-purchase-order-items.dto';
+import { UpdatePurchaseOrderDto } from '../dto/update-purchase-order.dto';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 
 @Controller('purchase-orders')
@@ -80,6 +80,23 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.create(dto);
   }
 
+  @Patch(':id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary:
+      'Purchase orderni yangilash (order fieldlari + item qo`shish/o`chirish)',
+  })
+  @ApiBody({ type: UpdatePurchaseOrderDto })
+  @ApiOkResponse({ description: 'Purchase order yangilandi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdatePurchaseOrderDto,
+  ) {
+    return this.purchaseOrderService.updateOrder(id, dto);
+  }
+
   @Patch(':id/status')
   @ApiOperation({ summary: 'Purchase order statusini yangilash' })
   @ApiBody({ type: UpdatePurchaseOrderStatusDto })
@@ -115,21 +132,5 @@ export class PurchaseOrderController {
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.purchaseOrderService.deleteOrder(id);
-  }
-
-  @Delete(':id/items')
-  @Roles(Role.ADMIN)
-  @ApiOperation({
-    summary: 'Purchase order itemlarini o`chirish (faqat admin)',
-  })
-  @ApiBody({ type: DeletePurchaseOrderItemsDto })
-  @ApiOkResponse({ description: 'Order itemlar o`chirildi' })
-  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
-  removeItems(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: DeletePurchaseOrderItemsDto,
-  ) {
-    return this.purchaseOrderService.deleteOrderItems(id, dto.item_ids);
   }
 }

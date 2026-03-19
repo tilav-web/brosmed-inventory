@@ -16,6 +16,7 @@ import {
   ReceivePurchaseOrderDto,
   ReceiveOrderItemDto,
 } from '../dto/update-purchase-order-status.dto';
+import { UpdatePurchaseOrderDto } from '../dto/update-purchase-order.dto';
 import { OrderStatus } from '../enums/order-status.enum';
 import { OrderItem } from '../entities/order-item.entity';
 import { PurchaseOrder } from '../entities/purchase-order.entity';
@@ -41,7 +42,7 @@ export class PurchaseOrderService {
     const result = await manager
       .getRepository(PurchaseOrder)
       .createQueryBuilder('po')
-      .select('MAX(CAST(SPLIT_PART(po.order_number, \'-\', 3) AS int))', 'max')
+      .select("MAX(CAST(SPLIT_PART(po.order_number, '-', 3) AS int))", 'max')
       .where('po.order_number LIKE :prefix', { prefix: `PO-${year}-%` })
       .getRawOne<{ max: string | null }>();
 
@@ -318,6 +319,161 @@ export class PurchaseOrderService {
     return this.findById(order.id);
   }
 
+  async updateOrder(id: string, dto: UpdatePurchaseOrderDto) {
+    return this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(PurchaseOrder);
+      const orderItemRepo = manager.getRepository(OrderItem);
+      const supplierRepo = manager.getRepository(Supplier);
+      const warehouseRepo = manager.getRepository(Warehouse);
+      const productRepo = manager.getRepository(Product);
+
+      const order = await orderRepo.findOne({
+        where: { id },
+        relations: {
+          items: {
+            product: {
+              warehouse: true,
+            },
+          },
+          supplier: true,
+          warehouse: true,
+        },
+      });
+
+      if (!order) {
+        throw new NotFoundException('Purchase order topilmadi');
+      }
+
+      if (order.is_received || order.status === OrderStatus.DELIVERED) {
+        throw new BadRequestException(
+          'Delivered/qabul qilingan buyurtmani o`zgartirib bo`lmaydi',
+        );
+      }
+
+      const supplierId =
+        dto.supplier_id !== undefined ? String(dto.supplier_id) : undefined;
+      const warehouseId =
+        dto.warehouse_id !== undefined ? String(dto.warehouse_id) : undefined;
+      const orderDate =
+        dto.order_date !== undefined
+          ? dto.order_date
+            ? new Date(String(dto.order_date))
+            : undefined
+          : undefined;
+      const deliveryDate =
+        dto.delivery_date !== undefined
+          ? dto.delivery_date
+            ? new Date(String(dto.delivery_date))
+            : null
+          : undefined;
+
+      if (supplierId) {
+        const supplier = await supplierRepo.findOne({
+          where: { id: supplierId },
+        });
+        if (!supplier) {
+          throw new NotFoundException('Supplier topilmadi');
+        }
+        order.supplier = supplier;
+        order.supplier_id = supplier.id;
+      }
+
+      if (warehouseId) {
+        const warehouse = await warehouseRepo.findOne({
+          where: { id: warehouseId },
+        });
+        if (!warehouse) {
+          throw new NotFoundException('Warehouse topilmadi');
+        }
+
+        for (const item of order.items ?? []) {
+          if (item.product?.warehouse?.id !== warehouse.id) {
+            throw new BadRequestException(
+              `Product ${item.product?.id} tanlangan warehousega tegishli emas`,
+            );
+          }
+        }
+
+        order.warehouse = warehouse;
+        order.warehouse_id = warehouse.id;
+      }
+
+      if (orderDate !== undefined) {
+        order.order_date = orderDate ?? order.order_date;
+      }
+
+      if (deliveryDate !== undefined) {
+        order.delivery_date = deliveryDate;
+      }
+
+      const itemsToRemove = dto.items_to_remove ?? [];
+      if (itemsToRemove.length > 0) {
+        const orderItemIds = new Set((order.items ?? []).map((i) => i.id));
+
+        for (const itemId of itemsToRemove) {
+          if (!orderItemIds.has(itemId)) {
+            throw new NotFoundException(`Order item topilmadi: ${itemId}`);
+          }
+        }
+
+        const items = (order.items ?? []).filter((i) =>
+          itemsToRemove.includes(i.id),
+        );
+        await orderItemRepo.remove(items);
+      }
+
+      const itemsToAdd = dto.items_to_add ?? [];
+      if (itemsToAdd.length > 0) {
+        for (const item of itemsToAdd) {
+          const product = await productRepo.findOne({
+            where: { id: item.product_id },
+            relations: { warehouse: true },
+          });
+
+          if (!product) {
+            throw new NotFoundException(
+              `Product topilmadi: ${item.product_id}`,
+            );
+          }
+
+          if (product.warehouse?.id !== order.warehouse_id) {
+            throw new BadRequestException(
+              `Product ${product.id} tanlangan warehousega tegishli emas`,
+            );
+          }
+
+          const priceAtPurchase =
+            item.price_at_purchase !== undefined
+              ? Number(item.price_at_purchase)
+              : 0;
+
+          await orderItemRepo.save(
+            orderItemRepo.create({
+              purchase_order: order,
+              product,
+              quantity: item.quantity,
+              price_at_purchase: Number(priceAtPurchase.toFixed(2)),
+            }),
+          );
+        }
+      }
+
+      const updatedItems = await orderItemRepo.find({
+        where: { purchase_order: { id: order.id } },
+      });
+
+      const totalAmount = updatedItems.reduce((sum, i) => {
+        const price = Number(i.price_at_purchase);
+        return sum + price * Number(i.quantity);
+      }, 0);
+
+      order.total_amount = Number(totalAmount.toFixed(2));
+      await orderRepo.save(order);
+
+      return this.findById(order.id, manager);
+    });
+  }
+
   async deleteOrder(id: string) {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
@@ -349,56 +505,6 @@ export class PurchaseOrderService {
 
       await orderRepo.delete(order.id);
       return { message: 'Purchase order o`chirildi' };
-    });
-  }
-
-  async deleteOrderItems(orderId: string, itemIds: string[]) {
-    return this.dataSource.transaction(async (manager) => {
-      const orderRepo = manager.getRepository(PurchaseOrder);
-      const orderItemRepo = manager.getRepository(OrderItem);
-
-      const order = await orderRepo.findOne({
-        where: { id: orderId },
-        relations: { items: true },
-      });
-
-      if (!order) {
-        throw new NotFoundException('Purchase order topilmadi');
-      }
-
-      if (order.is_received || order.status === OrderStatus.DELIVERED) {
-        throw new BadRequestException(
-          'Delivered/qabul qilingan buyurtma itemlarini o`chirib bo`lmaydi',
-        );
-      }
-
-      const orderItems = order.items ?? [];
-      const orderItemIds = new Set(orderItems.map((i) => i.id));
-
-      for (const itemId of itemIds) {
-        if (!orderItemIds.has(itemId)) {
-          throw new NotFoundException(`Order item topilmadi: ${itemId}`);
-        }
-      }
-
-      const itemsToDelete = orderItems.filter((i) => itemIds.includes(i.id));
-      if (itemsToDelete.length === 0) {
-        throw new NotFoundException('Order item topilmadi');
-      }
-
-      await orderItemRepo.remove(itemsToDelete);
-
-      const totalAmount = orderItems
-        .filter((i) => !itemIds.includes(i.id))
-        .reduce((sum, i) => {
-          const price = Number(i.price_at_purchase);
-          return sum + price * Number(i.quantity);
-        }, 0);
-
-      order.total_amount = Number(totalAmount.toFixed(2));
-      await orderRepo.save(order);
-
-      return this.findById(order.id, manager);
     });
   }
 
