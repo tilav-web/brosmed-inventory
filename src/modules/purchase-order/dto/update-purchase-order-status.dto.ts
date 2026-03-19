@@ -56,12 +56,16 @@ export class UpdatePurchaseOrderStatusDto {
 
   @ApiPropertyOptional({ example: 'supplier-uuid' })
   @IsOptional()
+  @IsString()
   @IsUUID('4')
+  @Type(() => String)
   supplier_id?: string;
 
   @ApiPropertyOptional({ example: 'warehouse-uuid' })
   @IsOptional()
+  @IsString()
   @IsUUID('4')
+  @Type(() => String)
   warehouse_id?: string;
 
   @ApiPropertyOptional({ example: '2026-03-09T12:00:00.000Z' })

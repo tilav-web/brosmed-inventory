@@ -21,6 +21,11 @@ export class ListProductsQueryDto {
   @IsUUID('4')
   category_id?: string;
 
+  @ApiPropertyOptional({ example: 'warehouse-uuid' })
+  @IsOptional()
+  @IsUUID('4')
+  warehouse_id?: string;
+
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
   @Type(() => Number)

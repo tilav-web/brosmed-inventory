@@ -32,4 +32,7 @@ export class OrderItem {
   @ManyToOne(() => Product, { nullable: false })
   @JoinColumn({ name: 'product_id' })
   product: Product;
+
+  @Column()
+  product_id: string;
 }

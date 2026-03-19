@@ -249,10 +249,27 @@ export class PurchaseOrderService {
       );
     }
 
-    if (dto.supplier_id) {
+    const supplierId =
+      dto.supplier_id !== undefined ? String(dto.supplier_id) : undefined;
+    const warehouseId =
+      dto.warehouse_id !== undefined ? String(dto.warehouse_id) : undefined;
+    const orderDate =
+      dto.order_date !== undefined
+        ? dto.order_date
+          ? new Date(String(dto.order_date))
+          : undefined
+        : undefined;
+    const deliveryDate =
+      dto.delivery_date !== undefined
+        ? dto.delivery_date
+          ? new Date(String(dto.delivery_date))
+          : null
+        : undefined;
+
+    if (supplierId) {
       const supplier = await this.dataSource
         .getRepository(Supplier)
-        .findOne({ where: { id: dto.supplier_id } });
+        .findOne({ where: { id: supplierId } });
       if (!supplier) {
         throw new NotFoundException('Supplier topilmadi');
       }
@@ -260,10 +277,10 @@ export class PurchaseOrderService {
       order.supplier_id = supplier.id;
     }
 
-    if (dto.warehouse_id) {
+    if (warehouseId) {
       const warehouse = await this.dataSource
         .getRepository(Warehouse)
-        .findOne({ where: { id: dto.warehouse_id } });
+        .findOne({ where: { id: warehouseId } });
       if (!warehouse) {
         throw new NotFoundException('Warehouse topilmadi');
       }
@@ -280,18 +297,14 @@ export class PurchaseOrderService {
       order.warehouse_id = warehouse.id;
     }
 
-    if (dto.order_date !== undefined) {
-      order.order_date = dto.order_date
-        ? new Date(dto.order_date)
-        : order.order_date;
+    if (orderDate !== undefined) {
+      order.order_date = orderDate ?? order.order_date;
     }
 
     order.status = dto.status;
 
-    if (dto.delivery_date !== undefined) {
-      order.delivery_date = dto.delivery_date
-        ? new Date(dto.delivery_date)
-        : null;
+    if (deliveryDate !== undefined) {
+      order.delivery_date = deliveryDate;
     }
 
     await this.purchaseOrderRepository.save(order);

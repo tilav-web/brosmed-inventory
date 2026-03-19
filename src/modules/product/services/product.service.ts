@@ -42,6 +42,7 @@ export class ProductService {
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
     const categoryId = query.category_id;
+    const warehouseId = query.warehouse_id;
 
     const qb = this.productRepository
       .createQueryBuilder('product')
@@ -54,6 +55,10 @@ export class ProductService {
 
     if (categoryId) {
       qb.andWhere('product.category_id = :categoryId', { categoryId });
+    }
+
+    if (warehouseId) {
+      qb.andWhere('product.warehouse_id = :warehouseId', { warehouseId });
     }
 
     qb.orderBy('product.createdAt', 'DESC')
