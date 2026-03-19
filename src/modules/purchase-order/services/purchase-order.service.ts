@@ -324,7 +324,7 @@ export class PurchaseOrderService {
     });
   }
 
-  async deleteOrderItem(orderId: string, itemId: string) {
+  async deleteOrderItems(orderId: string, itemIds: string[]) {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const orderItemRepo = manager.getRepository(OrderItem);
@@ -340,19 +340,28 @@ export class PurchaseOrderService {
 
       if (order.is_received || order.status === OrderStatus.DELIVERED) {
         throw new BadRequestException(
-          'Delivered/qabul qilingan buyurtma itemini o`chirib bo`lmaydi',
+          'Delivered/qabul qilingan buyurtma itemlarini o`chirib bo`lmaydi',
         );
       }
 
-      const item = order.items?.find((i) => i.id === itemId);
-      if (!item) {
+      const orderItems = order.items ?? [];
+      const orderItemIds = new Set(orderItems.map((i) => i.id));
+
+      for (const itemId of itemIds) {
+        if (!orderItemIds.has(itemId)) {
+          throw new NotFoundException(`Order item topilmadi: ${itemId}`);
+        }
+      }
+
+      const itemsToDelete = orderItems.filter((i) => itemIds.includes(i.id));
+      if (itemsToDelete.length === 0) {
         throw new NotFoundException('Order item topilmadi');
       }
 
-      await orderItemRepo.remove(item);
+      await orderItemRepo.remove(itemsToDelete);
 
-      const totalAmount = (order.items ?? [])
-        .filter((i) => i.id !== itemId)
+      const totalAmount = orderItems
+        .filter((i) => !itemIds.includes(i.id))
         .reduce((sum, i) => {
           const price = Number(i.price_at_purchase);
           return sum + price * Number(i.quantity);

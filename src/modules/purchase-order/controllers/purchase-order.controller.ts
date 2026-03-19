@@ -29,6 +29,7 @@ import {
   UpdatePurchaseOrderStatusDto,
   ReceivePurchaseOrderDto,
 } from '../dto/update-purchase-order-status.dto';
+import { DeletePurchaseOrderItemsDto } from '../dto/delete-purchase-order-items.dto';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 
 @Controller('purchase-orders')
@@ -116,18 +117,19 @@ export class PurchaseOrderController {
     return this.purchaseOrderService.deleteOrder(id);
   }
 
-  @Delete(':id/items/:itemId')
+  @Delete(':id/items')
   @Roles(Role.ADMIN)
   @ApiOperation({
-    summary: 'Purchase order itemini o`chirish (faqat admin)',
+    summary: 'Purchase order itemlarini o`chirish (faqat admin)',
   })
-  @ApiOkResponse({ description: 'Order item o`chirildi' })
+  @ApiBody({ type: DeletePurchaseOrderItemsDto })
+  @ApiOkResponse({ description: 'Order itemlar o`chirildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
-  removeItem(
+  removeItems(
     @Param('id', ParseUUIDPipe) id: string,
-    @Param('itemId', ParseUUIDPipe) itemId: string,
+    @Body() dto: DeletePurchaseOrderItemsDto,
   ) {
-    return this.purchaseOrderService.deleteOrderItem(id, itemId);
+    return this.purchaseOrderService.deleteOrderItems(id, dto.item_ids);
   }
 }
