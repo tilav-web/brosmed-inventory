@@ -12,6 +12,7 @@ import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { User } from 'src/modules/user/entities/user.entity';
+import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
@@ -28,6 +29,8 @@ export class WarehouseService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
+    @InjectRepository(ExpenseItem)
+    private readonly expenseItemRepository: Repository<ExpenseItem>,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
   ) {}
@@ -252,6 +255,27 @@ export class WarehouseService {
   async delete(id: string) {
     const warehouse = await this.warehouseRepository.findOne({ where: { id } });
     if (!warehouse) throw new NotFoundException('Warehouse topilmadi');
+
+    const expenseItems = await this.expenseItemRepository
+      .createQueryBuilder('item')
+      .where('item.warehouse_id = :id', { id })
+      .getCount();
+
+    if (expenseItems > 0) {
+      throw new ConflictException(
+        `Bu warehouse ga ${expenseItems} ta chiqim bog'langan. Avval chiqimlarni o'chiring.`,
+      );
+    }
+
+    const products = await this.productRepository.count({
+      where: { warehouse_id: id },
+    });
+    if (products > 0) {
+      throw new ConflictException(
+        `Bu warehouse da ${products} ta mahsulot bor. Avval mahsulotlarni o'chiring yoki boshqa omborga ko'chiring.`,
+      );
+    }
+
     await this.warehouseRepository.delete(warehouse.id);
     await this.redis.del(`warehouse:${id}`);
     await this.clearCache();
