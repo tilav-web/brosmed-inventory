@@ -84,11 +84,19 @@ export class SeedService implements OnApplicationBootstrap {
     });
 
     await this.seedPurchaseOrders({ suppliers, warehouses, products, runId });
-    await this.seedExpenses({ warehouses, products, batches, warehouseManagers, runId });
+    await this.seedExpenses({
+      warehouses,
+      products,
+      batches,
+      warehouseManagers,
+      runId,
+    });
   }
 
   private async seedAdmin(): Promise<void> {
-    const existing = await this.userRepository.findOne({ where: { username: 'admin' } });
+    const existing = await this.userRepository.findOne({
+      where: { username: 'admin' },
+    });
     if (!existing) {
       const hashedPassword = await hash('admin123', 10);
       await this.userRepository.save(
@@ -190,7 +198,17 @@ export class SeedService implements OnApplicationBootstrap {
   }
 
   private async seedUnits(): Promise<Unit[]> {
-    const names = ['dona', 'quti', 'paket', 'litr', 'ml', 'mg', 'g', 'kg', 'metr'];
+    const names = [
+      'dona',
+      'quti',
+      'paket',
+      'litr',
+      'ml',
+      'mg',
+      'g',
+      'kg',
+      'metr',
+    ];
 
     const existing = await this.unitRepository.find({
       where: { name: In(names) },
@@ -216,7 +234,10 @@ export class SeedService implements OnApplicationBootstrap {
       { name: 'Antibiotiklar', description: 'Bakterial infeksiyalar uchun' },
       { name: 'Vitaminlar', description: 'Vitamin va mikroelementlar' },
       { name: 'Og`riq qoldiruvchi', description: 'Analgetik vositalar' },
-      { name: 'Tibbiy sarf materiallari', description: 'Bint, shprits va h.k.' },
+      {
+        name: 'Tibbiy sarf materiallari',
+        description: 'Bint, shprits va h.k.',
+      },
     ];
 
     const existing = await this.categoryRepository.find({
@@ -287,7 +308,9 @@ export class SeedService implements OnApplicationBootstrap {
       where: { name: In(productNames) },
     });
     if (existing.length > 0) {
-      return this.productRepository.find({ relations: { warehouse: true, supplier: true } });
+      return this.productRepository.find({
+        relations: { warehouse: true, supplier: true },
+      });
     }
 
     const toCreate: Product[] = [];
@@ -360,7 +383,13 @@ export class SeedService implements OnApplicationBootstrap {
         const price = this.randomNumber(4000, 40000, 2);
         total += quantity * price;
 
-        items.push(this.orderItemRepository.create({ product, quantity, price_at_purchase: price }));
+        items.push(
+          this.orderItemRepository.create({
+            product,
+            quantity,
+            price_at_purchase: price,
+          }),
+        );
       }
 
       const status = this.pick([OrderStatus.PENDING, OrderStatus.DELIVERED]);

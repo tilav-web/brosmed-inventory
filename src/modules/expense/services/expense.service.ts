@@ -169,7 +169,10 @@ export class ExpenseService {
           );
         }
 
-        if (batch.product_id !== product.id || batch.warehouse_id !== warehouse.id) {
+        if (
+          batch.product_id !== product.id ||
+          batch.warehouse_id !== warehouse.id
+        ) {
           throw new BadRequestException(
             `Tanlangan partiya (Batch: ${batch.id}) tanlangan mahsulot yoki omborga tegishli emas`,
           );
@@ -276,7 +279,9 @@ export class ExpenseService {
       for (const item of expense.items) {
         const batch = item.product_batch;
         if (!batch) {
-          throw new BadRequestException(`Item ${item.id} uchun partiya bog'lanmagan`);
+          throw new BadRequestException(
+            `Item ${item.id} uchun partiya bog'lanmagan`,
+          );
         }
 
         const currentBatch = await productBatchRepo.findOne({
@@ -307,10 +312,14 @@ export class ExpenseService {
         const totalRaw = await productBatchRepo
           .createQueryBuilder('batch')
           .select('SUM(batch.quantity)', 'total')
-          .where('batch.product_id = :productId', { productId: item.product.id })
+          .where('batch.product_id = :productId', {
+            productId: item.product.id,
+          })
           .getRawOne<{ total: string | null }>();
 
-        const product = await productRepo.findOne({ where: { id: item.product.id } });
+        const product = await productRepo.findOne({
+          where: { id: item.product.id },
+        });
         if (product) {
           product.quantity = Number(Number(totalRaw?.total ?? 0).toFixed(2));
           await productRepo.save(product);

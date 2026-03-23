@@ -5,7 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { ImageService } from 'src/modules/image/services/image.service';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
@@ -15,6 +15,7 @@ import { CreateProductDto } from '../dto/create-product.dto';
 import { ListProductsQueryDto } from '../dto/list-products-query.dto';
 import { UpdateProductDto } from '../dto/update-product.dto';
 import { Product } from '../entities/product.entity';
+import { ProductBatch } from '../entities/product-batch.entity';
 
 export interface UploadedImage {
   buffer: Buffer;
@@ -34,6 +35,8 @@ export class ProductService {
     private readonly unitRepository: Repository<Unit>,
     @InjectRepository(Supplier)
     private readonly supplierRepository: Repository<Supplier>,
+    @InjectRepository(ProductBatch)
+    private readonly productBatchRepository: Repository<ProductBatch>,
     private readonly imageService: ImageService,
   ) {}
 
@@ -142,21 +145,6 @@ export class ProductService {
   }
 
   async create(dto: CreateProductDto) {
-    // 1. Check for existing product in the specific warehouse
-    const existing = await this.productRepository.findOne({
-      where: {
-        name: dto.name,
-        warehouse: { id: dto.warehouse_id }, // Cleaner way to filter by relation ID
-      },
-    });
-
-    if (existing) {
-      throw new ConflictException(
-        'Bu omborda bunday product allaqachon mavjud',
-      );
-    }
-
-    // 2. Resolve dependencies in parallel for speed
     const [category, warehouse, unit, supplier] = await Promise.all([
       this.findCategoryOrFail(dto.category_id),
       this.findWarehouseOrFail(dto.warehouse_id),
@@ -164,7 +152,6 @@ export class ProductService {
       this.findSupplierOrFail(dto.supplier_id),
     ]);
 
-    // 3. Initialize the product instance first
     const product = this.productRepository.create({
       name: dto.name,
       quantity: 0,
@@ -176,7 +163,20 @@ export class ProductService {
       warehouse,
     });
 
-    return this.productRepository.save(product);
+    try {
+      const savedProduct = await this.productRepository.save(product);
+      return savedProduct;
+    } catch (error) {
+      if (
+        error instanceof QueryFailedError &&
+        (error as unknown as { code: string }).code === '23505'
+      ) {
+        throw new ConflictException(
+          'Bu omborda bunday product allaqachon mavjud',
+        );
+      }
+      throw error;
+    }
   }
 
   async update(id: string, dto: UpdateProductDto & { image?: UploadedImage }) {
@@ -214,8 +214,28 @@ export class ProductService {
       product.supplier = await this.findSupplierOrFail(dto.supplier_id);
     }
 
-    if (dto.warehouse_id !== undefined) {
+    if (
+      dto.warehouse_id !== undefined &&
+      dto.warehouse_id !== product.warehouse_id
+    ) {
+      const batchesWithStock = await this.productBatchRepository
+        .createQueryBuilder('batch')
+        .where('batch.product_id = :productId', { productId: id })
+        .andWhere('batch.quantity > 0')
+        .getCount();
+
+      if (batchesWithStock > 0) {
+        throw new BadRequestException(
+          "Omborni o'zgartirish uchun avval barcha partiyalardagi mahsulotlarni chiqim qiling",
+        );
+      }
+
       product.warehouse = await this.findWarehouseOrFail(dto.warehouse_id);
+
+      await this.productBatchRepository.update(
+        { product_id: id },
+        { warehouse_id: dto.warehouse_id, warehouse: product.warehouse },
+      );
     }
 
     if (dto.unit_id !== undefined) {
@@ -227,6 +247,17 @@ export class ProductService {
 
   async delete(id: string) {
     const product = await this.findById(id);
+
+    const batches = await this.productBatchRepository.find({
+      where: { product_id: id },
+    });
+
+    if (batches.length > 0) {
+      throw new BadRequestException(
+        `Avval ${batches.length} ta partiyani o'chirish kerak`,
+      );
+    }
+
     await this.productRepository.delete(product.id);
     return { message: "Product o'chirildi" };
   }

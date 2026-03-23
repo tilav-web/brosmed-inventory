@@ -25,9 +25,7 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreatePurchaseOrderDto } from '../dto/create-purchase-order.dto';
 import { ListPurchaseOrdersQueryDto } from '../dto/list-purchase-orders-query.dto';
-import {
-  UpdatePurchaseOrderDto,
-} from '../dto/update-purchase-order.dto';
+import { UpdatePurchaseOrderDto } from '../dto/update-purchase-order.dto';
 import { PurchaseOrderService } from '../services/purchase-order.service';
 import { ReceivePurchaseOrderDto } from '../dto/update-purchase-order-status.dto';
 

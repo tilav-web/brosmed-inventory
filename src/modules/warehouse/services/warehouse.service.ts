@@ -105,7 +105,9 @@ export class WarehouseService {
         first_name: row.manager_first_name,
         last_name: row.manager_last_name,
       },
-      total_inventory_value: Number(Number(row.total_inventory_value).toFixed(2)),
+      total_inventory_value: Number(
+        Number(row.total_inventory_value).toFixed(2),
+      ),
     }));
 
     const result = {
@@ -152,7 +154,9 @@ export class WarehouseService {
 
     const result = {
       ...warehouse,
-      total_inventory_value: Number(Number(totalValueRaw?.total ?? 0).toFixed(2)),
+      total_inventory_value: Number(
+        Number(totalValueRaw?.total ?? 0).toFixed(2),
+      ),
     };
 
     await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 300);
@@ -210,7 +214,9 @@ export class WarehouseService {
 
   async update(id: string, dto: UpdateWarehouseDto) {
     const warehouseResult = await this.findById(id);
-    const warehouse = await this.warehouseRepository.findOne({ where: { id: warehouseResult.id } });
+    const warehouse = await this.warehouseRepository.findOne({
+      where: { id: warehouseResult.id },
+    });
     if (!warehouse) throw new NotFoundException('Warehouse topilmadi');
 
     if (dto.name !== undefined && dto.name !== warehouse.name) {

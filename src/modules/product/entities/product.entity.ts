@@ -96,7 +96,10 @@ export class Product {
   warehouse_id: string;
 
   // Mahsulot partiyalari (omborga kirimlar).
-  @OneToMany(() => ProductBatch, (batch) => batch.product)
+  @OneToMany(() => ProductBatch, (batch) => batch.product, {
+    cascade: true,
+    onDelete: 'CASCADE',
+  })
   batches: ProductBatch[];
 
   // Yaratilgan vaqt.

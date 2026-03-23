@@ -8,7 +8,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { hash } from 'bcrypt';
-import { Brackets, Repository } from 'typeorm';
+import { Brackets, QueryFailedError, Repository } from 'typeorm';
 import { Role } from '../enums/role.enum';
 import { User } from '../entities/user.entity';
 import { AdminCreateUserDto } from '../dto/admin-create-user.dto';
@@ -91,23 +91,27 @@ export class UserService implements OnModuleInit {
   }
 
   async createWarehouseUserByAdmin(dto: AdminCreateUserDto) {
-    const existingUser = await this.findByUsername(dto.username);
-    if (existingUser) {
-      throw new ConflictException('Bunday username allaqachon mavjud');
-    }
-
     const hashedPassword = await hash(dto.password, 10);
-    const createdUser = await this.userRepository.save(
-      this.userRepository.create({
-        username: dto.username,
-        password: hashedPassword,
-        first_name: dto.first_name ?? '-',
-        last_name: dto.last_name ?? '-',
-        role: Role.WAREHOUSE,
-      }),
-    );
-
-    return this.sanitizeUser(createdUser);
+    try {
+      const createdUser = await this.userRepository.save(
+        this.userRepository.create({
+          username: dto.username,
+          password: hashedPassword,
+          first_name: dto.first_name ?? '-',
+          last_name: dto.last_name ?? '-',
+          role: Role.WAREHOUSE,
+        }),
+      );
+      return this.sanitizeUser(createdUser);
+    } catch (error) {
+      if (
+        error instanceof QueryFailedError &&
+        (error as unknown as { code: string }).code === '23505'
+      ) {
+        throw new ConflictException('Bunday username allaqachon mavjud');
+      }
+      throw error;
+    }
   }
 
   async listUsersForAdmin(adminUserId: string, query: AdminListUsersQueryDto) {
