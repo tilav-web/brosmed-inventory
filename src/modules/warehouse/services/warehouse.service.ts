@@ -13,6 +13,7 @@ import { ProductBatch } from 'src/modules/product/entities/product-batch.entity'
 import { Role } from 'src/modules/user/enums/role.enum';
 import { User } from 'src/modules/user/entities/user.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
+import { Category } from 'src/modules/category/entities/category.entity';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
@@ -31,6 +32,8 @@ export class WarehouseService {
     private readonly productBatchRepository: Repository<ProductBatch>,
     @InjectRepository(ExpenseItem)
     private readonly expenseItemRepository: Repository<ExpenseItem>,
+    @InjectRepository(Category)
+    private readonly categoryRepository: Repository<Category>,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
   ) {}
@@ -165,6 +168,175 @@ export class WarehouseService {
     await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 300);
 
     return result;
+  }
+
+  async findByIdWithDetails(id: string) {
+    const warehouse = await this.warehouseRepository.findOne({
+      where: { id },
+      relations: {
+        manager: true,
+      },
+    });
+
+    if (!warehouse) {
+      throw new NotFoundException('Warehouse topilmadi');
+    }
+
+    const [recentExpenses, lowStockProducts, categoriesWithStats, alerts] =
+      await Promise.all([
+        this.getRecentExpenses(id),
+        this.getLowStockProducts(id),
+        this.getCategoryStats(id),
+        this.getAlerts(id),
+      ]);
+
+    return {
+      warehouse: {
+        id: warehouse.id,
+        name: warehouse.name,
+        type: warehouse.type,
+        location: warehouse.location,
+        manager: warehouse.manager
+          ? {
+              id: warehouse.manager.id,
+              first_name: warehouse.manager.first_name,
+              last_name: warehouse.manager.last_name,
+            }
+          : null,
+      },
+      alerts,
+      recent_expenses: recentExpenses,
+      category_stats: categoriesWithStats,
+      low_stock_products: lowStockProducts,
+    };
+  }
+
+  private async getRecentExpenses(warehouseId: string, limit = 10) {
+    const expenses = await this.expenseItemRepository
+      .createQueryBuilder('item')
+      .leftJoinAndSelect('item.expense', 'expense')
+      .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('item.product_batch', 'batch')
+      .where('item.warehouse_id = :warehouseId', { warehouseId })
+      .andWhere('expense.status = :status', { status: 'выдано' })
+      .orderBy('expense.createdAt', 'DESC')
+      .take(limit)
+      .getMany();
+
+    return expenses.map((item) => ({
+      date: item.expense?.createdAt,
+      staff_name: item.expense?.staff_name,
+      product_name: item.product?.name,
+      quantity: item.quantity,
+      unit: item.product?.unit,
+      purpose: item.expense?.purpose,
+    }));
+  }
+
+  private async getLowStockProducts(warehouseId: string) {
+    const products = await this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.category', 'category')
+      .where('product.warehouse_id = :warehouseId', { warehouseId })
+      .andWhere('product.quantity <= product.min_limit')
+      .andWhere('product.quantity > 0')
+      .getMany();
+
+    return products.map((product) => ({
+      id: product.id,
+      name: product.name,
+      category: product.category?.name || 'Без категории',
+      current_stock: product.quantity,
+      min_limit: product.min_limit,
+      unit: product.unit,
+    }));
+  }
+
+  private async getCategoryStats(warehouseId: string) {
+    const categories = await this.categoryRepository
+      .createQueryBuilder('category')
+      .leftJoin('category.products', 'product')
+      .where('product.warehouse_id = :warehouseId', { warehouseId })
+      .loadRelationCountAndMap('category.productCount', 'category.products')
+      .getMany();
+
+    const stats = await this.productRepository
+      .createQueryBuilder('product')
+      .leftJoin('product.category', 'category')
+      .select('category.id', 'category_id')
+      .addSelect('category.name', 'category_name')
+      .addSelect('COUNT(product.id)', 'total_positions')
+      .addSelect('COALESCE(SUM(product.quantity), 0)', 'total_quantity')
+      .where('product.warehouse_id = :warehouseId', { warehouseId })
+      .groupBy('category.id')
+      .addGroupBy('category.name')
+      .getRawMany();
+
+    const lowStockCount = await this.productRepository
+      .createQueryBuilder('product')
+      .where('product.warehouse_id = :warehouseId', { warehouseId })
+      .andWhere('product.quantity <= product.min_limit')
+      .andWhere('product.quantity > 0')
+      .getCount();
+
+    return {
+      categories: stats.map((s) => ({
+        category_id: s.category_id,
+        category_name: s.category_name || 'Без категории',
+        total_positions: parseInt(s.total_positions, 10),
+        total_quantity: parseInt(s.total_quantity, 10),
+      })),
+      low_stock_count: lowStockCount,
+      purchase_required_count: lowStockCount,
+    };
+  }
+
+  private async getAlerts(warehouseId: string) {
+    const lowStockProducts = await this.productRepository
+      .createQueryBuilder('product')
+      .where('product.warehouse_id = :warehouseId', { warehouseId })
+      .andWhere('product.quantity <= product.min_limit')
+      .andWhere('product.quantity > 0')
+      .getMany();
+
+    const expiringProducts = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .where('batch.warehouse_id = :warehouseId', { warehouseId })
+      .andWhere('batch.expiration_alert_date <= :today', {
+        today: new Date().toISOString().split('T')[0],
+      })
+      .andWhere('batch.quantity > 0')
+      .getMany();
+
+    const alerts: Array<{
+      type: string;
+      message: string;
+      product_name?: string;
+    }> = [];
+
+    for (const product of lowStockProducts) {
+      alerts.push({
+        type: 'low_stock',
+        message: `${product.name}: остаток ниже точки перезаказа`,
+        product_name: product.name,
+      });
+    }
+
+    for (const batch of expiringProducts) {
+      const product = await this.productRepository.findOne({
+        where: { id: batch.product_id },
+      });
+      alerts.push({
+        type: 'expiring',
+        message: `${product?.name || 'Unknown'}: срок годности истекает ${batch.expiration_date}`,
+        product_name: product?.name,
+      });
+    }
+
+    return {
+      count: alerts.length,
+      items: alerts.slice(0, 10),
+    };
   }
 
   private async clearCache() {

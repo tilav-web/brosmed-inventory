@@ -56,6 +56,19 @@ export class WarehouseController {
     return this.warehouseService.findById(id);
   }
 
+  @Get(':id/details')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({
+    summary:
+      'Warehouse toliq malumotlari - statistika, chiqimlar, ogohlantirishlar',
+  })
+  @ApiOkResponse({ description: 'Warehouse toliq malumotlari' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  findOneWithDetails(@Param('id', ParseUUIDPipe) id: string) {
+    return this.warehouseService.findByIdWithDetails(id);
+  }
+
   @Get(':id/products')
   @Roles(Role.ADMIN, Role.WAREHOUSE)
   @ApiOperation({
