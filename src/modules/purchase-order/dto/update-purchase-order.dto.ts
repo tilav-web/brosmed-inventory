@@ -4,13 +4,20 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
+  IsEnum,
   IsOptional,
   IsUUID,
   ValidateNested,
 } from 'class-validator';
 import { CreateOrderItemDto } from './create-purchase-order.dto';
+import { OrderStatus } from '../enums/order-status.enum';
 
 export class UpdatePurchaseOrderDto {
+  @ApiPropertyOptional({ enum: OrderStatus, example: OrderStatus.CONFIRMED })
+  @IsOptional()
+  @IsEnum(OrderStatus)
+  status?: OrderStatus;
+
   @ApiPropertyOptional({ example: 'supplier-uuid' })
   @IsOptional()
   @IsUUID('4')

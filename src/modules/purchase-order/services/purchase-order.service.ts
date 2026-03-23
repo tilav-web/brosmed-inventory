@@ -12,7 +12,6 @@ import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { CreatePurchaseOrderDto } from '../dto/create-purchase-order.dto';
 import { ListPurchaseOrdersQueryDto } from '../dto/list-purchase-orders-query.dto';
 import {
-  UpdatePurchaseOrderStatusDto,
   ReceivePurchaseOrderDto,
   ReceiveOrderItemDto,
 } from '../dto/update-purchase-order-status.dto';
@@ -218,107 +217,6 @@ export class PurchaseOrderService {
     });
   }
 
-  async updateStatus(id: string, dto: UpdatePurchaseOrderStatusDto) {
-    const order = await this.purchaseOrderRepository.findOne({
-      where: { id },
-      relations: {
-        items: {
-          product: {
-            warehouse: true,
-          },
-        },
-        supplier: true,
-        warehouse: true,
-      },
-    });
-
-    if (!order) {
-      throw new NotFoundException('Purchase order topilmadi');
-    }
-
-    if (order.is_received) {
-      throw new BadRequestException(
-        'Qabul qilingan buyurtmani o`zgartirib bo`lmaydi',
-      );
-    }
-
-    if (order.status === OrderStatus.CANCELLED) {
-      throw new BadRequestException(
-        'Bekor qilingan buyurtma statusini o`zgartirib bo`lmaydi',
-      );
-    }
-
-    if (
-      order.status === OrderStatus.DELIVERED &&
-      dto.status !== OrderStatus.DELIVERED
-    ) {
-      throw new BadRequestException(
-        'Delivered bo`lgan buyurtmani boshqa statusga qaytarib bo`lmaydi',
-      );
-    }
-
-    const supplierId =
-      dto.supplier_id !== undefined ? String(dto.supplier_id) : undefined;
-    const warehouseId =
-      dto.warehouse_id !== undefined ? String(dto.warehouse_id) : undefined;
-    const orderDate =
-      dto.order_date !== undefined
-        ? dto.order_date
-          ? new Date(String(dto.order_date))
-          : undefined
-        : undefined;
-    const deliveryDate =
-      dto.delivery_date !== undefined
-        ? dto.delivery_date
-          ? new Date(String(dto.delivery_date))
-          : null
-        : undefined;
-
-    if (supplierId) {
-      const supplier = await this.dataSource
-        .getRepository(Supplier)
-        .findOne({ where: { id: supplierId } });
-      if (!supplier) {
-        throw new NotFoundException('Supplier topilmadi');
-      }
-      order.supplier = supplier;
-      order.supplier_id = supplier.id;
-    }
-
-    if (warehouseId) {
-      const warehouse = await this.dataSource
-        .getRepository(Warehouse)
-        .findOne({ where: { id: warehouseId } });
-      if (!warehouse) {
-        throw new NotFoundException('Warehouse topilmadi');
-      }
-
-      for (const item of order.items ?? []) {
-        if (item.product?.warehouse?.id !== warehouse.id) {
-          throw new BadRequestException(
-            `Product ${item.product?.id} tanlangan warehousega tegishli emas`,
-          );
-        }
-      }
-
-      order.warehouse = warehouse;
-      order.warehouse_id = warehouse.id;
-    }
-
-    if (orderDate !== undefined) {
-      order.order_date = orderDate ?? order.order_date;
-    }
-
-    order.status = dto.status;
-
-    if (deliveryDate !== undefined) {
-      order.delivery_date = deliveryDate;
-    }
-
-    await this.purchaseOrderRepository.save(order);
-    return this.findById(order.id);
-  }
-
   async updateOrder(id: string, dto: UpdatePurchaseOrderDto) {
     return this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
@@ -344,10 +242,48 @@ export class PurchaseOrderService {
         throw new NotFoundException('Purchase order topilmadi');
       }
 
-      if (order.is_received || order.status === OrderStatus.DELIVERED) {
+      if (order.is_received) {
         throw new BadRequestException(
-          'Delivered/qabul qilingan buyurtmani o`zgartirib bo`lmaydi',
+          'Qabul qilingan buyurtmani o`zgartirib bo`lmaydi',
         );
+      }
+
+      if (dto.status) {
+        if (order.status === OrderStatus.CANCELLED) {
+          throw new BadRequestException(
+            'Bekor qilingan buyurtma statusini o`zgartirib bo`lmaydi',
+          );
+        }
+
+        if (
+          order.status === OrderStatus.DELIVERED &&
+          dto.status !== OrderStatus.DELIVERED
+        ) {
+          throw new BadRequestException(
+            'Delivered bo`lgan buyurtmani boshqa statusga qaytarib bo`lmaydi',
+          );
+        }
+        order.status = dto.status;
+      }
+
+      // Agar buyurtma Delivered bo'lsa, boshqa fieldlarni o'zgartirib bo'lmaydi (statusdan tashqari)
+      if (
+        order.status === OrderStatus.DELIVERED &&
+        (dto.supplier_id ||
+          dto.warehouse_id ||
+          dto.order_date ||
+          dto.delivery_date ||
+          dto.items_to_add ||
+          dto.items_to_remove)
+      ) {
+        // Statusni o'zini DELIVERED qilib yuborsa ham bu xatoni bermasligi kerak,
+        // shuning uchun yuqoridagi if status o'zgarmasligini tekshiradi.
+        // Aslida status DELIVERED bo'lganda boshqa fieldlarni o'zgartirishni cheklaymiz.
+        if (order.status === OrderStatus.DELIVERED && !dto.status) {
+          throw new BadRequestException(
+            'Delivered buyurtmani o`zgartirib bo`lmaydi',
+          );
+        }
       }
 
       const supplierId =

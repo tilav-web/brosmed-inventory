@@ -4,14 +4,13 @@ import {
   ArrayMinSize,
   IsArray,
   IsDateString,
-  IsEnum,
   IsOptional,
   IsString,
   IsUUID,
   MaxLength,
   ValidateNested,
 } from 'class-validator';
-import { OrderStatus } from '../enums/order-status.enum';
+
 export class ReceiveOrderItemDto {
   @ApiProperty({ example: 'order-item-uuid' })
   @IsUUID('4')
@@ -47,34 +46,4 @@ export class ReceivePurchaseOrderDto {
   @ValidateNested({ each: true })
   @Type(() => ReceiveOrderItemDto)
   items: ReceiveOrderItemDto[];
-}
-
-export class UpdatePurchaseOrderStatusDto {
-  @ApiProperty({ enum: OrderStatus, example: OrderStatus.CONFIRMED })
-  @IsEnum(OrderStatus)
-  status: OrderStatus;
-
-  @ApiPropertyOptional({ example: 'supplier-uuid' })
-  @IsOptional()
-  @IsString()
-  @IsUUID('4')
-  @Type(() => String)
-  supplier_id?: string;
-
-  @ApiPropertyOptional({ example: 'warehouse-uuid' })
-  @IsOptional()
-  @IsString()
-  @IsUUID('4')
-  @Type(() => String)
-  warehouse_id?: string;
-
-  @ApiPropertyOptional({ example: '2026-03-09T12:00:00.000Z' })
-  @IsOptional()
-  @IsDateString()
-  order_date?: string;
-
-  @ApiProperty({ required: false, example: '2026-03-15T12:00:00.000Z' })
-  @IsOptional()
-  @IsDateString()
-  delivery_date?: string;
 }

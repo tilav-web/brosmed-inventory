@@ -26,11 +26,10 @@ import { Role } from 'src/modules/user/enums/role.enum';
 import { CreatePurchaseOrderDto } from '../dto/create-purchase-order.dto';
 import { ListPurchaseOrdersQueryDto } from '../dto/list-purchase-orders-query.dto';
 import {
-  UpdatePurchaseOrderStatusDto,
-  ReceivePurchaseOrderDto,
-} from '../dto/update-purchase-order-status.dto';
-import { UpdatePurchaseOrderDto } from '../dto/update-purchase-order.dto';
+  UpdatePurchaseOrderDto,
+} from '../dto/update-purchase-order.dto';
 import { PurchaseOrderService } from '../services/purchase-order.service';
+import { ReceivePurchaseOrderDto } from '../dto/update-purchase-order-status.dto';
 
 @Controller('purchase-orders')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -84,7 +83,7 @@ export class PurchaseOrderController {
   @Roles(Role.ADMIN)
   @ApiOperation({
     summary:
-      'Purchase orderni yangilash (order fieldlari + item qo`shish/o`chirish)',
+      'Purchase orderni yangilash (status, order fieldlari + item qo`shish/o`chirish)',
   })
   @ApiBody({ type: UpdatePurchaseOrderDto })
   @ApiOkResponse({ description: 'Purchase order yangilandi' })
@@ -95,19 +94,6 @@ export class PurchaseOrderController {
     @Body() dto: UpdatePurchaseOrderDto,
   ) {
     return this.purchaseOrderService.updateOrder(id, dto);
-  }
-
-  @Patch(':id/status')
-  @ApiOperation({ summary: 'Purchase order statusini yangilash' })
-  @ApiBody({ type: UpdatePurchaseOrderStatusDto })
-  @ApiOkResponse({ description: 'Purchase order statusi yangilandi' })
-  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  updateStatus(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UpdatePurchaseOrderStatusDto,
-  ) {
-    return this.purchaseOrderService.updateStatus(id, dto);
   }
 
   @Post(':id/receive')
