@@ -255,6 +255,7 @@ export class WarehouseService {
     const [items, total] = await qb.getManyAndCount();
 
     const data = items.map((item) => ({
+      id: item.id,
       date: item.expense?.createdAt,
       staff_name: item.expense?.staff_name,
       product_name: item.product?.name,
