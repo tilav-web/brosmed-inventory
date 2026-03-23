@@ -16,8 +16,20 @@ import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
+import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { Warehouse } from '../entities/warehouse.entity';
+
+interface CategoryStatsRaw {
+  category_id: string;
+  category_name: string;
+  total_positions: string;
+  total_quantity: string;
+}
+
+export interface WarehouseWithTotalValue extends Warehouse {
+  total_inventory_value: number;
+}
 
 @Injectable()
 export class WarehouseService {
@@ -47,7 +59,7 @@ export class WarehouseService {
     const cachedData = await this.redis.get(cacheKey);
 
     if (cachedData) {
-      return JSON.parse(cachedData);
+      return JSON.parse(cachedData) as Record<string, unknown>;
     }
 
     const qb = this.warehouseRepository
@@ -132,12 +144,12 @@ export class WarehouseService {
     return result;
   }
 
-  async findById(id: string) {
+  async findById(id: string): Promise<WarehouseWithTotalValue> {
     const cacheKey = `warehouse:${id}`;
     const cachedData = await this.redis.get(cacheKey);
 
     if (cachedData) {
-      return JSON.parse(cachedData);
+      return JSON.parse(cachedData) as WarehouseWithTotalValue;
     }
 
     const warehouse = await this.warehouseRepository.findOne({
@@ -211,6 +223,57 @@ export class WarehouseService {
     };
   }
 
+  async getWarehouseExpenses(id: string, query: ListWarehouseExpensesQueryDto) {
+    const warehouse = await this.warehouseRepository.findOne({ where: { id } });
+    if (!warehouse) {
+      throw new NotFoundException('Warehouse topilmadi');
+    }
+
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+    const search = query.search?.trim();
+
+    const qb = this.expenseItemRepository
+      .createQueryBuilder('item')
+      .leftJoinAndSelect('item.expense', 'expense')
+      .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('item.product_batch', 'batch')
+      .where('item.warehouse_id = :id', { id })
+      .andWhere('expense.status = :status', { status: 'выдано' });
+
+    if (search) {
+      qb.andWhere(
+        '(expense.staff_name ILIKE :search OR expense.purpose ILIKE :search OR product.name ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    qb.orderBy('expense.createdAt', 'DESC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+
+    const data = items.map((item) => ({
+      date: item.expense?.createdAt,
+      staff_name: item.expense?.staff_name,
+      product_name: item.product?.name,
+      quantity: item.quantity,
+      unit: item.product?.unit,
+      purpose: item.expense?.purpose,
+    }));
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
   private async getRecentExpenses(warehouseId: string, limit = 10) {
     const expenses = await this.expenseItemRepository
       .createQueryBuilder('item')
@@ -253,14 +316,7 @@ export class WarehouseService {
   }
 
   private async getCategoryStats(warehouseId: string) {
-    const categories = await this.categoryRepository
-      .createQueryBuilder('category')
-      .leftJoin('category.products', 'product')
-      .where('product.warehouse_id = :warehouseId', { warehouseId })
-      .loadRelationCountAndMap('category.productCount', 'category.products')
-      .getMany();
-
-    const stats = await this.productRepository
+    const stats: CategoryStatsRaw[] = await this.productRepository
       .createQueryBuilder('product')
       .leftJoin('product.category', 'category')
       .select('category.id', 'category_id')
@@ -328,7 +384,7 @@ export class WarehouseService {
       });
       alerts.push({
         type: 'expiring',
-        message: `${product?.name || 'Unknown'}: срок годности истекает ${batch.expiration_date}`,
+        message: `${product?.name || 'Unknown'}: срок годности истекает ${batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}`,
         product_name: product?.name,
       });
     }
@@ -388,9 +444,8 @@ export class WarehouseService {
   }
 
   async update(id: string, dto: UpdateWarehouseDto) {
-    const warehouseResult = await this.findById(id);
     const warehouse = await this.warehouseRepository.findOne({
-      where: { id: warehouseResult.id },
+      where: { id },
     });
     if (!warehouse) throw new NotFoundException('Warehouse topilmadi');
 

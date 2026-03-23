@@ -25,6 +25,7 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
+import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { WarehouseService } from '../services/warehouse.service';
 
@@ -67,6 +68,21 @@ export class WarehouseController {
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
   findOneWithDetails(@Param('id', ParseUUIDPipe) id: string) {
     return this.warehouseService.findByIdWithDetails(id);
+  }
+
+  @Get(':id/expenses')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Warehouse sarflari (pagination + search)',
+  })
+  @ApiOkResponse({ description: 'Warehouse sarflari royxati' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  getWarehouseExpenses(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ListWarehouseExpensesQueryDto,
+  ) {
+    return this.warehouseService.getWarehouseExpenses(id, query);
   }
 
   @Get(':id/products')
