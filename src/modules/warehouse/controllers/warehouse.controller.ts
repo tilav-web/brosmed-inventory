@@ -25,6 +25,7 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
+import { ListCategoryStatsQueryDto } from '../dto/list-category-stats-query.dto';
 import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { WarehouseService } from '../services/warehouse.service';
@@ -95,6 +96,21 @@ export class WarehouseController {
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
   getProductsByWarehouse(@Param('id', ParseUUIDPipe) id: string) {
     return this.warehouseService.getProductsByWarehouseId(id);
+  }
+
+  @Get(':id/category-stats')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Warehouse kategoriyalari bo`yicha statistika (pagination)',
+  })
+  @ApiOkResponse({ description: 'Kategoriya statistikasi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  getCategoryStats(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ListCategoryStatsQueryDto,
+  ) {
+    return this.warehouseService.getCategoryStats(id, query);
   }
 
   @Post()

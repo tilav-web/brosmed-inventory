@@ -194,13 +194,10 @@ export class WarehouseService {
       throw new NotFoundException('Warehouse topilmadi');
     }
 
-    const [recentExpenses, lowStockProducts, categoriesWithStats, alerts] =
-      await Promise.all([
-        this.getRecentExpenses(id),
-        this.getLowStockProducts(id),
-        this.getCategoryStats(id),
-        this.getAlerts(id),
-      ]);
+    const [lowStockProducts, alerts] = await Promise.all([
+      this.getLowStockProducts(id),
+      this.getAlerts(id),
+    ]);
 
     return {
       warehouse: {
@@ -217,8 +214,6 @@ export class WarehouseService {
           : null,
       },
       alerts,
-      recent_expenses: recentExpenses,
-      category_stats: categoriesWithStats,
       low_stock_products: lowStockProducts,
     };
   }
@@ -275,28 +270,6 @@ export class WarehouseService {
     };
   }
 
-  private async getRecentExpenses(warehouseId: string, limit = 10) {
-    const expenses = await this.expenseItemRepository
-      .createQueryBuilder('item')
-      .leftJoinAndSelect('item.expense', 'expense')
-      .leftJoinAndSelect('item.product', 'product')
-      .leftJoinAndSelect('item.product_batch', 'batch')
-      .where('item.warehouse_id = :warehouseId', { warehouseId })
-      .andWhere('expense.status = :status', { status: 'выдано' })
-      .orderBy('expense.createdAt', 'DESC')
-      .take(limit)
-      .getMany();
-
-    return expenses.map((item) => ({
-      date: item.expense?.createdAt,
-      staff_name: item.expense?.staff_name,
-      product_name: item.product?.name,
-      quantity: item.quantity,
-      unit: item.product?.unit,
-      purpose: item.expense?.purpose,
-    }));
-  }
-
   private async getLowStockProducts(warehouseId: string) {
     const products = await this.productRepository
       .createQueryBuilder('product')
@@ -316,8 +289,14 @@ export class WarehouseService {
     }));
   }
 
-  private async getCategoryStats(warehouseId: string) {
-    const stats: CategoryStatsRaw[] = await this.productRepository
+  async getCategoryStats(
+    warehouseId: string,
+    query: { page?: number; limit?: number },
+  ) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+
+    const qb = this.productRepository
       .createQueryBuilder('product')
       .leftJoin('product.category', 'category')
       .select('category.id', 'category_id')
@@ -326,8 +305,11 @@ export class WarehouseService {
       .addSelect('COALESCE(SUM(product.quantity), 0)', 'total_quantity')
       .where('product.warehouse_id = :warehouseId', { warehouseId })
       .groupBy('category.id')
-      .addGroupBy('category.name')
-      .getRawMany();
+      .addGroupBy('category.name');
+
+    const allStats: CategoryStatsRaw[] = await qb.getRawMany();
+    const total = allStats.length;
+    const data = allStats.slice((page - 1) * limit, page * limit);
 
     const lowStockCount = await this.productRepository
       .createQueryBuilder('product')
@@ -337,7 +319,7 @@ export class WarehouseService {
       .getCount();
 
     return {
-      categories: stats.map((s) => ({
+      data: data.map((s) => ({
         category_id: s.category_id,
         category_name: s.category_name || 'Без категории',
         total_positions: parseInt(s.total_positions, 10),
@@ -345,6 +327,12 @@ export class WarehouseService {
       })),
       low_stock_count: lowStockCount,
       purchase_required_count: lowStockCount,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
     };
   }
 
@@ -374,7 +362,7 @@ export class WarehouseService {
     for (const product of lowStockProducts) {
       alerts.push({
         type: 'low_stock',
-        message: `${product.name}: остаток ниже точки перезаказа`,
+        message: `${product.name}: qoldiq qayta buyurtma chegarasidan past`,
         product_name: product.name,
       });
     }
@@ -385,7 +373,7 @@ export class WarehouseService {
       });
       alerts.push({
         type: 'expiring',
-        message: `${product?.name || 'Unknown'}: срок годности истекает ${batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}`,
+        message: `${product?.name || 'Nomaʼlum'}: yaroqlilik muddati tugayapti ${batch.expiration_date ? new Date(batch.expiration_date).toLocaleDateString() : 'N/A'}`,
         product_name: product?.name,
       });
     }
