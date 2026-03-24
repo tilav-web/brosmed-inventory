@@ -40,10 +40,20 @@ export class BotUserService {
       first_name: data.first_name ?? null,
       last_name: data.last_name ?? null,
       username: data.username ?? null,
-      status: BotUserStatus.ACTIVE,
+      status: BotUserStatus.PENDING,
       last_active_at: new Date(),
     });
 
+    return this.botUserRepository.save(user);
+  }
+
+  async findByTelegramId(telegramId: number): Promise<BotUser | null> {
+    return this.botUserRepository.findOne({
+      where: { telegram_id: telegramId },
+    });
+  }
+
+  async save(user: BotUser): Promise<BotUser> {
     return this.botUserRepository.save(user);
   }
 

@@ -5,6 +5,8 @@ import { HelpCommand } from './commands/help.command';
 import { WarehousesCommand } from './commands/warehouses.command';
 import { AlertsCommand } from './commands/alerts.command';
 import { MessageEvent } from './events/message.event';
+import { ChatMemberEvent } from './events/chat-member.event';
+import { AuthMiddleware } from './middleware/auth.middleware';
 import { WarehouseModule } from '../warehouse/warehouse.module';
 import { BotUserModule } from '../bot-user/bot-user.module';
 
@@ -17,6 +19,8 @@ import { BotUserModule } from '../bot-user/bot-user.module';
     WarehousesCommand,
     AlertsCommand,
     MessageEvent,
+    ChatMemberEvent,
+    AuthMiddleware,
   ],
   exports: [BotService],
 })

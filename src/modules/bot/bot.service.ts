@@ -12,6 +12,8 @@ import { HelpCommand } from './commands/help.command';
 import { WarehousesCommand } from './commands/warehouses.command';
 import { AlertsCommand } from './commands/alerts.command';
 import { MessageEvent } from './events/message.event';
+import { ChatMemberEvent } from './events/chat-member.event';
+import { AuthMiddleware } from './middleware/auth.middleware';
 import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 
 @Injectable()
@@ -27,11 +29,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private readonly warehousesCommand: WarehousesCommand,
     private readonly alertsCommand: AlertsCommand,
     private readonly messageEvent: MessageEvent,
+    private readonly chatMemberEvent: ChatMemberEvent,
+    private readonly authMiddleware: AuthMiddleware,
     private readonly botUserService: BotUserService,
   ) {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     if (!token) {
-      this.logger.warn('TELEGRAM_BOT_TOKEN topilmadi. Bot ishga tushmaydi.');
       throw new Error('TELEGRAM_BOT_TOKEN is not defined!');
     }
 
@@ -47,12 +50,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       try {
         await this.bot.api.deleteWebhook({ drop_pending_updates: true });
-        await this.bot.api.getMe().then((me) => {
-          this.logger.log(`🤖 Bot: @${me.username}`);
-        });
+        const me = await this.bot.api.getMe();
+        this.logger.log(`🤖 Bot: @${me.username}`);
         this.bot.start({
           onStart: () => this.logger.log('✅ Polling boshlandi!'),
-          allowed_updates: ['message', 'callback_query'],
+          allowed_updates: ['message', 'callback_query', 'my_chat_member'],
         });
       } catch (error) {
         this.logger.error('Bot polling mode da ishga tushmadi:', error);
@@ -83,7 +85,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private setupHandlers() {
+    // 1. Start command - auth talab qilmaydi
     this.startCommand.register(this.bot);
+
+    // 2. Chat member event - bloklash/blokdan chiqarish
+    this.chatMemberEvent.register(this.bot);
+
+    // 3. Auth middleware - keyingi barcha handlerlar uchun
+    this.authMiddleware.register(this.bot);
+
+    // 4. Qolgan command va event lar - auth kerak
     this.helpCommand.register(this.bot);
     this.warehousesCommand.register(this.bot);
     this.alertsCommand.register(this.bot);

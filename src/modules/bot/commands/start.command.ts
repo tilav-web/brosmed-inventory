@@ -12,7 +12,7 @@ export class StartCommand {
       const telegramUser = ctx.from;
       if (!telegramUser) return;
 
-      await this.botUserService.findOrCreate({
+      const user = await this.botUserService.findOrCreate({
         telegram_id: telegramUser.id,
         first_name: telegramUser.first_name,
         last_name: telegramUser.last_name,
@@ -22,16 +22,29 @@ export class StartCommand {
       const name =
         telegramUser.first_name || telegramUser.username || 'Foydalanuvchi';
 
-      await ctx.reply(
-        `Salom, <b>${name}</b>! 👋\n\n` +
-          `Brosmed Inventory botiga xush kelibsiz.\n` +
-          `Omborxonalar boshqarish tizimini shu yerda nazorat qilishingiz mumkin.\n\n` +
-          `Buyruqlar uchun tugmalardan foydalaning yoki /help ni bosing.`,
-        {
-          parse_mode: 'HTML',
-          reply_markup: mainKeyboard(),
-        },
-      );
+      if (user.is_approved) {
+        await ctx.reply(
+          `Salom, <b>${name}</b>! 👋\n\n` +
+            `Brosmed Inventory botiga xush kelibsiz.\n` +
+            `Omborxonalar boshqarish tizimini shu yerda nazorat qilishingiz mumkin.\n\n` +
+            `Buyruqlar uchun tugmalardan foydalaning yoki /help ni bosing.`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: mainKeyboard(),
+          },
+        );
+      } else {
+        await ctx.reply(
+          `Salom, <b>${name}</b>! 👋\n\n` +
+            `Brosmed Inventory botiga xush kelibsiz.\n\n` +
+            `⏳ Sizning so'rovingiz admin tomonidan ko'rib chiqilmoqda.\n` +
+            `Tasdiqlangandan so'ng botdan foydalanishingiz mumkin.`,
+          {
+            parse_mode: 'HTML',
+            reply_markup: { remove_keyboard: true },
+          },
+        );
+      }
     });
   }
 }
