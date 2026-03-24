@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import Redis from 'ioredis';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { User } from 'src/modules/user/entities/user.entity';
@@ -38,6 +40,8 @@ export class ExpenseService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
+    @Inject('REDIS_CLIENT')
+    private readonly redis: Redis,
   ) {}
 
   async findAll(query: ListExpensesQueryDto) {
@@ -120,7 +124,7 @@ export class ExpenseService {
   }
 
   async createAndGetReceipt(dto: CreateExpenseDto, managerId?: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
       const expenseItemRepo = manager.getRepository(ExpenseItem);
       const productRepo = manager.getRepository(Product);
@@ -247,10 +251,13 @@ export class ExpenseService {
         },
       };
     });
+
+    await this.invalidateDashboardCache();
+    return result;
   }
 
   async issueExpense(id: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
       const productRepo = manager.getRepository(Product);
       const productBatchRepo = manager.getRepository(ProductBatch);
@@ -334,6 +341,9 @@ export class ExpenseService {
         expense,
       };
     });
+
+    await this.invalidateDashboardCache();
+    return result;
   }
 
   async attachCheckImageAndComplete(id: string, checkImageUrl: string) {
@@ -348,10 +358,27 @@ export class ExpenseService {
     expense.check_image_url = checkImageUrl;
     expense.status = ExpenseStatus.COMPLETED;
 
-    return this.expenseRepository.save(expense);
+    const result = await this.expenseRepository.save(expense);
+    await this.invalidateDashboardCache();
+    return result;
   }
 
-  async getDashboardSummary() {
+  async getDashboardSummary(): Promise<{
+    total_products: number;
+    pending_issue: number;
+    low_stock: number;
+    expiring_soon: number;
+  }> {
+    const cacheKey = 'expenses:dashboard:summary';
+    const cached = await this.redis.get(cacheKey);
+    if (cached)
+      return JSON.parse(cached) as {
+        total_products: number;
+        pending_issue: number;
+        low_stock: number;
+        expiring_soon: number;
+      };
+
     const totalProducts = await this.productRepository.count();
 
     const pendingIssueCount = await this.expenseRepository.count({
@@ -379,12 +406,15 @@ export class ExpenseService {
       .andWhere('batch.quantity > 0')
       .getCount();
 
-    return {
+    const result = {
       total_products: totalProducts,
       pending_issue: pendingIssueCount,
       low_stock: lowStockCount,
       expiring_soon: expiringSoonCount,
     };
+
+    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 30);
+    return result;
   }
 
   private getLocalDateString(date: Date = new Date()): string {
@@ -392,5 +422,9 @@ export class ExpenseService {
     const month = String(date.getMonth() + 1).padStart(2, '0');
     const day = String(date.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  private async invalidateDashboardCache() {
+    await this.redis.del('expenses:dashboard:summary');
   }
 }

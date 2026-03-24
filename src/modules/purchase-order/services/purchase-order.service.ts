@@ -1,10 +1,12 @@
 import {
   BadRequestException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
+import Redis from 'ioredis';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
@@ -28,6 +30,8 @@ export class PurchaseOrderService {
     private readonly purchaseOrderRepository: Repository<PurchaseOrder>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @Inject('REDIS_CLIENT')
+    private readonly redis: Redis,
   ) {}
 
   private async generateOrderNumber(manager: EntityManager): Promise<string> {
@@ -112,7 +116,11 @@ export class PurchaseOrderService {
     return order;
   }
 
-  async getStatistics() {
+  async getStatistics(): Promise<Record<string, number>> {
+    const cacheKey = 'purchase-orders:statistics';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) return JSON.parse(cached) as Record<string, number>;
+
     const stats = await this.purchaseOrderRepository
       .createQueryBuilder('po')
       .select('po.status', 'status')
@@ -136,11 +144,13 @@ export class PurchaseOrderService {
     });
 
     result.total = total;
+
+    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 30);
     return result;
   }
 
   async create(dto: CreatePurchaseOrderDto) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const orderItemRepo = manager.getRepository(OrderItem);
       const supplierRepo = manager.getRepository(Supplier);
@@ -215,10 +225,13 @@ export class PurchaseOrderService {
 
       return this.findById(order.id, manager);
     });
+
+    await this.invalidateStatisticsCache();
+    return result;
   }
 
   async updateOrder(id: string, dto: UpdatePurchaseOrderDto) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const orderItemRepo = manager.getRepository(OrderItem);
       const supplierRepo = manager.getRepository(Supplier);
@@ -408,10 +421,13 @@ export class PurchaseOrderService {
 
       return this.findById(order.id, manager);
     });
+
+    await this.invalidateStatisticsCache();
+    return result;
   }
 
   async deleteOrder(id: string) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const orderItemRepo = manager.getRepository(OrderItem);
 
@@ -442,10 +458,13 @@ export class PurchaseOrderService {
       await orderRepo.delete(order.id);
       return { message: 'Purchase order o`chirildi' };
     });
+
+    await this.invalidateStatisticsCache();
+    return result;
   }
 
   async receiveOrder(id: string, dto: ReceivePurchaseOrderDto) {
-    return this.dataSource.transaction(async (manager) => {
+    const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const productRepo = manager.getRepository(Product);
       const productBatchRepo = manager.getRepository(ProductBatch);
@@ -558,5 +577,12 @@ export class PurchaseOrderService {
 
       return this.findById(order.id, manager);
     });
+
+    await this.redis.del('purchase-orders:statistics');
+    return result;
+  }
+
+  private async invalidateStatisticsCache() {
+    await this.redis.del('purchase-orders:statistics');
   }
 }

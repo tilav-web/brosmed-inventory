@@ -297,7 +297,7 @@ export class SeedService implements OnApplicationBootstrap {
   }): Promise<Product[]> {
     const [antibiotics, vitamins, painkillers, medicalSupplies] =
       input.categories;
-    const [dona, quti, paket, ml, mg, g, kg] = input.units;
+    const [dona, quti, paket] = input.units;
     const [supplier1, supplier2] = input.suppliers;
     const [warehouse1, warehouse2, warehouse3] = input.warehouses;
 

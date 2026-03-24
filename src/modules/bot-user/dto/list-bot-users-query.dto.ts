@@ -23,6 +23,9 @@ export class ListBotUsersQueryDto {
   @ApiPropertyOptional({ enum: BotUserStatus })
   @IsOptional()
   @IsEnum(BotUserStatus)
+  @Transform(({ value }: { value: BotUserStatus | '' }) =>
+    value === '' ? undefined : value,
+  )
   status?: BotUserStatus;
 
   @ApiPropertyOptional({ example: 1, default: 1 })

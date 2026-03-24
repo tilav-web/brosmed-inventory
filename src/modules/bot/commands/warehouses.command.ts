@@ -2,6 +2,13 @@ import { Bot, Context } from 'grammy';
 import { Injectable } from '@nestjs/common';
 import { WarehouseService } from 'src/modules/warehouse/services/warehouse.service';
 
+interface WarehouseItem {
+  id: string;
+  name: string;
+  location: string;
+  type: string;
+}
+
 @Injectable()
 export class WarehousesCommand {
   constructor(private readonly warehouseService: WarehouseService) {}
@@ -12,7 +19,7 @@ export class WarehousesCommand {
         const query = { page: 1, limit: 20 };
         const result = await this.warehouseService.findAll(query);
 
-        const warehouses = (result as { data: any[] }).data;
+        const warehouses = (result as { data: WarehouseItem[] }).data;
 
         if (!warehouses || warehouses.length === 0) {
           await ctx.reply('📦 Hozircha omborlar mavjud emas.');

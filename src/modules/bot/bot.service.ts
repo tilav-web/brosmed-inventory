@@ -52,7 +52,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         await this.bot.api.deleteWebhook({ drop_pending_updates: true });
         const me = await this.bot.api.getMe();
         this.logger.log(`🤖 Bot: @${me.username}`);
-        this.bot.start({
+        void this.bot.start({
           onStart: () => this.logger.log('✅ Polling boshlandi!'),
           allowed_updates: ['message', 'callback_query', 'my_chat_member'],
         });
