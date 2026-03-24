@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Get,
   Param,
@@ -21,6 +22,7 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { BotUserService } from '../services/bot-user.service';
 import { ListBotUsersQueryDto } from '../dto/list-bot-users-query.dto';
+import { UpdateBotUserDto } from '../dto/update-bot-user.dto';
 
 @Controller('bot-users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -48,23 +50,17 @@ export class BotUserController {
     return this.botUserService.findById(id);
   }
 
-  @Patch(':id/approve')
+  @Patch(':id')
   @ApiOperation({
-    summary: 'Bot foydalanuvchini tasdiqlash (notification olishi uchun)',
+    summary: 'Bot foydalanuvchini yangilash (status va is_approved)',
   })
-  @ApiOkResponse({ description: 'Bot user tasdiqlandi' })
+  @ApiOkResponse({ description: 'Bot user yangilandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
-  approve(@Param('id', ParseUUIDPipe) id: string) {
-    return this.botUserService.approve(id);
-  }
-
-  @Patch(':id/revoke')
-  @ApiOperation({ summary: 'Bot foydalanuvchini tasdiqni bekor qilish' })
-  @ApiOkResponse({ description: 'Bot user tasdiq bekor qilindi' })
-  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
-  revoke(@Param('id', ParseUUIDPipe) id: string) {
-    return this.botUserService.revokeApproval(id);
+  update(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateBotUserDto,
+  ) {
+    return this.botUserService.update(id, dto);
   }
 }

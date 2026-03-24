@@ -1,9 +1,10 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { BotUser } from '../entities/bot-user.entity';
 import { BotUserStatus } from '../enums/bot-user-status.enum';
 import { ListBotUsersQueryDto } from '../dto/list-bot-users-query.dto';
+import { UpdateBotUserDto } from '../dto/update-bot-user.dto';
 
 @Injectable()
 export class BotUserService {
@@ -128,5 +129,19 @@ export class BotUserService {
 
   async findById(id: string): Promise<BotUser | null> {
     return this.botUserRepository.findOne({ where: { id } });
+  }
+
+  async update(id: string, dto: UpdateBotUserDto): Promise<BotUser> {
+    const user = await this.botUserRepository.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('Bot user topilmadi');
+    }
+    if (dto.status !== undefined) {
+      user.status = dto.status;
+    }
+    if (dto.is_approved !== undefined) {
+      user.is_approved = dto.is_approved;
+    }
+    return this.botUserRepository.save(user);
   }
 }
