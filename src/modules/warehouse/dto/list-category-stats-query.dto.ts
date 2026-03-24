@@ -1,8 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class ListCategoryStatsQueryDto {
+  @ApiPropertyOptional({ example: 'ali' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
+  search?: string;
+
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
   @Type(() => Number)

@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsInt,
   IsOptional,
@@ -14,6 +14,9 @@ export class ListProductsQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   search?: string;
 
   @ApiPropertyOptional({ example: 'category-uuid' })

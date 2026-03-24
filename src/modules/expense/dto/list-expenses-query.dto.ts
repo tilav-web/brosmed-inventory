@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import {
   IsEnum,
   IsInt,
@@ -16,6 +16,9 @@ export class ListExpensesQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   search?: string;
 
   @ApiPropertyOptional({ example: 1, default: 1 })

@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class ListWarehouseExpensesQueryDto {
@@ -7,6 +7,9 @@ export class ListWarehouseExpensesQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   search?: string;
 
   @ApiPropertyOptional({ example: 1, default: 1 })

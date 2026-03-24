@@ -15,6 +15,9 @@ export class ListPurchaseOrdersQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(255)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   search?: string;
 
   @ApiPropertyOptional({ enum: OrderStatus, example: OrderStatus.PENDING })

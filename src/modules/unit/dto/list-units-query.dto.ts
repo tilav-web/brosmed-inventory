@@ -1,5 +1,5 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class ListUnitsQueryDto {
@@ -7,6 +7,9 @@ export class ListUnitsQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(64)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   search?: string;
 
   @ApiPropertyOptional({ example: 1, default: 1 })
