@@ -6,9 +6,10 @@ import { WarehousesCommand } from './commands/warehouses.command';
 import { AlertsCommand } from './commands/alerts.command';
 import { MessageEvent } from './events/message.event';
 import { WarehouseModule } from '../warehouse/warehouse.module';
+import { BotUserModule } from '../bot-user/bot-user.module';
 
 @Module({
-  imports: [WarehouseModule],
+  imports: [WarehouseModule, BotUserModule],
   providers: [
     BotService,
     StartCommand,

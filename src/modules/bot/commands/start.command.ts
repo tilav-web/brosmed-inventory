@@ -1,11 +1,25 @@
 import { Context } from 'grammy';
 import { Injectable } from '@nestjs/common';
 import { mainKeyboard } from '../keyboards/main.keyboard';
+import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 
 @Injectable()
 export class StartCommand {
+  constructor(private readonly botUserService: BotUserService) {}
+
   async handle(ctx: Context) {
-    const name = ctx.from?.first_name || ctx.from?.username || 'Foydalanuvchi';
+    const telegramUser = ctx.from;
+    if (!telegramUser) return;
+
+    await this.botUserService.findOrCreate({
+      telegram_id: telegramUser.id,
+      first_name: telegramUser.first_name,
+      last_name: telegramUser.last_name,
+      username: telegramUser.username,
+    });
+
+    const name =
+      telegramUser.first_name || telegramUser.username || 'Foydalanuvchi';
 
     await ctx.reply(
       `Salom, <b>${name}</b>! 👋\n\n` +

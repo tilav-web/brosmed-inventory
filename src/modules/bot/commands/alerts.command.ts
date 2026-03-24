@@ -1,25 +1,22 @@
 import { Context } from 'grammy';
 import { Injectable } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { WarehouseService } from 'src/modules/warehouse/services/warehouse.service';
 
 @Injectable()
 export class AlertsCommand {
-  constructor(
-    private readonly warehouseService: WarehouseService,
-    @InjectRepository(Warehouse)
-    private readonly warehouseRepository: Repository<Warehouse>,
-  ) {}
+  constructor(private readonly warehouseService: WarehouseService) {}
 
   async handle(ctx: Context) {
     try {
-      const warehouses = await this.warehouseRepository.find();
+      const result = (await this.warehouseService.findAll({
+        page: 1,
+        limit: 100,
+      })) as { data: { id: string; name: string }[] };
+
       let text = `🔔 <b>Ogohlantirishlar:</b>\n\n`;
       let hasAlerts = false;
 
-      for (const warehouse of warehouses) {
+      for (const warehouse of result.data) {
         const details = (await this.warehouseService.findByIdWithDetails(
           warehouse.id,
         )) as {

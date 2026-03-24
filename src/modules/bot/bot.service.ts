@@ -1,11 +1,12 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Bot } from 'grammy';
+import { Bot, GrammyError, HttpError } from 'grammy';
 import { StartCommand } from './commands/start.command';
 import { HelpCommand } from './commands/help.command';
 import { WarehousesCommand } from './commands/warehouses.command';
 import { AlertsCommand } from './commands/alerts.command';
 import { MessageEvent } from './events/message.event';
+import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 
 @Injectable()
 export class BotService implements OnModuleInit {
@@ -19,6 +20,7 @@ export class BotService implements OnModuleInit {
     private readonly warehousesCommand: WarehousesCommand,
     private readonly alertsCommand: AlertsCommand,
     private readonly messageEvent: MessageEvent,
+    private readonly botUserService: BotUserService,
   ) {}
 
   async onModuleInit() {
@@ -34,8 +36,29 @@ export class BotService implements OnModuleInit {
     this.registerCommands();
     this.registerEvents();
 
-    this.bot.catch((err) => {
-      this.logger.error('Bot xatosi:', err);
+    this.bot.catch(async (err) => {
+      const ctx = err.ctx;
+      const error = err.error;
+
+      if (error instanceof GrammyError) {
+        if (error.error_code === 403) {
+          const telegramId = ctx.from?.id;
+          if (telegramId) {
+            await this.botUserService.markAsBlocked(telegramId);
+            this.logger.warn(
+              `User ${telegramId} botni blokladi. Status: blocked`,
+            );
+          }
+          return;
+        }
+      }
+
+      if (error instanceof HttpError) {
+        this.logger.error('Telegram API xatosi:', error.message);
+        return;
+      }
+
+      this.logger.error('Bot xatosi:', error);
     });
 
     this.bot.start({
@@ -56,5 +79,31 @@ export class BotService implements OnModuleInit {
 
   getBot(): Bot {
     return this.bot;
+  }
+
+  async sendMessage(telegramId: number, text: string): Promise<boolean> {
+    try {
+      await this.bot.api.sendMessage(telegramId, text, {
+        parse_mode: 'HTML',
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof GrammyError && error.error_code === 403) {
+        await this.botUserService.markAsBlocked(telegramId);
+      }
+      return false;
+    }
+  }
+
+  async sendToApprovedUsers(text: string): Promise<number> {
+    const users = await this.botUserService.getApprovedUsers();
+    let sent = 0;
+
+    for (const user of users) {
+      const success = await this.sendMessage(user.telegram_id, text);
+      if (success) sent++;
+    }
+
+    return sent;
   }
 }
