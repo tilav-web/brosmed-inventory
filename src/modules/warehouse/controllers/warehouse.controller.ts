@@ -113,6 +113,21 @@ export class WarehouseController {
     return this.warehouseService.getCategoryStats(id, query);
   }
 
+  @Get(':id/low-stock')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Zakupka kerak bolgan mahsulotlar (quantity <= min_limit)',
+  })
+  @ApiOkResponse({ description: 'Kam qolgan mahsulotlar royxati' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  getLowStockProducts(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: ListCategoryStatsQueryDto,
+  ) {
+    return this.warehouseService.getLowStockProductsPaginated(id, query);
+  }
+
   @Post()
   @ApiOperation({ summary: 'Warehouse qo`shish (faqat admin)' })
   @ApiBody({ type: CreateWarehouseDto })

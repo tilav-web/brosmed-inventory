@@ -289,6 +289,48 @@ export class WarehouseService {
     }));
   }
 
+  async getLowStockProductsPaginated(
+    warehouseId: string,
+    query: { page?: number; limit?: number },
+  ) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+
+    const qb = this.productRepository
+      .createQueryBuilder('product')
+      .leftJoinAndSelect('product.category', 'category')
+      .leftJoinAndSelect('product.supplier', 'supplier')
+      .where('product.warehouse_id = :warehouseId', { warehouseId })
+      .andWhere('product.quantity <= product.min_limit')
+      .andWhere('product.quantity > 0')
+      .orderBy('product.quantity', 'ASC');
+
+    const [items, total] = await qb.getManyAndCount();
+
+    const data = items.slice((page - 1) * limit, page * limit).map((p) => ({
+      id: p.id,
+      name: p.name,
+      category: p.category?.name || 'Без категории',
+      current_stock: Number(p.quantity),
+      min_limit: p.min_limit,
+      unit: p.unit,
+      deficit: p.min_limit - Number(p.quantity),
+      supplier: p.supplier
+        ? { id: p.supplier.id, company_name: p.supplier.company_name }
+        : null,
+    }));
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
   async getCategoryStats(
     warehouseId: string,
     query: { page?: number; limit?: number },
