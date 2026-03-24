@@ -295,68 +295,257 @@ export class SeedService implements OnApplicationBootstrap {
     suppliers: Supplier[];
     runId: string;
   }): Promise<Product[]> {
-    const productNames = [
-      'Amoksitsillin 500mg',
-      'Paratsetamol 500mg',
-      'Ibuprofen 200mg',
-      'C Vitamin 1000mg',
-      'Shprits 5ml',
-      'Tibbiy niqob 50 dona',
+    const [antibiotics, vitamins, painkillers, medicalSupplies] =
+      input.categories;
+    const [dona, quti, paket, ml, mg, g, kg] = input.units;
+    const [supplier1, supplier2] = input.suppliers;
+    const [warehouse1, warehouse2, warehouse3] = input.warehouses;
+
+    const definitions: {
+      name: string;
+      unit: Unit;
+      category: Category;
+      supplier: Supplier;
+      warehouse: Warehouse;
+      min_limit: number;
+      quantity: number;
+      batchExpiryDays: number;
+    }[] = [
+      // Toshkent Markaziy Ombor (Medical)
+      {
+        name: 'Amoksitsillin 500mg',
+        unit: quti,
+        category: antibiotics,
+        supplier: supplier1,
+        warehouse: warehouse1,
+        min_limit: 20,
+        quantity: 150,
+        batchExpiryDays: 300,
+      },
+      {
+        name: 'Paratsetamol 500mg',
+        unit: quti,
+        category: painkillers,
+        supplier: supplier1,
+        warehouse: warehouse1,
+        min_limit: 30,
+        quantity: 8,
+        batchExpiryDays: 15,
+      },
+      {
+        name: 'Ibuprofen 200mg',
+        unit: quti,
+        category: painkillers,
+        supplier: supplier2,
+        warehouse: warehouse1,
+        min_limit: 15,
+        quantity: 200,
+        batchExpiryDays: 400,
+      },
+      {
+        name: 'C Vitamin 1000mg',
+        unit: quti,
+        category: vitamins,
+        supplier: supplier2,
+        warehouse: warehouse1,
+        min_limit: 10,
+        quantity: 5,
+        batchExpiryDays: 7,
+      },
+      {
+        name: 'Shprits 5ml',
+        unit: dona,
+        category: medicalSupplies,
+        supplier: supplier1,
+        warehouse: warehouse1,
+        min_limit: 50,
+        quantity: 300,
+        batchExpiryDays: 600,
+      },
+      {
+        name: 'Bint steril 10m',
+        unit: dona,
+        category: medicalSupplies,
+        supplier: supplier1,
+        warehouse: warehouse1,
+        min_limit: 25,
+        quantity: 12,
+        batchExpiryDays: 20,
+      },
+      {
+        name: 'Deksametazon 4mg/ml',
+        unit: quti,
+        category: antibiotics,
+        supplier: supplier1,
+        warehouse: warehouse1,
+        min_limit: 10,
+        quantity: 45,
+        batchExpiryDays: 250,
+      },
+
+      // Samarqand Filial Ombor
+      {
+        name: 'Metformin 500mg',
+        unit: quti,
+        category: antibiotics,
+        supplier: supplier1,
+        warehouse: warehouse2,
+        min_limit: 20,
+        quantity: 180,
+        batchExpiryDays: 350,
+      },
+      {
+        name: 'Aspirin 100mg',
+        unit: quti,
+        category: painkillers,
+        supplier: supplier2,
+        warehouse: warehouse2,
+        min_limit: 25,
+        quantity: 3,
+        batchExpiryDays: 10,
+      },
+      {
+        name: "Tibbiy qo'lqoplar",
+        unit: quti,
+        category: medicalSupplies,
+        supplier: supplier2,
+        warehouse: warehouse2,
+        min_limit: 40,
+        quantity: 250,
+        batchExpiryDays: 500,
+      },
+      {
+        name: 'D3 Vitamini 2000ME',
+        unit: quti,
+        category: vitamins,
+        supplier: supplier1,
+        warehouse: warehouse2,
+        min_limit: 15,
+        quantity: 60,
+        batchExpiryDays: 280,
+      },
+      {
+        name: 'Tibbiy niqob 50 dona',
+        unit: paket,
+        category: medicalSupplies,
+        supplier: supplier1,
+        warehouse: warehouse2,
+        min_limit: 30,
+        quantity: 18,
+        batchExpiryDays: 25,
+      },
+
+      // Farg'ona Zaxira Ombor
+      {
+        name: 'Tramadol 50mg',
+        unit: quti,
+        category: painkillers,
+        supplier: supplier2,
+        warehouse: warehouse3,
+        min_limit: 10,
+        quantity: 70,
+        batchExpiryDays: 320,
+      },
+      {
+        name: 'B Kompleks Vitamini',
+        unit: quti,
+        category: vitamins,
+        supplier: supplier1,
+        warehouse: warehouse3,
+        min_limit: 20,
+        quantity: 6,
+        batchExpiryDays: 5,
+      },
+      {
+        name: 'Fiziologik eritma 500ml',
+        unit: quti,
+        category: medicalSupplies,
+        supplier: supplier1,
+        warehouse: warehouse3,
+        min_limit: 50,
+        quantity: 400,
+        batchExpiryDays: 450,
+      },
+      {
+        name: 'Ketoprofen 100mg',
+        unit: quti,
+        category: painkillers,
+        supplier: supplier2,
+        warehouse: warehouse3,
+        min_limit: 12,
+        quantity: 40,
+        batchExpiryDays: 200,
+      },
+      {
+        name: 'Penitsillin 1mln',
+        unit: quti,
+        category: antibiotics,
+        supplier: supplier1,
+        warehouse: warehouse3,
+        min_limit: 15,
+        quantity: 9,
+        batchExpiryDays: 30,
+      },
     ];
 
+    const existingNames = definitions.map((d) => d.name);
     const existing = await this.productRepository.find({
-      where: { name: In(productNames) },
+      where: { name: In(existingNames) },
     });
     if (existing.length > 0) {
       return this.productRepository.find({
-        relations: { warehouse: true, supplier: true },
+        relations: { warehouse: true, supplier: true, category: true },
       });
     }
 
-    const toCreate: Product[] = [];
     const today = new Date();
+    const createdProducts: Product[] = [];
+    let batchIndex = 0;
 
-    for (const name of productNames) {
-      toCreate.push(
-        this.productRepository.create({
-          name,
-          quantity: 0,
-          min_limit: this.randomInt(5, 30),
-          unit: this.pick(input.units).name,
-          category: this.pick(input.categories),
-          supplier: this.pick(input.suppliers),
-          warehouse: this.pick(input.warehouses),
-        }),
-      );
-    }
+    for (const def of definitions) {
+      const statuses: ProductStatus[] = [];
 
-    const createdProducts = await this.productRepository.save(toCreate);
-    const batches: ProductBatch[] = [];
+      if (def.quantity > 0) statuses.push(ProductStatus.IN_STOCK);
+      if (def.quantity <= def.min_limit && def.quantity > 0)
+        statuses.push(ProductStatus.LOW_STOCK);
+      if (def.batchExpiryDays <= 30) statuses.push(ProductStatus.EXPIRING_SOON);
+      if (def.batchExpiryDays <= 0) statuses.push(ProductStatus.EXPIRED);
 
-    for (let i = 0; i < createdProducts.length; i += 1) {
-      const product = createdProducts[i];
-      const quantity = this.randomInt(50, 200);
+      const product = this.productRepository.create({
+        name: def.name,
+        quantity: def.quantity,
+        min_limit: def.min_limit,
+        unit: def.unit.name,
+        category: def.category,
+        supplier: def.supplier,
+        warehouse: def.warehouse,
+        statuses,
+        expiration_date: this.addDays(today, def.batchExpiryDays),
+        expiration_alert_date: this.addDays(today, def.batchExpiryDays - 30),
+      });
 
-      batches.push(
+      const saved = await this.productRepository.save(product);
+
+      batchIndex += 1;
+      await this.productBatchRepository.save(
         this.productBatchRepository.create({
-          product,
-          product_id: product.id,
-          warehouse: product.warehouse,
-          warehouse_id: product.warehouse_id,
-          supplier: product.supplier,
-          supplier_id: product.supplier_id,
-          quantity,
-          price_at_purchase: this.randomNumber(5000, 50000, 2),
-          expiration_date: this.addDays(today, this.randomInt(100, 500)),
-          batch_number: `BATCH-${input.runId}-${String(i + 1).padStart(3, '0')}`,
+          product: saved,
+          product_id: saved.id,
+          warehouse: def.warehouse,
+          warehouse_id: def.warehouse.id,
+          supplier: def.supplier,
+          supplier_id: def.supplier.id,
+          quantity: def.quantity,
+          price_at_purchase: this.randomNumber(5000, 80000, 2),
+          expiration_date: this.addDays(today, def.batchExpiryDays),
+          expiration_alert_date: this.addDays(today, def.batchExpiryDays - 30),
+          batch_number: `BATCH-${input.runId}-${String(batchIndex).padStart(3, '0')}`,
         }),
       );
-      product.quantity = quantity;
-      product.statuses = [ProductStatus.IN_STOCK];
+
+      createdProducts.push(saved);
     }
 
-    await this.productBatchRepository.save(batches);
-    await this.productRepository.save(createdProducts);
     return createdProducts;
   }
 
@@ -369,47 +558,61 @@ export class SeedService implements OnApplicationBootstrap {
     const existingCount = await this.purchaseOrderRepository.count();
     if (existingCount > 0) return;
 
-    const orders: PurchaseOrder[] = [];
     const today = new Date();
+    let orderIndex = 0;
 
-    for (let i = 0; i < 5; i += 1) {
-      const itemsCount = this.randomInt(1, 3);
-      const items: OrderItem[] = [];
-      let total = 0;
+    for (const warehouse of input.warehouses) {
+      const warehouseProducts = input.products.filter(
+        (p) => p.warehouse_id === warehouse.id,
+      );
+      if (warehouseProducts.length === 0) continue;
 
-      for (let j = 0; j < itemsCount; j += 1) {
-        const product = this.pick(input.products);
-        const quantity = this.randomInt(10, 50);
-        const price = this.randomNumber(4000, 40000, 2);
-        total += quantity * price;
+      const orderCount = this.randomInt(2, 3);
 
-        items.push(
-          this.orderItemRepository.create({
-            product,
-            quantity,
-            price_at_purchase: price,
-          }),
-        );
+      for (let i = 0; i < orderCount; i += 1) {
+        orderIndex += 1;
+        const itemsCount = this.randomInt(1, 3);
+        const items: OrderItem[] = [];
+        let total = 0;
+
+        for (let j = 0; j < itemsCount; j += 1) {
+          const product = this.pick(warehouseProducts);
+          const quantity = this.randomInt(10, 50);
+          const price = this.randomNumber(4000, 40000, 2);
+          total += quantity * price;
+
+          items.push(
+            this.orderItemRepository.create({
+              product,
+              quantity,
+              price_at_purchase: price,
+            }),
+          );
+        }
+
+        const status = this.pick([
+          OrderStatus.PENDING,
+          OrderStatus.CONFIRMED,
+          OrderStatus.DELIVERED,
+          OrderStatus.CANCELLED,
+        ]);
+        const order = this.purchaseOrderRepository.create({
+          order_number: `PO-${input.runId}-${String(orderIndex).padStart(3, '0')}`,
+          status,
+          is_received: status === OrderStatus.DELIVERED,
+          order_date: this.addDays(today, -this.randomInt(1, 30)),
+          total_amount: Number(total.toFixed(2)),
+          supplier: this.pick(input.suppliers),
+          warehouse,
+          items,
+        });
+
+        for (const item of items) {
+          item.purchase_order = order;
+        }
+        await this.purchaseOrderRepository.save(order);
       }
-
-      const status = this.pick([OrderStatus.PENDING, OrderStatus.DELIVERED]);
-      const order = this.purchaseOrderRepository.create({
-        order_number: `PO-${input.runId}-${String(i + 1).padStart(3, '0')}`,
-        status,
-        is_received: status === OrderStatus.DELIVERED, // Muhim: DELIVERED bo'lsa received bo'ladi
-        order_date: this.addDays(today, -i),
-        total_amount: Number(total.toFixed(2)),
-        supplier: this.pick(input.suppliers),
-        warehouse: this.pick(input.warehouses),
-        items,
-      });
-
-      for (const item of items) {
-        item.purchase_order = order;
-      }
-      orders.push(order);
     }
-    await this.purchaseOrderRepository.save(orders);
   }
 
   private async seedExpenses(input: {
@@ -422,43 +625,82 @@ export class SeedService implements OnApplicationBootstrap {
     const existingCount = await this.expenseRepository.count();
     if (existingCount > 0) return;
 
-    for (let i = 0; i < 5; i += 1) {
-      const items: ExpenseItem[] = [];
-      let total = 0;
+    const staffNames = [
+      'Ali Valiyev',
+      'Hasan Husanov',
+      'Dilshod Karimov',
+      'Nodira Azimova',
+      'Rustam Saidov',
+    ];
+    const purposes = [
+      'Klinikaga berildi',
+      'Jarrohlik bo`limiga',
+      'Poliklinikaga yuborildi',
+      'Favqulodda holat uchun',
+      'Ambulator davolash',
+      'Laboratoriyaga',
+      'Reanimatsiya bo`limiga',
+    ];
+    const statuses = [
+      ExpenseStatus.COMPLETED,
+      ExpenseStatus.COMPLETED,
+      ExpenseStatus.COMPLETED,
+      ExpenseStatus.PENDING_ISSUE,
+      ExpenseStatus.PENDING_PHOTO,
+    ];
 
-      const itemsCount = this.randomInt(1, 2);
-      for (let j = 0; j < itemsCount; j += 1) {
-        // Muhim: Batch bor mahsulotni tanlash
-        const batch = this.pick(input.batches);
-        const quantity = this.randomInt(1, 5);
-        const lineTotal = quantity * Number(batch.price_at_purchase);
-        total += lineTotal;
+    let expenseIndex = 0;
+    const today = new Date();
 
-        items.push(
-          this.expenseItemRepository.create({
-            product: batch.product,
-            warehouse: batch.warehouse,
-            product_batch: batch,
-            product_batch_id: batch.id,
-            quantity,
-          }),
-        );
+    for (const warehouse of input.warehouses) {
+      const warehouseBatches = input.batches.filter(
+        (b) => b.warehouse_id === warehouse.id,
+      );
+      if (warehouseBatches.length === 0) continue;
+
+      const expenseCount = this.randomInt(4, 6);
+
+      for (let i = 0; i < expenseCount; i += 1) {
+        expenseIndex += 1;
+        const items: ExpenseItem[] = [];
+        let total = 0;
+        const itemsCount = this.randomInt(1, 3);
+
+        for (let j = 0; j < itemsCount; j += 1) {
+          const batch = this.pick(warehouseBatches);
+          const quantity = this.randomInt(1, 10);
+          const lineTotal = quantity * Number(batch.price_at_purchase);
+          total += lineTotal;
+
+          items.push(
+            this.expenseItemRepository.create({
+              product: batch.product,
+              warehouse: batch.warehouse,
+              product_batch: batch,
+              product_batch_id: batch.id,
+              quantity,
+            }),
+          );
+        }
+
+        const status = this.pick(statuses);
+        const expense = this.expenseRepository.create({
+          expense_number: `EXP-${input.runId}-${String(expenseIndex).padStart(3, '0')}`,
+          status,
+          type: this.pick([ExpenseType.USAGE, ExpenseType.EXPIRED]),
+          total_price: Number(total.toFixed(2)),
+          staff_name: this.pick(staffNames),
+          purpose: this.pick(purposes),
+          manager: this.pick(input.warehouseManagers),
+          items,
+          createdAt: this.addDays(today, -this.randomInt(1, 30)),
+        });
+
+        for (const item of items) {
+          item.expense = expense;
+        }
+        await this.expenseRepository.save(expense);
       }
-
-      const expense = this.expenseRepository.create({
-        expense_number: `EXP-${input.runId}-${String(i + 1).padStart(3, '0')}`,
-        status: ExpenseStatus.COMPLETED,
-        type: ExpenseType.USAGE,
-        total_price: Number(total.toFixed(2)),
-        staff_name: 'Test Staff',
-        manager: this.pick(input.warehouseManagers),
-        items,
-      });
-
-      for (const item of items) {
-        item.expense = expense;
-      }
-      await this.expenseRepository.save(expense);
     }
   }
 
