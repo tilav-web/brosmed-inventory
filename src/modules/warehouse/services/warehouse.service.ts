@@ -21,8 +21,8 @@ import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { Warehouse } from '../entities/warehouse.entity';
 
 interface CategoryStatsRaw {
-  category_id: string;
-  category_name: string;
+  id: string;
+  name: string;
   total_positions: string;
   total_quantity: string;
 }
@@ -320,8 +320,8 @@ export class WarehouseService {
 
     return {
       data: data.map((s) => ({
-        category_id: s.category_id,
-        category_name: s.category_name || 'Без категории',
+        id: s.id,
+        name: s.name || 'Без категории',
         total_positions: parseInt(s.total_positions, 10),
         total_quantity: parseInt(s.total_quantity, 10),
       })),
