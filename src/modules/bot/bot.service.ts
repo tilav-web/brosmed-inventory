@@ -1,6 +1,12 @@
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  OnModuleInit,
+  OnModuleDestroy,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Bot, GrammyError, HttpError } from 'grammy';
+import { Bot, GrammyError, HttpError, webhookCallback } from 'grammy';
+import { Request, Response } from 'express';
 import { StartCommand } from './commands/start.command';
 import { HelpCommand } from './commands/help.command';
 import { WarehousesCommand } from './commands/warehouses.command';
@@ -9,9 +15,10 @@ import { MessageEvent } from './events/message.event';
 import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 
 @Injectable()
-export class BotService implements OnModuleInit {
+export class BotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BotService.name);
-  private bot: Bot | null = null;
+  private readonly bot: Bot;
+  public webhookCallback?: (req: Request, res: Response) => Promise<void>;
 
   constructor(
     private readonly configService: ConfigService,
@@ -21,94 +28,100 @@ export class BotService implements OnModuleInit {
     private readonly alertsCommand: AlertsCommand,
     private readonly messageEvent: MessageEvent,
     private readonly botUserService: BotUserService,
-  ) {}
+  ) {
+    const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+    if (!token) {
+      this.logger.warn('TELEGRAM_BOT_TOKEN topilmadi. Bot ishga tushmaydi.');
+      throw new Error('TELEGRAM_BOT_TOKEN is not defined!');
+    }
+
+    this.bot = new Bot(token);
+    this.setupHandlers();
+  }
 
   async onModuleInit() {
-    await this.startBot();
+    const botMode = this.configService.get<string>('BOT_MODE', 'polling');
+
+    if (botMode === 'polling') {
+      this.logger.log('Bot polling mode da ishga tushmoqda...');
+
+      try {
+        await this.bot.api.deleteWebhook({ drop_pending_updates: true });
+        await this.bot.api.getMe().then((me) => {
+          this.logger.log(`🤖 Bot: @${me.username}`);
+        });
+        this.bot.start({
+          onStart: () => this.logger.log('✅ Polling boshlandi!'),
+          allowed_updates: ['message', 'callback_query'],
+        });
+      } catch (error) {
+        this.logger.error('Bot polling mode da ishga tushmadi:', error);
+      }
+    } else if (botMode === 'webhook') {
+      this.logger.log('Bot webhook mode da ishga tushmoqda...');
+
+      this.webhookCallback = webhookCallback(this.bot, 'express');
+
+      const webhookUrl = this.configService.get<string>('BOT_WEBHOOK_URL');
+      if (!webhookUrl) {
+        throw new Error('BOT_WEBHOOK_URL is not defined!');
+      }
+
+      try {
+        await this.bot.api.setWebhook(webhookUrl, {
+          drop_pending_updates: true,
+        });
+        this.logger.log(`Webhook o'rnatildi: ${webhookUrl}`);
+      } catch (error) {
+        this.logger.error("Webhook o'rnatishda xatolik:", error);
+      }
+    } else {
+      this.logger.warn(
+        `Noto'g'ri BOT_MODE: ${botMode}. "polling" yoki "webhook" bo'lishi kerak.`,
+      );
+    }
   }
 
-  async startBot() {
-    const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
+  private setupHandlers() {
+    this.startCommand.register(this.bot);
+    this.helpCommand.register(this.bot);
+    this.warehousesCommand.register(this.bot);
+    this.alertsCommand.register(this.bot);
+    this.messageEvent.register(this.bot);
 
-    if (!token) {
-      this.logger.warn('⚠️ TELEGRAM_BOT_TOKEN topilmadi. Bot ishga tushmaydi.');
-      return;
-    }
+    this.bot.catch(async (err) => {
+      const ctx = err.ctx;
+      const error = err.error;
 
-    this.logger.log('Bot ishga tushmoqda...');
-
-    try {
-      this.bot = new Bot(token);
-
-      this.registerCommands();
-      this.registerEvents();
-
-      this.bot.catch(async (err) => {
-        const ctx = err.ctx;
-        const error = err.error;
-
-        if (error instanceof GrammyError) {
-          if (error.error_code === 403) {
-            const telegramId = ctx.from?.id;
-            if (telegramId) {
-              await this.botUserService.markAsBlocked(telegramId);
-              this.logger.warn(
-                `User ${telegramId} botni blokladi. Status: blocked`,
-              );
-            }
-            return;
+      if (error instanceof GrammyError) {
+        if (error.error_code === 403) {
+          const telegramId = ctx.from?.id;
+          if (telegramId) {
+            await this.botUserService.markAsBlocked(telegramId);
+            this.logger.warn(
+              `User ${telegramId} botni blokladi. Status: blocked`,
+            );
           }
-          this.logger.error(
-            `Grammy xato [${error.error_code}]:`,
-            error.message,
-          );
           return;
         }
+        this.logger.error(`Grammy xato [${error.error_code}]:`, error.message);
+        return;
+      }
 
-        if (error instanceof HttpError) {
-          this.logger.error('Telegram API xatosi:', error.message);
-          return;
-        }
+      if (error instanceof HttpError) {
+        this.logger.error('Telegram API xatosi:', error.message);
+        return;
+      }
 
-        this.logger.error('Bot xatosi:', error);
-      });
-
-      await this.bot.init();
-      const me = await this.bot.api.getMe();
-      this.logger.log(`🤖 Bot ishga tushdi: @${me.username}`);
-
-      await this.bot.start({
-        onStart: () => this.logger.log('✅ Polling boshlandi!'),
-        allowed_updates: ['message', 'callback_query'],
-      });
-    } catch (error) {
-      this.logger.error('❌ Bot ishga tushmadi:', error);
-      this.bot = null;
-    }
+      this.logger.error('Bot xatosi:', error);
+    });
   }
 
-  private registerCommands() {
-    if (!this.bot) return;
-
-    this.bot.command('start', (ctx) => this.startCommand.handle(ctx));
-    this.bot.command('help', (ctx) => this.helpCommand.handle(ctx));
-    this.bot.command('warehouses', (ctx) => this.warehousesCommand.handle(ctx));
-    this.bot.command('alerts', (ctx) => this.alertsCommand.handle(ctx));
-  }
-
-  private registerEvents() {
-    if (!this.bot) return;
-
-    this.bot.on('message:text', (ctx) => this.messageEvent.handle(ctx));
-  }
-
-  getBot(): Bot | null {
+  getBot(): Bot {
     return this.bot;
   }
 
   async sendMessage(telegramId: number, text: string): Promise<boolean> {
-    if (!this.bot) return false;
-
     try {
       await this.bot.api.sendMessage(telegramId, text, {
         parse_mode: 'HTML',
@@ -132,5 +145,18 @@ export class BotService implements OnModuleInit {
     }
 
     return sent;
+  }
+
+  async onModuleDestroy() {
+    const botMode = this.configService.get<string>('BOT_MODE', 'polling');
+
+    if (botMode === 'polling') {
+      try {
+        await this.bot.stop();
+        this.logger.log("Bot to'xtatildi.");
+      } catch (error) {
+        this.logger.error("Botni to'xtatishda xatolik:", error);
+      }
+    }
   }
 }
