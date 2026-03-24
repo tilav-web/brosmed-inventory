@@ -299,8 +299,8 @@ export class WarehouseService {
     const qb = this.productRepository
       .createQueryBuilder('product')
       .leftJoin('product.category', 'category')
-      .select('category.id', 'category_id')
-      .addSelect('category.name', 'category_name')
+      .select('category.id', 'id')
+      .addSelect('category.name', 'name')
       .addSelect('COUNT(product.id)', 'total_positions')
       .addSelect('COALESCE(SUM(product.quantity), 0)', 'total_quantity')
       .where('product.warehouse_id = :warehouseId', { warehouseId })

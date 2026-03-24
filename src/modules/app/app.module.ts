@@ -17,6 +17,7 @@ import { RedisModule } from 'src/common/redis/redis.module';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 import { SeedModule } from 'src/seed/seed.module';
+import { BotModule } from '../bot/bot.module';
 
 @Module({
   imports: [
@@ -59,6 +60,7 @@ import { SeedModule } from 'src/seed/seed.module';
     WarehouseModule,
     RedisModule,
     SeedModule,
+    BotModule,
   ],
   controllers: [AppController],
   providers: [
