@@ -8,10 +8,12 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -33,6 +35,9 @@ import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
 import { ListExpenseItemsQueryDto } from '../dto/list-expense-items-query.dto';
 import { ListExpensesQueryDto } from '../dto/list-expenses-query.dto';
+import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
+import { ExpenseExportQueueService } from '../services/expense-export-queue.service';
+import { ExpenseExportService } from '../services/expense-export.service';
 import { ExpenseService } from '../services/expense.service';
 
 @Controller('expenses')
@@ -44,6 +49,9 @@ export class ExpenseController {
   constructor(
     private readonly expenseService: ExpenseService,
     private readonly imageService: ImageService,
+    private readonly botUserService: BotUserService,
+    private readonly expenseExportService: ExpenseExportService,
+    private readonly expenseExportQueueService: ExpenseExportQueueService,
   ) {}
 
   @Get('dashboard/summary')
@@ -62,6 +70,41 @@ export class ExpenseController {
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
   findAll(@Query() query: ListExpensesQueryDto) {
     return this.expenseService.findAll(query);
+  }
+
+  @Get('export')
+  @ApiOperation({
+    summary: 'Expense itemlarini Excel formatda export qilish',
+  })
+  @ApiOkResponse({ description: 'Excel eksport' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  async exportItems(
+    @Query() query: ListExpenseItemsQueryDto,
+    @Res() res: Response,
+  ) {
+    const approvedUsers = await this.botUserService.getApprovedUsers();
+
+    if (approvedUsers.length > 0) {
+      const job = await this.expenseExportQueueService.enqueueExportJob({
+        query,
+      });
+      return res.status(202).json({
+        message: 'Export job navbatga qo`yildi. Excel bot orqali yuboriladi.',
+        job_id: job.id,
+        recipients: approvedUsers.length,
+      });
+    }
+
+    const buffer = await this.expenseExportService.buildExcelBuffer(query);
+    const filename = this.buildDefaultFilename('expenses');
+
+    res.setHeader(
+      'Content-Type',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    );
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    return res.status(200).send(buffer);
   }
 
   @Get('items')
@@ -110,7 +153,7 @@ export class ExpenseController {
 
   @Post(':id/issue')
   @ApiOperation({
-    summary: 'Выдать товар: statusni ожидает подтверждения ga o`tkazish',
+    summary: 'Tovar berish: statusni PENDING_PHOTO ga o`tkazish',
   })
   @ApiOkResponse({ description: 'Tovar berildi, foto tasdiq kutilmoqda' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
@@ -151,5 +194,16 @@ export class ExpenseController {
     });
 
     return this.expenseService.attachCheckImageAndComplete(id, checkImageUrl);
+  }
+
+  private buildDefaultFilename(prefix: string) {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    return `${prefix}_${year}${month}${day}_${hours}${minutes}${seconds}.xlsx`;
   }
 }

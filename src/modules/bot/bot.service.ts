@@ -5,7 +5,13 @@ import {
   OnModuleDestroy,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Bot, GrammyError, HttpError, webhookCallback } from 'grammy';
+import {
+  Bot,
+  GrammyError,
+  HttpError,
+  InputFile,
+  webhookCallback,
+} from 'grammy';
 import { Request, Response } from 'express';
 import { StartCommand } from './commands/start.command';
 import { HelpCommand } from './commands/help.command';
@@ -152,6 +158,47 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     for (const user of users) {
       const success = await this.sendMessage(user.telegram_id, text);
+      if (success) sent++;
+    }
+
+    return sent;
+  }
+
+  async sendDocument(
+    telegramId: number,
+    buffer: Buffer,
+    filename: string,
+    caption?: string,
+  ): Promise<boolean> {
+    try {
+      await this.bot.api.sendDocument(telegramId, new InputFile(buffer, filename), {
+        caption,
+        parse_mode: 'HTML',
+      });
+      return true;
+    } catch (error) {
+      if (error instanceof GrammyError && error.error_code === 403) {
+        await this.botUserService.markAsBlocked(telegramId);
+      }
+      return false;
+    }
+  }
+
+  async sendDocumentToApprovedUsers(
+    buffer: Buffer,
+    filename: string,
+    caption?: string,
+  ): Promise<number> {
+    const users = await this.botUserService.getApprovedUsers();
+    let sent = 0;
+
+    for (const user of users) {
+      const success = await this.sendDocument(
+        user.telegram_id,
+        buffer,
+        filename,
+        caption,
+      );
       if (success) sent++;
     }
 

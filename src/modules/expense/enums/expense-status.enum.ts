@@ -1,5 +1,5 @@
 export enum ExpenseStatus {
-  PENDING_ISSUE = 'ожидает выдачи',
-  PENDING_PHOTO = 'ожидает подтверждения',
-  COMPLETED = 'выдано',
+  PENDING_ISSUE = 'PENDING_ISSUE',
+  PENDING_PHOTO = 'PENDING_PHOTO',
+  COMPLETED = 'COMPLETED',
 }
