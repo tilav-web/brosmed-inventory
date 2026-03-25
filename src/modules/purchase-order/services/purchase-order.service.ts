@@ -368,7 +368,7 @@ export class PurchaseOrderService {
         const items = (order.items ?? []).filter((i) =>
           itemsToRemove.includes(i.id),
         );
-        await orderItemRepo.remove(items);
+        await orderItemRepo.delete(items.map((i) => i.id));
       }
 
       const itemsToAdd = dto.items_to_add ?? [];
