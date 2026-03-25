@@ -1,7 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
-  ArrayMinSize,
   IsArray,
   IsDateString,
   IsEnum,
@@ -43,7 +42,6 @@ export class UpdatePurchaseOrderDto {
   @ApiPropertyOptional({ type: [CreateOrderItemDto] })
   @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @ValidateNested({ each: true })
   @Type(() => CreateOrderItemDto)
   items_to_add?: CreateOrderItemDto[];
@@ -51,7 +49,6 @@ export class UpdatePurchaseOrderDto {
   @ApiPropertyOptional({ type: [String], example: ['order-item-uuid-1'] })
   @IsOptional()
   @IsArray()
-  @ArrayMinSize(1)
   @IsUUID('4', { each: true })
   @Type(() => String)
   items_to_remove?: string[];
