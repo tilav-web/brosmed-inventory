@@ -13,6 +13,11 @@ import {
 import { ExpenseStatus } from '../enums/expense-status.enum';
 import { ExpenseType } from '../enums/expense-type.enum';
 
+export enum ExportTarget {
+  BOT = 'bot',
+  DOWNLOAD = 'download',
+}
+
 export class ListExpenseItemsQueryDto {
   @ApiPropertyOptional({ example: 'ali' })
   @IsOptional()
@@ -67,4 +72,12 @@ export class ListExpenseItemsQueryDto {
   @IsOptional()
   @IsDateString()
   date_to?: string;
+
+  @ApiPropertyOptional({
+    enum: ExportTarget,
+    example: ExportTarget.DOWNLOAD,
+  })
+  @IsOptional()
+  @IsEnum(ExportTarget)
+  export_target?: ExportTarget;
 }

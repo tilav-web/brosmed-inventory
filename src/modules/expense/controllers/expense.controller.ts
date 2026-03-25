@@ -33,7 +33,10 @@ import { FileFolderEnum } from 'src/modules/image/enums/file-folder.enum';
 import { ImageService } from 'src/modules/image/services/image.service';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
-import { ListExpenseItemsQueryDto } from '../dto/list-expense-items-query.dto';
+import {
+  ExportTarget,
+  ListExpenseItemsQueryDto,
+} from '../dto/list-expense-items-query.dto';
 import { ListExpensesQueryDto } from '../dto/list-expenses-query.dto';
 import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 import { ExpenseExportQueueService } from '../services/expense-export-queue.service';
@@ -83,9 +86,17 @@ export class ExpenseController {
     @Query() query: ListExpenseItemsQueryDto,
     @Res() res: Response,
   ) {
-    const approvedUsers = await this.botUserService.getApprovedUsers();
+    const exportTarget = query.export_target ?? ExportTarget.DOWNLOAD;
 
-    if (approvedUsers.length > 0) {
+    if (exportTarget === ExportTarget.BOT) {
+      const approvedUsers = await this.botUserService.getApprovedUsers();
+      if (approvedUsers.length === 0) {
+        return res.status(409).json({
+          message:
+            'Tasdiqlangan bot user topilmadi. export_target=download yuboring.',
+        });
+      }
+
       const job = await this.expenseExportQueueService.enqueueExportJob({
         query,
       });
