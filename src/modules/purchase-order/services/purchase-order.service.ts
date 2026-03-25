@@ -255,6 +255,8 @@ export class PurchaseOrderService {
         throw new NotFoundException('Purchase order topilmadi');
       }
 
+      const originalStatus = order.status;
+
       if (order.is_received) {
         throw new BadRequestException(
           'Qabul qilingan buyurtmani o`zgartirib bo`lmaydi',
@@ -262,14 +264,14 @@ export class PurchaseOrderService {
       }
 
       if (dto.status) {
-        if (order.status === OrderStatus.CANCELLED) {
+        if (originalStatus === OrderStatus.CANCELLED) {
           throw new BadRequestException(
             'Bekor qilingan buyurtma statusini o`zgartirib bo`lmaydi',
           );
         }
 
         if (
-          order.status === OrderStatus.DELIVERED &&
+          originalStatus === OrderStatus.DELIVERED &&
           dto.status !== OrderStatus.DELIVERED
         ) {
           throw new BadRequestException(
@@ -279,24 +281,26 @@ export class PurchaseOrderService {
         order.status = dto.status;
       }
 
-      // Agar buyurtma Delivered bo'lsa, boshqa fieldlarni o'zgartirib bo'lmaydi (statusdan tashqari)
-      if (
-        order.status === OrderStatus.DELIVERED &&
-        (dto.supplier_id ||
-          dto.warehouse_id ||
-          dto.order_date ||
-          dto.delivery_date ||
-          dto.items_to_add ||
-          dto.items_to_remove)
-      ) {
-        // Statusni o'zini DELIVERED qilib yuborsa ham bu xatoni bermasligi kerak,
-        // shuning uchun yuqoridagi if status o'zgarmasligini tekshiradi.
-        // Aslida status DELIVERED bo'lganda boshqa fieldlarni o'zgartirishni cheklaymiz.
-        if (order.status === OrderStatus.DELIVERED && !dto.status) {
-          throw new BadRequestException(
-            'Delivered buyurtmani o`zgartirib bo`lmaydi',
-          );
-        }
+      const hasOtherChanges =
+        dto.supplier_id !== undefined ||
+        dto.warehouse_id !== undefined ||
+        dto.order_date !== undefined ||
+        dto.delivery_date !== undefined ||
+        (dto.items_to_add?.length ?? 0) > 0 ||
+        (dto.items_to_remove?.length ?? 0) > 0;
+
+      // Delivered bo'lganda (original), statusdan tashqari o'zgarishlar taqiqlanadi
+      if (originalStatus === OrderStatus.DELIVERED && hasOtherChanges) {
+        throw new BadRequestException(
+          'Delivered buyurtmani o`zgartirib bo`lmaydi',
+        );
+      }
+
+      // Cancelled bo'lganda (original) hech narsa o'zgartirilmasin
+      if (originalStatus === OrderStatus.CANCELLED && hasOtherChanges) {
+        throw new BadRequestException(
+          'Bekor qilingan buyurtmani o`zgartirib bo`lmaydi',
+        );
       }
 
       const supplierId =
@@ -412,6 +416,9 @@ export class PurchaseOrderService {
       const updatedItems = await orderItemRepo.find({
         where: { purchase_order: { id: order.id } },
       });
+
+      // order.items ni real holatga tenglab, cascade detach muammosini oldini olamiz
+      order.items = updatedItems;
 
       const totalAmount = updatedItems.reduce((sum, i) => {
         const price = Number(i.price_at_purchase);
