@@ -13,7 +13,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { Response } from 'express';
+import type { Response } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
