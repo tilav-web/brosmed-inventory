@@ -19,6 +19,7 @@ import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
 import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { Warehouse } from '../entities/warehouse.entity';
+import { ExpenseStatus } from 'src/modules/expense/enums/expense-status.enum';
 
 interface CategoryStatsRaw {
   id: string;
@@ -234,13 +235,28 @@ export class WarehouseService {
       .leftJoinAndSelect('item.product', 'product')
       .leftJoinAndSelect('item.product_batch', 'batch')
       .where('item.warehouse_id = :id', { id })
-      .andWhere('expense.status = :status', { status: 'выдано' });
+      .andWhere('expense.status = :status', {
+        status: query.status ?? ExpenseStatus.COMPLETED,
+      });
 
     if (search) {
       qb.andWhere(
         '(expense.staff_name ILIKE :search OR expense.purpose ILIKE :search OR product.name ILIKE :search)',
         { search: `%${search}%` },
       );
+    }
+
+    if (query.date_from || query.date_to) {
+      const from = query.date_from ? new Date(query.date_from) : null;
+      const to = query.date_to ? new Date(query.date_to) : null;
+      if (from) from.setHours(0, 0, 0, 0);
+      if (to) to.setHours(23, 59, 59, 999);
+      if (from) {
+        qb.andWhere('expense.createdAt >= :from', { from });
+      }
+      if (to) {
+        qb.andWhere('expense.createdAt <= :to', { to });
+      }
     }
 
     qb.orderBy('expense.createdAt', 'DESC')

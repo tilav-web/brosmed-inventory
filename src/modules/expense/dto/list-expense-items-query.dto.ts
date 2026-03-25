@@ -6,12 +6,14 @@ import {
   IsInt,
   IsOptional,
   IsString,
+  IsUUID,
   MaxLength,
   Min,
 } from 'class-validator';
-import { ExpenseStatus } from 'src/modules/expense/enums/expense-status.enum';
+import { ExpenseStatus } from '../enums/expense-status.enum';
+import { ExpenseType } from '../enums/expense-type.enum';
 
-export class ListWarehouseExpensesQueryDto {
+export class ListExpenseItemsQueryDto {
   @ApiPropertyOptional({ example: 'ali' })
   @IsOptional()
   @IsString()
@@ -42,6 +44,19 @@ export class ListWarehouseExpensesQueryDto {
   @IsOptional()
   @IsEnum(ExpenseStatus)
   status?: ExpenseStatus;
+
+  @ApiPropertyOptional({
+    enum: ExpenseType,
+    example: ExpenseType.USAGE,
+  })
+  @IsOptional()
+  @IsEnum(ExpenseType)
+  type?: ExpenseType;
+
+  @ApiPropertyOptional({ example: '6b3f4c20-8b87-4f4f-9b7c-5f4e6c3f7c2a' })
+  @IsOptional()
+  @IsUUID()
+  warehouse_id?: string;
 
   @ApiPropertyOptional({ example: '2026-03-01' })
   @IsOptional()

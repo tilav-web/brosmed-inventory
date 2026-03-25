@@ -31,6 +31,7 @@ import { FileFolderEnum } from 'src/modules/image/enums/file-folder.enum';
 import { ImageService } from 'src/modules/image/services/image.service';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
+import { ListExpenseItemsQueryDto } from '../dto/list-expense-items-query.dto';
 import { ListExpensesQueryDto } from '../dto/list-expenses-query.dto';
 import { ExpenseService } from '../services/expense.service';
 
@@ -61,6 +62,28 @@ export class ExpenseController {
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
   findAll(@Query() query: ListExpensesQueryDto) {
     return this.expenseService.findAll(query);
+  }
+
+  @Get('items')
+  @ApiOperation({
+    summary: 'Expense itemlar ro`yxati (pagination + filter)',
+  })
+  @ApiOkResponse({ description: 'Expense itemlar ro`yxati' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  findAllItems(@Query() query: ListExpenseItemsQueryDto) {
+    return this.expenseService.findAllItems(query);
+  }
+
+  @Get('warehouse-stats')
+  @ApiOperation({
+    summary: 'Warehouse bo`yicha expense item statistikasi',
+  })
+  @ApiOkResponse({ description: 'Warehouse statistikasi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  getWarehouseStats(@Query() query: ListExpenseItemsQueryDto) {
+    return this.expenseService.getWarehouseStats(query);
   }
 
   @Get(':id')

@@ -5,7 +5,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, EntityManager, Repository } from 'typeorm';
+import {
+  DataSource,
+  EntityManager,
+  Repository,
+  SelectQueryBuilder,
+} from 'typeorm';
 import Redis from 'ioredis';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
@@ -17,6 +22,7 @@ import { ExpenseStatus } from '../enums/expense-status.enum';
 import { ExpenseType } from '../enums/expense-type.enum';
 import { ExpenseItem } from '../entities/expense-item.entity';
 import { Expense } from '../entities/expense.entity';
+import { ListExpenseItemsQueryDto } from '../dto/list-expense-items-query.dto';
 
 export interface ReceiptItem {
   product_id: string;
@@ -36,6 +42,8 @@ export class ExpenseService {
     private readonly dataSource: DataSource,
     @InjectRepository(Expense)
     private readonly expenseRepository: Repository<Expense>,
+    @InjectRepository(ExpenseItem)
+    private readonly expenseItemRepository: Repository<ExpenseItem>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
     @InjectRepository(ProductBatch)
@@ -88,6 +96,132 @@ export class ExpenseService {
         totalPages: Math.ceil(total / limit) || 1,
       },
     };
+  }
+
+  async findAllItems(query: ListExpenseItemsQueryDto) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+    const search = query.search?.trim();
+
+    const qb = this.expenseItemRepository
+      .createQueryBuilder('item')
+      .leftJoinAndSelect('item.expense', 'expense')
+      .leftJoinAndSelect('item.product', 'product')
+      .leftJoinAndSelect('item.warehouse', 'warehouse');
+
+    if (search) {
+      qb.andWhere(
+        '(expense.staff_name ILIKE :search OR expense.purpose ILIKE :search OR expense.expense_number ILIKE :search OR product.name ILIKE :search OR warehouse.name ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    if (query.status) {
+      qb.andWhere('expense.status = :status', { status: query.status });
+    }
+
+    if (query.type) {
+      qb.andWhere('expense.type = :type', { type: query.type });
+    }
+
+    if (query.warehouse_id) {
+      qb.andWhere('warehouse.id = :warehouseId', {
+        warehouseId: query.warehouse_id,
+      });
+    }
+
+    this.applyDateRangeFilter(qb, 'expense.createdAt', query);
+
+    qb.orderBy('expense.createdAt', 'DESC')
+      .addOrderBy('item.id', 'ASC')
+      .skip((page - 1) * limit)
+      .take(limit);
+
+    const [items, total] = await qb.getManyAndCount();
+
+    const data = items.map((item) => ({
+      id: item.id,
+      date: item.expense?.createdAt ?? null,
+      staff_name: item.expense?.staff_name ?? null,
+      purpose: item.expense?.purpose ?? null,
+      expense_id: item.expense?.id ?? null,
+      expense_number: item.expense?.expense_number ?? null,
+      status: item.expense?.status ?? null,
+      type: item.expense?.type ?? null,
+      warehouse: item.warehouse
+        ? { id: item.warehouse.id, name: item.warehouse.name }
+        : null,
+      product: item.product
+        ? {
+            id: item.product.id,
+            name: item.product.name,
+            unit: item.product.unit,
+          }
+        : null,
+      quantity: item.quantity,
+    }));
+
+    return {
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  async getWarehouseStats(query: ListExpenseItemsQueryDto) {
+    const search = query.search?.trim();
+
+    const qb = this.expenseItemRepository
+      .createQueryBuilder('item')
+      .leftJoin('item.expense', 'expense')
+      .leftJoin('item.product', 'product')
+      .leftJoin('item.warehouse', 'warehouse')
+      .select('warehouse.id', 'warehouse_id')
+      .addSelect('warehouse.name', 'warehouse_name')
+      .addSelect('COUNT(item.id)', 'count')
+      .groupBy('warehouse.id')
+      .addGroupBy('warehouse.name');
+
+    if (search) {
+      qb.andWhere(
+        '(expense.staff_name ILIKE :search OR expense.purpose ILIKE :search OR expense.expense_number ILIKE :search OR product.name ILIKE :search OR warehouse.name ILIKE :search)',
+        { search: `%${search}%` },
+      );
+    }
+
+    if (query.status) {
+      qb.andWhere('expense.status = :status', { status: query.status });
+    }
+
+    if (query.type) {
+      qb.andWhere('expense.type = :type', { type: query.type });
+    }
+
+    if (query.warehouse_id) {
+      qb.andWhere('warehouse.id = :warehouseId', {
+        warehouseId: query.warehouse_id,
+      });
+    }
+
+    this.applyDateRangeFilter(qb, 'expense.createdAt', query);
+
+    qb.orderBy('warehouse.name', 'ASC');
+
+    const rows = await qb.getRawMany<{
+      warehouse_id: string;
+      warehouse_name: string;
+      count: string;
+    }>();
+
+    return rows.map((row) => ({
+      warehouse_id: row.warehouse_id,
+      warehouse_name: row.warehouse_name,
+      count: Number(row.count ?? 0),
+    }));
   }
 
   async findById(id: string) {
@@ -426,5 +560,26 @@ export class ExpenseService {
 
   private async invalidateDashboardCache() {
     await this.redis.del('expenses:dashboard:summary');
+  }
+
+  private applyDateRangeFilter(
+    qb: SelectQueryBuilder<any>,
+    field: string,
+    query: { date_from?: string; date_to?: string },
+  ) {
+    if (!query.date_from && !query.date_to) return;
+
+    const from = query.date_from ? new Date(query.date_from) : null;
+    const to = query.date_to ? new Date(query.date_to) : null;
+
+    if (from) from.setHours(0, 0, 0, 0);
+    if (to) to.setHours(23, 59, 59, 999);
+
+    if (from) {
+      qb.andWhere(`${field} >= :from`, { from });
+    }
+    if (to) {
+      qb.andWhere(`${field} <= :to`, { to });
+    }
   }
 }
