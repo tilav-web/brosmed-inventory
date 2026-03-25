@@ -365,10 +365,12 @@ export class PurchaseOrderService {
           }
         }
 
-        const items = (order.items ?? []).filter((i) =>
-          itemsToRemove.includes(i.id),
+        const itemIdsToDelete = itemsToRemove;
+        await orderItemRepo.delete(itemIdsToDelete);
+
+        order.items = (order.items ?? []).filter(
+          (i) => !itemIdsToDelete.includes(i.id),
         );
-        await orderItemRepo.delete(items.map((i) => i.id));
       }
 
       const itemsToAdd = dto.items_to_add ?? [];
