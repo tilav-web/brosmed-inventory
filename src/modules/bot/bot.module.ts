@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { BotService } from './bot.service';
+import { BotController } from './bot.controller';
 import { StartCommand } from './commands/start.command';
 import { HelpCommand } from './commands/help.command';
 import { WarehousesCommand } from './commands/warehouses.command';
@@ -12,6 +13,7 @@ import { BotUserModule } from '../bot-user/bot-user.module';
 
 @Module({
   imports: [WarehouseModule, BotUserModule],
+  controllers: [BotController],
   providers: [
     BotService,
     StartCommand,

@@ -171,10 +171,14 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     caption?: string,
   ): Promise<boolean> {
     try {
-      await this.bot.api.sendDocument(telegramId, new InputFile(buffer, filename), {
-        caption,
-        parse_mode: 'HTML',
-      });
+      await this.bot.api.sendDocument(
+        telegramId,
+        new InputFile(buffer, filename),
+        {
+          caption,
+          parse_mode: 'HTML',
+        },
+      );
       return true;
     } catch (error) {
       if (error instanceof GrammyError && error.error_code === 403) {
