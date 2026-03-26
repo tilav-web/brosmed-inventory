@@ -290,20 +290,28 @@ export class ExpenseService {
       let totalPrice = 0;
 
       for (const item of dto.items) {
-        const [product, warehouse, batch] = await Promise.all([
-          productRepo.findOne({
-            where: { id: item.product_id },
-          }),
-          warehouseRepo.findOne({ where: { id: item.warehouse_id } }),
-          productBatchRepo.findOne({
-            where: { id: item.product_batch_id },
-            relations: { product: true, warehouse: true },
-          }),
+        const batch = await productBatchRepo.findOne({
+          where: { id: item.product_batch_id },
+          relations: { product: true, warehouse: true },
+        });
+
+        if (!batch) {
+          throw new NotFoundException(
+            `Ma'lumot topilmadi: Batch=${item.product_batch_id}`,
+          );
+        }
+
+        const productId = item.product_id ?? batch.product_id;
+        const warehouseId = item.warehouse_id ?? batch.warehouse_id;
+
+        const [product, warehouse] = await Promise.all([
+          productRepo.findOne({ where: { id: productId } }),
+          warehouseRepo.findOne({ where: { id: warehouseId } }),
         ]);
 
         if (!product || !warehouse || !batch) {
           throw new NotFoundException(
-            `Ma'lumot topilmadi: Product=${item.product_id}, Warehouse=${item.warehouse_id}, Batch=${item.product_batch_id}`,
+            `Ma'lumot topilmadi: Product=${productId}, Warehouse=${warehouseId}, Batch=${item.product_batch_id}`,
           );
         }
 

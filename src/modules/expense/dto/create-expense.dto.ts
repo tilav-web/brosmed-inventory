@@ -14,13 +14,15 @@ import {
 import { ExpenseType } from '../enums/expense-type.enum';
 
 export class CreateExpenseItemDto {
-  @ApiProperty({ example: 'product-uuid' })
+  @ApiPropertyOptional({ example: 'product-uuid' })
+  @IsOptional()
   @IsUUID('4')
-  product_id: string;
+  product_id?: string;
 
-  @ApiProperty({ example: 'warehouse-uuid' })
+  @ApiPropertyOptional({ example: 'warehouse-uuid' })
+  @IsOptional()
   @IsUUID('4')
-  warehouse_id: string;
+  warehouse_id?: string;
 
   @ApiProperty({ example: 'product-batch-uuid' })
   @IsUUID('4')
