@@ -63,6 +63,26 @@ export class ImageService {
     return this.getPublicUrl(fileKey) || fileKey;
   }
 
+  async saveImages({
+    files,
+    folder,
+    entityId,
+  }: {
+    files: UploadedImage[];
+    folder: FileFolderEnum;
+    entityId?: string | number;
+  }): Promise<string[]> {
+    if (!files?.length) {
+      throw new Error('Files not provided');
+    }
+
+    const results = await Promise.all(
+      files.map((file) => this.saveImage({ file, folder, entityId })),
+    );
+
+    return results;
+  }
+
   private normalizeKey(fileRef: string): string {
     if (!fileRef) {
       return '';

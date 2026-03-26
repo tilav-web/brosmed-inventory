@@ -41,6 +41,9 @@ export class ListExpensesQueryDto {
   })
   @IsOptional()
   @IsEnum(ExpenseStatus)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   status?: ExpenseStatus;
 
   @ApiPropertyOptional({
@@ -49,5 +52,8 @@ export class ListExpensesQueryDto {
   })
   @IsOptional()
   @IsEnum(ExpenseType)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   type?: ExpenseType;
 }

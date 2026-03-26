@@ -278,7 +278,7 @@ export class ExpenseService {
           expense_number: expenseNumber,
           status: ExpenseStatus.PENDING_ISSUE,
           type: expenseType,
-          check_image_url: null,
+          images: [],
           total_price: 0,
           staff_name: dto.staff_name,
           purpose: dto.purpose ?? null,
@@ -480,7 +480,7 @@ export class ExpenseService {
     return result;
   }
 
-  async attachCheckImageAndComplete(id: string, checkImageUrl: string) {
+  async attachImagesAndComplete(id: string, images: string[]) {
     const expense = await this.findById(id);
 
     if (expense.status !== ExpenseStatus.PENDING_PHOTO) {
@@ -489,7 +489,7 @@ export class ExpenseService {
       );
     }
 
-    expense.check_image_url = checkImageUrl;
+    expense.images = images;
     expense.status = ExpenseStatus.COMPLETED;
 
     const result = await this.expenseRepository.save(expense);

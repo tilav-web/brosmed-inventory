@@ -40,9 +40,9 @@ export class Expense {
   })
   type: ExpenseType;
 
-  // Chek/rasm URL (ixtiyoriy).
-  @Column({ type: 'varchar', nullable: true })
-  check_image_url: string | null;
+  // Chek/rasmlar URL lar ro'yxati.
+  @Column({ type: 'text', array: true, default: () => 'ARRAY[]::text[]' })
+  images: string[];
 
   // Jami summa (itemlar yig`indisi).
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })

@@ -9,7 +9,7 @@ import {
   Query,
   Req,
   Res,
-  UploadedFile,
+  UploadedFiles,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -24,7 +24,7 @@ import {
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FilesInterceptor } from '@nestjs/platform-express';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
@@ -174,13 +174,13 @@ export class ExpenseController {
   }
 
   @Post(':id/upload-check')
-  @ApiOperation({ summary: 'Check fotosini yuklash va expense ni yakunlash' })
+  @ApiOperation({ summary: 'Check rasmlarini yuklash va expense ni yakunlash' })
   @ApiConsumes('multipart/form-data')
   @ApiOkResponse({ description: 'Foto saqlandi va expense yakunlandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
   @UseInterceptors(
-    FileInterceptor('file', {
+    FilesInterceptor('files', 10, {
       limits: {
         fileSize: 10 * 1024 * 1024,
       },
@@ -188,23 +188,26 @@ export class ExpenseController {
   )
   async uploadCheck(
     @Param('id', ParseUUIDPipe) id: string,
-    @UploadedFile() file?: { buffer: Buffer; mimetype?: string },
+    @UploadedFiles() files?: { buffer: Buffer; mimetype?: string }[],
   ) {
-    if (!file?.buffer) {
-      throw new BadRequestException('Check rasmi yuborilmadi');
+    if (!files?.length) {
+      throw new BadRequestException('Check rasmlari yuborilmadi');
     }
 
-    if (!file.mimetype?.startsWith('image/')) {
-      throw new BadRequestException('Faqat rasm fayli yuborish mumkin');
+    const hasNonImage = files.some(
+      (file) => !file.mimetype?.startsWith('image/'),
+    );
+    if (hasNonImage) {
+      throw new BadRequestException('Faqat rasm fayllari yuborish mumkin');
     }
 
-    const checkImageUrl = await this.imageService.saveImage({
-      file,
+    const images = await this.imageService.saveImages({
+      files,
       folder: FileFolderEnum.CHECKS,
       entityId: id,
     });
 
-    return this.expenseService.attachCheckImageAndComplete(id, checkImageUrl);
+    return this.expenseService.attachImagesAndComplete(id, images);
   }
 
   private buildDefaultFilename(prefix: string) {

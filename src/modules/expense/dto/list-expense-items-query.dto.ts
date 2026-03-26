@@ -48,6 +48,9 @@ export class ListExpenseItemsQueryDto {
   })
   @IsOptional()
   @IsEnum(ExpenseStatus)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   status?: ExpenseStatus;
 
   @ApiPropertyOptional({
@@ -56,6 +59,9 @@ export class ListExpenseItemsQueryDto {
   })
   @IsOptional()
   @IsEnum(ExpenseType)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   type?: ExpenseType;
 
   @ApiPropertyOptional({ example: '6b3f4c20-8b87-4f4f-9b7c-5f4e6c3f7c2a' })
@@ -79,5 +85,8 @@ export class ListExpenseItemsQueryDto {
   })
   @IsOptional()
   @IsEnum(ExportTarget)
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   export_target?: ExportTarget;
 }
