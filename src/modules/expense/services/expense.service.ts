@@ -389,6 +389,24 @@ export class ExpenseService {
     await manager.getRepository(Product).save(product);
   }
 
+  private async getReservedBatchQuantity(
+    manager: EntityManager,
+    batchId: string,
+  ): Promise<number> {
+    const reservedRaw = await manager
+      .getRepository(ExpenseItem)
+      .createQueryBuilder('item')
+      .leftJoin('item.expense', 'expense')
+      .select('COALESCE(SUM(item.quantity), 0)', 'reserved')
+      .where('item.product_batch_id = :batchId', { batchId })
+      .andWhere('expense.status = :status', {
+        status: ExpenseStatus.PENDING_ISSUE,
+      })
+      .getRawOne<{ reserved: string | null }>();
+
+    return Number(Number(reservedRaw?.reserved ?? 0).toFixed(2));
+  }
+
   async createAndGetReceipt(dto: CreateExpenseDto, managerId?: string) {
     const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
@@ -420,12 +438,11 @@ export class ExpenseService {
 
       const receiptItems: ReceiptItem[] = [];
       let totalPrice = 0;
+      const requestReservedByBatch = new Map<string, number>();
+      const existingReservedByBatch = new Map<string, number>();
 
       for (const item of dto.items) {
-        const batch = await productBatchRepo.findOne({
-          where: { id: item.product_batch_id },
-          relations: { product: true, warehouse: true },
-        });
+        const batch = await this.lockBatchForUpdate(manager, item.product_batch_id);
 
         if (!batch) {
           throw new NotFoundException(
@@ -458,12 +475,27 @@ export class ExpenseService {
 
         const requestedQty = Number(item.quantity);
         const batchQty = Number(batch.quantity);
+        const requestReservedQty = requestReservedByBatch.get(batch.id) ?? 0;
+        const existingReservedQty = existingReservedByBatch.has(batch.id)
+          ? (existingReservedByBatch.get(batch.id) ?? 0)
+          : await this.getReservedBatchQuantity(manager, batch.id);
 
-        if (requestedQty > batchQty) {
+        existingReservedByBatch.set(batch.id, existingReservedQty);
+
+        const availableForReservation = Number(
+          (batchQty - existingReservedQty - requestReservedQty).toFixed(2),
+        );
+
+        if (requestedQty > availableForReservation) {
           throw new BadRequestException(
-            `Partiyada mahsulot yetarli emas: ${product.name}. Mavjud: ${batchQty}, kerak: ${requestedQty}`,
+            `Partiyada mahsulot yetarli emas: ${product.name}. Mavjud: ${availableForReservation}, kerak: ${requestedQty}`,
           );
         }
+
+        requestReservedByBatch.set(
+          batch.id,
+          Number((requestReservedQty + requestedQty).toFixed(2)),
+        );
 
         const lineTotal = requestedQty * Number(batch.price_at_purchase);
         totalPrice += lineTotal;
