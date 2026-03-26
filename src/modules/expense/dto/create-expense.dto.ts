@@ -29,6 +29,7 @@ export class CreateExpenseItemDto {
   product_batch_id: string;
 
   @ApiProperty({ example: 5 })
+  @Type(() => Number)
   @IsNumber()
   @Min(0.01)
   quantity: number;

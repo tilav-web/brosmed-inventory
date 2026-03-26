@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ImageModule } from '../image/image.module';
 import { Product } from '../product/entities/product.entity';
 import { ProductBatch } from '../product/entities/product-batch.entity';
+import { PurchaseOrder } from '../purchase-order/entities/purchase-order.entity';
 import { Warehouse } from '../warehouse/entities/warehouse.entity';
 import { BotModule } from '../bot/bot.module';
 import { BotUserModule } from '../bot-user/bot-user.module';
@@ -23,6 +24,7 @@ import { ExpenseService } from './services/expense.service';
       ExpenseItem,
       Product,
       ProductBatch,
+      PurchaseOrder,
       Warehouse,
     ]),
   ],

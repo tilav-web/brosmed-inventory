@@ -14,6 +14,8 @@ import {
 import Redis from 'ioredis';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
+import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
+import { OrderStatus } from 'src/modules/purchase-order/enums/order-status.enum';
 import { User } from 'src/modules/user/entities/user.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
@@ -36,6 +38,71 @@ export interface ReceiptItem {
   line_total: number;
 }
 
+type DashboardSeverity = 'high' | 'medium';
+type DashboardAlertType = 'expired' | 'expiring_soon' | 'low_stock';
+
+export interface DashboardAlertItem {
+  type: DashboardAlertType;
+  severity: DashboardSeverity;
+  message: string;
+  product_id: string;
+  product_name: string;
+  warehouse_id: string;
+  warehouse_name: string;
+  quantity?: number;
+  min_limit?: number;
+  batch_id?: string;
+  expiration_date?: string | null;
+  days_left?: number | null;
+  created_at: string;
+}
+
+export interface DashboardOverview {
+  generated_at: string;
+  headline_alerts: {
+    total: number;
+    high: number;
+    medium: number;
+    items: DashboardAlertItem[];
+  };
+  summary: {
+    total_products: number;
+    low_stock_products: number;
+    expiring_products: number;
+    total_inventory_value: number;
+    total_warehouses: number;
+    pending_orders: number;
+    expired_products: number;
+  };
+  charts: {
+    inventory_value_by_warehouse: Array<{
+      warehouse_id: string;
+      warehouse_name: string;
+      total_inventory_value: number;
+    }>;
+    stock_status_distribution: {
+      total: number;
+      items: Array<{
+        status: 'normal' | 'low_stock' | 'expired';
+        label: string;
+        count: number;
+        percentage: number;
+      }>;
+    };
+    products_by_category: Array<{
+      category_id: string | null;
+      category_name: string;
+      product_count: number;
+    }>;
+    product_count_by_warehouse: Array<{
+      warehouse_id: string;
+      warehouse_name: string;
+      product_count: number;
+    }>;
+  };
+  recent_notifications: DashboardAlertItem[];
+}
+
 @Injectable()
 export class ExpenseService {
   constructor(
@@ -48,6 +115,10 @@ export class ExpenseService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
+    @InjectRepository(PurchaseOrder)
+    private readonly purchaseOrderRepository: Repository<PurchaseOrder>,
+    @InjectRepository(Warehouse)
+    private readonly warehouseRepository: Repository<Warehouse>,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
   ) {}
@@ -247,14 +318,75 @@ export class ExpenseService {
   private async generateExpenseNumber(manager: EntityManager): Promise<string> {
     const year = new Date().getFullYear();
 
-    const totalThisYear = await manager
+    await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
+      `expense:${year}`,
+    ]);
+
+    const result = await manager
       .getRepository(Expense)
       .createQueryBuilder('expense')
-      .where('EXTRACT(YEAR FROM expense.createdAt) = :year', { year })
-      .getCount();
+      .select("MAX(CAST(SPLIT_PART(expense.expense_number, '-', 3) AS int))", 'max')
+      .where('expense.expense_number LIKE :prefix', {
+        prefix: `EXP-${year}-%`,
+      })
+      .getRawOne<{ max: string | null }>();
 
-    const next = String(totalThisYear + 1).padStart(3, '0');
+    const last = result?.max ? parseInt(result.max, 10) : 0;
+    const next = String(last + 1).padStart(3, '0');
     return `EXP-${year}-${next}`;
+  }
+
+  private async lockProductForUpdate(
+    manager: EntityManager,
+    productId: string,
+  ): Promise<Product> {
+    const product = await manager
+      .getRepository(Product)
+      .createQueryBuilder('product')
+      .setLock('pessimistic_write')
+      .where('product.id = :productId', { productId })
+      .getOne();
+
+    if (!product) {
+      throw new NotFoundException(`Product topilmadi: ${productId}`);
+    }
+
+    return product;
+  }
+
+  private async lockBatchForUpdate(
+    manager: EntityManager,
+    batchId: string,
+  ): Promise<ProductBatch> {
+    const batch = await manager
+      .getRepository(ProductBatch)
+      .createQueryBuilder('batch')
+      .setLock('pessimistic_write')
+      .where('batch.id = :batchId', { batchId })
+      .getOne();
+
+    if (!batch) {
+      throw new NotFoundException(`Batch topilmadi: ${batchId}`);
+    }
+
+    return batch;
+  }
+
+  private async recalculateProductQuantity(
+    manager: EntityManager,
+    product: Product,
+  ): Promise<void> {
+    const totalRaw = await manager
+      .getRepository(ProductBatch)
+      .createQueryBuilder('batch')
+      .select('COALESCE(SUM(batch.quantity), 0)', 'total')
+      .where('batch.product_id = :productId', {
+        productId: product.id,
+      })
+      .getRawOne<{ total: string | null }>();
+
+    product.quantity = Number(Number(totalRaw?.total ?? 0).toFixed(2));
+    await manager.getRepository(Product).save(product);
   }
 
   async createAndGetReceipt(dto: CreateExpenseDto, managerId?: string) {
@@ -401,19 +533,17 @@ export class ExpenseService {
   async issueExpense(id: string) {
     const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
-      const productRepo = manager.getRepository(Product);
       const productBatchRepo = manager.getRepository(ProductBatch);
 
-      const expense = await expenseRepo.findOne({
-        where: { id },
-        relations: {
-          items: {
-            product: true,
-            warehouse: true,
-            product_batch: true,
-          },
-        },
-      });
+      const expense = await expenseRepo
+        .createQueryBuilder('expense')
+        .setLock('pessimistic_write')
+        .leftJoinAndSelect('expense.items', 'item')
+        .leftJoinAndSelect('item.product', 'product')
+        .leftJoinAndSelect('item.warehouse', 'warehouse')
+        .leftJoinAndSelect('item.product_batch', 'product_batch')
+        .where('expense.id = :id', { id })
+        .getOne();
 
       if (!expense) {
         throw new NotFoundException('Expense topilmadi');
@@ -425,7 +555,13 @@ export class ExpenseService {
         );
       }
 
-      for (const item of expense.items) {
+      const sortedItems = [...expense.items].sort((left, right) => {
+        const leftKey = left.product_batch_id ?? left.id;
+        const rightKey = right.product_batch_id ?? right.id;
+        return leftKey.localeCompare(rightKey) || left.id.localeCompare(right.id);
+      });
+
+      for (const item of sortedItems) {
         const batch = item.product_batch;
         if (!batch) {
           throw new BadRequestException(
@@ -433,13 +569,7 @@ export class ExpenseService {
           );
         }
 
-        const currentBatch = await productBatchRepo.findOne({
-          where: { id: batch.id },
-        });
-
-        if (!currentBatch) {
-          throw new NotFoundException(`Batch topilmadi: ${batch.id}`);
-        }
+        const currentBatch = await this.lockBatchForUpdate(manager, batch.id);
 
         const requested = Number(item.quantity);
         const available = Number(currentBatch.quantity);
@@ -454,25 +584,25 @@ export class ExpenseService {
         currentBatch.quantity = Number((available - requested).toFixed(2));
         if (currentBatch.quantity <= 0 && !currentBatch.depleted_at) {
           currentBatch.depleted_at = new Date();
+        } else if (currentBatch.quantity > 0) {
+          currentBatch.depleted_at = null;
         }
         await productBatchRepo.save(currentBatch);
+      }
 
-        // Mahsulotning umumiy miqdorini yangilash
-        const totalRaw = await productBatchRepo
-          .createQueryBuilder('batch')
-          .select('SUM(batch.quantity)', 'total')
-          .where('batch.product_id = :productId', {
-            productId: item.product.id,
-          })
-          .getRawOne<{ total: string | null }>();
+      const lockedProducts = new Map<string, Product>();
+      const productIds = Array.from(new Set(sortedItems.map((item) => item.product.id)))
+        .sort((left, right) => left.localeCompare(right));
 
-        const product = await productRepo.findOne({
-          where: { id: item.product.id },
-        });
-        if (product) {
-          product.quantity = Number(Number(totalRaw?.total ?? 0).toFixed(2));
-          await productRepo.save(product);
-        }
+      for (const productId of productIds) {
+        lockedProducts.set(
+          productId,
+          await this.lockProductForUpdate(manager, productId),
+        );
+      }
+
+      for (const product of lockedProducts.values()) {
+        await this.recalculateProductQuantity(manager, product);
       }
 
       expense.status = ExpenseStatus.PENDING_PHOTO;
@@ -532,6 +662,7 @@ export class ExpenseService {
     const lowStockCount = await this.productRepository
       .createQueryBuilder('product')
       .where('product.quantity <= product.min_limit')
+      .andWhere('product.quantity > 0')
       .getCount();
 
     const today = this.getLocalDateString();
@@ -559,6 +690,339 @@ export class ExpenseService {
     return result;
   }
 
+  async getDashboardOverview(): Promise<DashboardOverview> {
+    const cacheKey = 'expenses:dashboard:overview';
+    const cached = await this.redis.get(cacheKey);
+    if (cached) {
+      return JSON.parse(cached) as DashboardOverview;
+    }
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const today = this.getLocalDateString(now);
+    const in30DaysDate = new Date(now);
+    in30DaysDate.setDate(in30DaysDate.getDate() + 30);
+    const in30Days = this.getLocalDateString(in30DaysDate);
+
+    const [
+      totalProducts,
+      totalWarehouses,
+      pendingOrders,
+      inventoryValueByWarehouseRaw,
+      productsByCategoryRaw,
+      productCountByWarehouseRaw,
+      lowStockProductsRaw,
+      expiredBatchesRaw,
+      expiringBatchesRaw,
+    ] = await Promise.all([
+      this.productRepository.count(),
+      this.warehouseRepository.count(),
+      this.purchaseOrderRepository
+        .createQueryBuilder('po')
+        .where('po.is_received = false')
+        .andWhere('po.status != :cancelled', {
+          cancelled: OrderStatus.CANCELLED,
+        })
+        .getCount(),
+      this.warehouseRepository
+        .createQueryBuilder('warehouse')
+        .leftJoin(
+          'product_batches',
+          'batch',
+          'batch.warehouse_id = warehouse.id AND batch.quantity > 0',
+        )
+        .select('warehouse.id', 'warehouse_id')
+        .addSelect('warehouse.name', 'warehouse_name')
+        .addSelect(
+          'COALESCE(SUM(batch.quantity * batch.price_at_purchase), 0)',
+          'total_inventory_value',
+        )
+        .groupBy('warehouse.id')
+        .addGroupBy('warehouse.name')
+        .orderBy('warehouse.name', 'ASC')
+        .getRawMany<{
+          warehouse_id: string;
+          warehouse_name: string;
+          total_inventory_value: string;
+        }>(),
+      this.productRepository
+        .createQueryBuilder('product')
+        .leftJoin('product.category', 'category')
+        .select('category.id', 'category_id')
+        .addSelect("COALESCE(category.name, 'Bez kategorii')", 'category_name')
+        .addSelect('COUNT(product.id)', 'product_count')
+        .groupBy('category.id')
+        .addGroupBy('category.name')
+        .orderBy('COUNT(product.id)', 'DESC')
+        .addOrderBy('category_name', 'ASC')
+        .getRawMany<{
+          category_id: string | null;
+          category_name: string;
+          product_count: string;
+        }>(),
+      this.productRepository
+        .createQueryBuilder('product')
+        .leftJoin('product.warehouse', 'warehouse')
+        .select('warehouse.id', 'warehouse_id')
+        .addSelect('warehouse.name', 'warehouse_name')
+        .addSelect('COUNT(product.id)', 'product_count')
+        .groupBy('warehouse.id')
+        .addGroupBy('warehouse.name')
+        .orderBy('warehouse.name', 'ASC')
+        .getRawMany<{
+          warehouse_id: string;
+          warehouse_name: string;
+          product_count: string;
+        }>(),
+      this.productRepository
+        .createQueryBuilder('product')
+        .leftJoin('product.warehouse', 'warehouse')
+        .select('product.id', 'product_id')
+        .addSelect('product.name', 'product_name')
+        .addSelect('product.quantity', 'quantity')
+        .addSelect('product.min_limit', 'min_limit')
+        .addSelect('warehouse.id', 'warehouse_id')
+        .addSelect('warehouse.name', 'warehouse_name')
+        .where('product.quantity > 0')
+        .andWhere('product.quantity <= product.min_limit')
+        .orderBy('product.quantity', 'ASC')
+        .getRawMany<{
+          product_id: string;
+          product_name: string;
+          quantity: string;
+          min_limit: string;
+          warehouse_id: string;
+          warehouse_name: string;
+        }>(),
+      this.productBatchRepository
+        .createQueryBuilder('batch')
+        .leftJoin('batch.product', 'product')
+        .leftJoin('batch.warehouse', 'warehouse')
+        .select('batch.id', 'batch_id')
+        .addSelect('batch.product_id', 'product_id')
+        .addSelect('product.name', 'product_name')
+        .addSelect('batch.warehouse_id', 'warehouse_id')
+        .addSelect('warehouse.name', 'warehouse_name')
+        .addSelect('batch.quantity', 'quantity')
+        .addSelect('batch.expiration_date', 'expiration_date')
+        .where('batch.quantity > 0')
+        .andWhere('batch.expiration_date IS NOT NULL')
+        .andWhere('batch.expiration_date < :today', { today })
+        .orderBy('batch.expiration_date', 'ASC')
+        .getRawMany<{
+          batch_id: string;
+          product_id: string;
+          product_name: string;
+          warehouse_id: string;
+          warehouse_name: string;
+          quantity: string;
+          expiration_date: string | Date | null;
+        }>(),
+      this.productBatchRepository
+        .createQueryBuilder('batch')
+        .leftJoin('batch.product', 'product')
+        .leftJoin('batch.warehouse', 'warehouse')
+        .select('batch.id', 'batch_id')
+        .addSelect('batch.product_id', 'product_id')
+        .addSelect('product.name', 'product_name')
+        .addSelect('batch.warehouse_id', 'warehouse_id')
+        .addSelect('warehouse.name', 'warehouse_name')
+        .addSelect('batch.quantity', 'quantity')
+        .addSelect('batch.expiration_date', 'expiration_date')
+        .where('batch.quantity > 0')
+        .andWhere('batch.expiration_date IS NOT NULL')
+        .andWhere('batch.expiration_date >= :today', { today })
+        .andWhere('batch.expiration_date <= :in30Days', { in30Days })
+        .orderBy('batch.expiration_date', 'ASC')
+        .getRawMany<{
+          batch_id: string;
+          product_id: string;
+          product_name: string;
+          warehouse_id: string;
+          warehouse_name: string;
+          quantity: string;
+          expiration_date: string | Date | null;
+        }>(),
+    ]);
+
+    const lowStockAlerts: DashboardAlertItem[] = lowStockProductsRaw.map(
+      (row) => {
+        const quantity = Number(row.quantity);
+        const minLimit = Number(row.min_limit);
+        const severity: DashboardSeverity =
+          quantity <= Math.max(1, Math.floor(minLimit / 2)) ? 'high' : 'medium';
+
+        return {
+          type: 'low_stock',
+          severity,
+          message:
+            severity === 'high'
+              ? `${row.product_name}: kritik darajada kam qoldiq`
+              : `${row.product_name}: qoldiq qayta buyurtma nuqtasiga yetgan`,
+          product_id: row.product_id,
+          product_name: row.product_name,
+          warehouse_id: row.warehouse_id,
+          warehouse_name: row.warehouse_name,
+          quantity,
+          min_limit: minLimit,
+          created_at: nowIso,
+        };
+      },
+    );
+
+    const expiredAlerts: DashboardAlertItem[] = expiredBatchesRaw.map((row) => {
+      const expirationDate = this.normalizeDateValue(row.expiration_date);
+
+      return {
+        type: 'expired',
+        severity: 'high',
+        message: `${row.product_name}: mahsulot muddati o‘tgan`,
+        product_id: row.product_id,
+        product_name: row.product_name,
+        warehouse_id: row.warehouse_id,
+        warehouse_name: row.warehouse_name,
+        quantity: Number(row.quantity),
+        batch_id: row.batch_id,
+        expiration_date: expirationDate,
+        days_left: expirationDate
+          ? this.getDayDiffFromToday(expirationDate, now)
+          : null,
+        created_at: nowIso,
+      };
+    });
+
+    const expiringAlerts: DashboardAlertItem[] = expiringBatchesRaw.map(
+      (row) => {
+        const expirationDate = this.normalizeDateValue(row.expiration_date);
+        const daysLeft = expirationDate
+          ? this.getDayDiffFromToday(expirationDate, now)
+          : null;
+        const severity: DashboardSeverity =
+          daysLeft !== null && daysLeft <= 7 ? 'high' : 'medium';
+
+        return {
+          type: 'expiring_soon',
+          severity,
+          message:
+            daysLeft !== null
+              ? `${row.product_name}: yaroqlilik muddati ${daysLeft} kundan keyin tugaydi`
+              : `${row.product_name}: yaroqlilik muddati yaqinlashmoqda`,
+          product_id: row.product_id,
+          product_name: row.product_name,
+          warehouse_id: row.warehouse_id,
+          warehouse_name: row.warehouse_name,
+          quantity: Number(row.quantity),
+          batch_id: row.batch_id,
+          expiration_date: expirationDate,
+          days_left: daysLeft,
+          created_at: nowIso,
+        };
+      },
+    );
+
+    const allAlerts = [...expiredAlerts, ...expiringAlerts, ...lowStockAlerts].sort(
+      (left, right) => {
+        const severityScore = this.getSeverityScore(right.severity) -
+          this.getSeverityScore(left.severity);
+        if (severityScore !== 0) {
+          return severityScore;
+        }
+
+        const leftDays = left.days_left ?? Number.MAX_SAFE_INTEGER;
+        const rightDays = right.days_left ?? Number.MAX_SAFE_INTEGER;
+        if (leftDays !== rightDays) {
+          return leftDays - rightDays;
+        }
+
+        return left.product_name.localeCompare(right.product_name);
+      },
+    );
+
+    const expiredProductIds = new Set(expiredBatchesRaw.map((row) => row.product_id));
+    const lowStockProductIds = new Set(lowStockProductsRaw.map((row) => row.product_id));
+
+    const expiredProducts = expiredProductIds.size;
+    const expiringProducts = new Set(
+      expiringBatchesRaw
+        .map((row) => row.product_id)
+        .filter((productId) => !expiredProductIds.has(productId)),
+    ).size;
+    const lowStockProducts = Array.from(lowStockProductIds).filter(
+      (productId) => !expiredProductIds.has(productId),
+    ).length;
+
+    const normalProducts = Math.max(
+      totalProducts - expiredProducts - lowStockProducts,
+      0,
+    );
+
+    const inventoryValueByWarehouse = inventoryValueByWarehouseRaw.map((row) => ({
+      warehouse_id: row.warehouse_id,
+      warehouse_name: row.warehouse_name,
+      total_inventory_value: Number(
+        Number(row.total_inventory_value ?? 0).toFixed(2),
+      ),
+    }));
+
+    const totalInventoryValue = Number(
+      inventoryValueByWarehouse
+        .reduce((sum, row) => sum + row.total_inventory_value, 0)
+        .toFixed(2),
+    );
+
+    const stockStatusItems = [
+      { status: 'normal' as const, label: 'Normal', count: normalProducts },
+      { status: 'low_stock' as const, label: 'Kam qoldiq', count: lowStockProducts },
+      { status: 'expired' as const, label: 'Muddati o‘tgan', count: expiredProducts },
+    ].map((item) => ({
+      ...item,
+      percentage:
+        totalProducts > 0
+          ? Number(((item.count / totalProducts) * 100).toFixed(2))
+          : 0,
+    }));
+
+    const result: DashboardOverview = {
+      generated_at: nowIso,
+      headline_alerts: {
+        total: allAlerts.length,
+        high: allAlerts.filter((item) => item.severity === 'high').length,
+        medium: allAlerts.filter((item) => item.severity === 'medium').length,
+        items: allAlerts.slice(0, 10),
+      },
+      summary: {
+        total_products: totalProducts,
+        low_stock_products: lowStockProducts,
+        expiring_products: expiringProducts,
+        total_inventory_value: totalInventoryValue,
+        total_warehouses: totalWarehouses,
+        pending_orders: pendingOrders,
+        expired_products: expiredProducts,
+      },
+      charts: {
+        inventory_value_by_warehouse: inventoryValueByWarehouse,
+        stock_status_distribution: {
+          total: totalProducts,
+          items: stockStatusItems,
+        },
+        products_by_category: productsByCategoryRaw.map((row) => ({
+          category_id: row.category_id,
+          category_name: row.category_name,
+          product_count: Number(row.product_count),
+        })),
+        product_count_by_warehouse: productCountByWarehouseRaw.map((row) => ({
+          warehouse_id: row.warehouse_id,
+          warehouse_name: row.warehouse_name,
+          product_count: Number(row.product_count),
+        })),
+      },
+      recent_notifications: allAlerts.slice(0, 20),
+    };
+
+    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 30);
+    return result;
+  }
+
   private getLocalDateString(date: Date = new Date()): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -566,8 +1030,33 @@ export class ExpenseService {
     return `${year}-${month}-${day}`;
   }
 
+  private normalizeDateValue(value?: Date | string | null) {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      return value.slice(0, 10);
+    }
+
+    return value.toISOString().slice(0, 10);
+  }
+
+  private getDayDiffFromToday(value: string, now: Date) {
+    const startOfToday = new Date(now);
+    startOfToday.setHours(0, 0, 0, 0);
+
+    const target = new Date(`${value}T00:00:00`);
+    const msPerDay = 24 * 60 * 60 * 1000;
+    return Math.round((target.getTime() - startOfToday.getTime()) / msPerDay);
+  }
+
+  private getSeverityScore(severity: DashboardSeverity) {
+    return severity === 'high' ? 2 : 1;
+  }
+
   private async invalidateDashboardCache() {
-    await this.redis.del('expenses:dashboard:summary');
+    await this.redis.del(
+      'expenses:dashboard:summary',
+      'expenses:dashboard:overview',
+    );
   }
 
   private applyDateRangeFilter(

@@ -9,6 +9,7 @@ import { CategoryModule } from '../category/category.module';
 import { ExpenseModule } from '../expense/expense.module';
 import { ProductModule } from '../product/product.module';
 import { PurchaseOrderModule } from '../purchase-order/purchase-order.module';
+import { ReportModule } from '../report/report.module';
 import { SupplierModule } from '../supplier/supplier.module';
 import { UnitModule } from '../unit/unit.module';
 import { UserModule } from '../user/user.module';
@@ -55,6 +56,7 @@ import { BotModule } from '../bot/bot.module';
     ExpenseModule,
     ProductModule,
     PurchaseOrderModule,
+    ReportModule,
     SupplierModule,
     UnitModule,
     WarehouseModule,

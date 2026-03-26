@@ -66,6 +66,18 @@ export class ExpenseController {
     return this.expenseService.getDashboardSummary();
   }
 
+  @Get('dashboard/overview')
+  @ApiOperation({
+    summary:
+      'Dashboard overview: kartalar, ogohlantirishlar va chartlar uchun umumiy statistika',
+  })
+  @ApiOkResponse({ description: 'Dashboard overview statistikasi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  getDashboardOverview() {
+    return this.expenseService.getDashboardOverview();
+  }
+
   @Get()
   @ApiOperation({ summary: 'Expense lar ro`yxati (pagination + filter)' })
   @ApiOkResponse({ description: 'Expense lar ro`yxati' })

@@ -5,6 +5,7 @@ import {
   IsArray,
   IsDateString,
   IsInt,
+  IsNumber,
   IsOptional,
   IsUUID,
   Min,
@@ -17,14 +18,16 @@ export class CreateOrderItemDto {
   product_id: string;
 
   @ApiProperty({ example: 10 })
+  @Type(() => Number)
   @IsInt()
   @Min(1)
   quantity: number;
 
   @ApiProperty({ example: 150.5 })
-  @IsOptional()
-  @Min(0)
-  price_at_purchase?: number;
+  @Type(() => Number)
+  @IsNumber()
+  @Min(0.01)
+  price_at_purchase: number;
 }
 
 export class CreatePurchaseOrderDto {

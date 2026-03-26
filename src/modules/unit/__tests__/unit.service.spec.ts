@@ -28,6 +28,13 @@ describe('UnitService (Unit Tests)', () => {
     delete: jest.fn(),
   };
 
+  const mockRedis = {
+    get: jest.fn(),
+    set: jest.fn(),
+    del: jest.fn(),
+    keys: jest.fn(),
+  };
+
   beforeEach(async () => {
     // Testing Module yaratamiz
     const module: TestingModule = await Test.createTestingModule({
@@ -37,6 +44,10 @@ describe('UnitService (Unit Tests)', () => {
           provide: getRepositoryToken(Unit),
           useValue: mockRepository,
         },
+        {
+          provide: 'REDIS_CLIENT',
+          useValue: mockRedis,
+        },
       ],
     }).compile();
 
@@ -45,6 +56,10 @@ describe('UnitService (Unit Tests)', () => {
 
     // Barcha mock larni reset qilamiz
     jest.clearAllMocks();
+    mockRedis.get.mockResolvedValue(null);
+    mockRedis.set.mockResolvedValue('OK');
+    mockRedis.del.mockResolvedValue(1);
+    mockRedis.keys.mockResolvedValue([]);
   });
 
   describe('findAll', () => {

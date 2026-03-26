@@ -53,6 +53,39 @@ export class PurchaseOrderService {
     return `PO-${year}-${String(last + 1).padStart(3, '0')}`;
   }
 
+  private async lockProductForUpdate(
+    manager: EntityManager,
+    productId: string,
+  ): Promise<Product> {
+    const product = await manager
+      .getRepository(Product)
+      .createQueryBuilder('product')
+      .setLock('pessimistic_write')
+      .where('product.id = :productId', { productId })
+      .getOne();
+
+    if (!product) {
+      throw new NotFoundException(`Product topilmadi: ${productId}`);
+    }
+
+    return product;
+  }
+
+  private async recalculateProductQuantity(
+    manager: EntityManager,
+    product: Product,
+  ): Promise<void> {
+    const totalRaw = await manager
+      .getRepository(ProductBatch)
+      .createQueryBuilder('batch')
+      .select('COALESCE(SUM(batch.quantity), 0)', 'total')
+      .where('batch.product_id = :productId', { productId: product.id })
+      .getRawOne<{ total: string | null }>();
+
+    product.quantity = Number(Number(totalRaw?.total ?? 0).toFixed(2));
+    await manager.getRepository(Product).save(product);
+  }
+
   async findAll(query: ListPurchaseOrdersQueryDto) {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
@@ -202,10 +235,7 @@ export class PurchaseOrderService {
           );
         }
 
-        const priceAtPurchase =
-          item.price_at_purchase !== undefined
-            ? Number(item.price_at_purchase)
-            : 0;
+        const priceAtPurchase = Number(item.price_at_purchase);
 
         const lineTotal = priceAtPurchase * item.quantity;
         totalAmount += lineTotal;
@@ -226,7 +256,7 @@ export class PurchaseOrderService {
       return this.findById(order.id, manager);
     });
 
-    await this.invalidateStatisticsCache();
+    await this.invalidateRelatedCaches();
     return result;
   }
 
@@ -397,10 +427,7 @@ export class PurchaseOrderService {
             );
           }
 
-          const priceAtPurchase =
-            item.price_at_purchase !== undefined
-              ? Number(item.price_at_purchase)
-              : 0;
+          const priceAtPurchase = Number(item.price_at_purchase);
 
           await orderItemRepo.save(
             orderItemRepo.create({
@@ -431,7 +458,7 @@ export class PurchaseOrderService {
       return this.findById(order.id, manager);
     });
 
-    await this.invalidateStatisticsCache();
+    await this.invalidateRelatedCaches();
     return result;
   }
 
@@ -468,26 +495,24 @@ export class PurchaseOrderService {
       return { message: 'Purchase order o`chirildi' };
     });
 
-    await this.invalidateStatisticsCache();
+    await this.invalidateRelatedCaches();
     return result;
   }
 
   async receiveOrder(id: string, dto: ReceivePurchaseOrderDto) {
     const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
-      const productRepo = manager.getRepository(Product);
       const productBatchRepo = manager.getRepository(ProductBatch);
 
-      const order = await orderRepo.findOne({
-        where: { id },
-        relations: {
-          items: {
-            product: true,
-          },
-          supplier: true,
-          warehouse: true,
-        },
-      });
+      const order = await orderRepo
+        .createQueryBuilder('order')
+        .setLock('pessimistic_write')
+        .leftJoinAndSelect('order.items', 'item')
+        .leftJoinAndSelect('item.product', 'product')
+        .leftJoinAndSelect('order.supplier', 'supplier')
+        .leftJoinAndSelect('order.warehouse', 'warehouse')
+        .where('order.id = :id', { id })
+        .getOne();
 
       if (!order) {
         throw new NotFoundException('Purchase order topilmadi');
@@ -509,12 +534,28 @@ export class PurchaseOrderService {
       const orderItemIds = new Set(order.items.map((i) => i.id));
 
       for (const update of dto.items) {
+        if (itemUpdates.has(update.order_item_id)) {
+          throw new BadRequestException(
+            `Order item takror yuborilgan: ${update.order_item_id}`,
+          );
+        }
         if (!orderItemIds.has(update.order_item_id)) {
           throw new BadRequestException(
             `Order item topilmadi: ${update.order_item_id}`,
           );
         }
         itemUpdates.set(update.order_item_id, update);
+      }
+
+      const lockedProducts = new Map<string, Product>();
+      const productIds = Array.from(new Set(order.items.map((i) => i.product.id)))
+        .sort((left, right) => left.localeCompare(right));
+
+      for (const productId of productIds) {
+        lockedProducts.set(
+          productId,
+          await this.lockProductForUpdate(manager, productId),
+        );
       }
 
       for (const item of order.items) {
@@ -552,9 +593,7 @@ export class PurchaseOrderService {
           serial_number = update.serial_number ?? null;
         }
 
-        const product = await productRepo.findOne({
-          where: { id: item.product.id },
-        });
+        const product = lockedProducts.get(item.product.id);
 
         if (!product) {
           throw new NotFoundException(`Product topilmadi: ${item.product.id}`);
@@ -576,9 +615,10 @@ export class PurchaseOrderService {
             serial_number,
           }),
         );
+      }
 
-        product.quantity = Number(product.quantity) + Number(item.quantity);
-        await productRepo.save(product);
+      for (const product of lockedProducts.values()) {
+        await this.recalculateProductQuantity(manager, product);
       }
 
       order.is_received = true;
@@ -587,11 +627,15 @@ export class PurchaseOrderService {
       return this.findById(order.id, manager);
     });
 
-    await this.redis.del('purchase-orders:statistics');
+    await this.invalidateRelatedCaches();
     return result;
   }
 
-  private async invalidateStatisticsCache() {
-    await this.redis.del('purchase-orders:statistics');
+  private async invalidateRelatedCaches() {
+    await this.redis.del(
+      'purchase-orders:statistics',
+      'expenses:dashboard:overview',
+      'expenses:dashboard:summary',
+    );
   }
 }
