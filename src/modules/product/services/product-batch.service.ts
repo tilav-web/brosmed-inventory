@@ -69,13 +69,31 @@ export class ProductBatchService {
     const { page, limit } = query;
     const skip = (page - 1) * limit;
 
-    const [data, total] = await this.productBatchRepository.findAndCount({
-      order: {
-        expiration_date: 'ASC', // Muddati yaqinlar birinchi
-      },
-      take: limit,
-      skip: skip,
-    });
+    const qb = this.productBatchRepository.createQueryBuilder('batch');
+
+    const productId =
+      typeof query.product_id === 'string' ? query.product_id : undefined;
+
+    if (productId) {
+      qb.andWhere('batch.product_id = :productId', {
+        productId,
+      });
+    }
+
+    // Sroki yaqinlashgan batchlar: alert_date keldi yoki o`tgan, lekin hali tugamagan
+    const today = new Date();
+    qb.andWhere('batch.expiration_alert_date IS NOT NULL')
+      .andWhere('batch.expiration_alert_date <= :today', { today })
+      .andWhere(
+        '(batch.expiration_date IS NULL OR batch.expiration_date >= :today)',
+        { today },
+      );
+
+    qb.orderBy('batch.expiration_date', 'ASC', 'NULLS LAST')
+      .skip(skip)
+      .take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
 
     return {
       data,

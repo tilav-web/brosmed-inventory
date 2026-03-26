@@ -1,13 +1,15 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
-import { IsInt, IsOptional, Min } from 'class-validator';
+import { Transform, Type } from 'class-transformer';
+import { IsInt, IsOptional, IsUUID, Min } from 'class-validator';
 
 export class ListProductBatchsQueryDto {
-  //   @ApiPropertyOptional({ example: 'amoksitsillin' })
-  //   @IsOptional()
-  //   @IsString()
-  //   @MaxLength(255)
-  //   search?: string;
+  @ApiPropertyOptional({ example: 'product-uuid' })
+  @IsOptional()
+  @IsUUID('4')
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' && value !== '' ? value : undefined,
+  )
+  product_id?: string;
 
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()
