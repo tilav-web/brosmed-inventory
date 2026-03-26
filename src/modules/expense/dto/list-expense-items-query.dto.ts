@@ -67,6 +67,9 @@ export class ListExpenseItemsQueryDto {
   @ApiPropertyOptional({ example: '6b3f4c20-8b87-4f4f-9b7c-5f4e6c3f7c2a' })
   @IsOptional()
   @IsUUID()
+  @Transform(({ value }: { value: string }) =>
+    value === '' ? undefined : value,
+  )
   warehouse_id?: string;
 
   @ApiPropertyOptional({ example: '2026-03-01' })
