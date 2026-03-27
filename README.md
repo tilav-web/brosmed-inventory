@@ -44,6 +44,21 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## Telegram Bot
+
+Bot ishlashi uchun kamida quyidagi env lar kerak:
+
+```bash
+TELEGRAM_BOT_TOKEN=your-telegram-bot-token-here
+BOT_MODE=polling
+BOT_WEBHOOK_URL=https://example.com/bot/webhook
+BOT_WEBHOOK_SECRET=generate-a-random-secret-token
+```
+
+- `BOT_MODE=polling` bo'lsa bot server ichida polling bilan ishlaydi.
+- `BOT_MODE=webhook` bo'lsa Telegram webhook `POST /bot/webhook` endpointiga yuboriladi.
+- `BOT_WEBHOOK_SECRET` ixtiyoriy, lekin production uchun tavsiya qilinadi.
+
 ## Run tests
 
 ```bash

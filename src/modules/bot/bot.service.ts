@@ -17,6 +17,10 @@ import { StartCommand } from './commands/start.command';
 import { HelpCommand } from './commands/help.command';
 import { WarehousesCommand } from './commands/warehouses.command';
 import { AlertsCommand } from './commands/alerts.command';
+import { StatsCommand } from './commands/stats.command';
+import { ProductsCommand } from './commands/products.command';
+import { ExpensesCommand } from './commands/expenses.command';
+import { SettingsCommand } from './commands/settings.command';
 import { MessageEvent } from './events/message.event';
 import { ChatMemberEvent } from './events/chat-member.event';
 import { AuthMiddleware } from './middleware/auth.middleware';
@@ -34,6 +38,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private readonly helpCommand: HelpCommand,
     private readonly warehousesCommand: WarehousesCommand,
     private readonly alertsCommand: AlertsCommand,
+    private readonly statsCommand: StatsCommand,
+    private readonly productsCommand: ProductsCommand,
+    private readonly expensesCommand: ExpensesCommand,
+    private readonly settingsCommand: SettingsCommand,
     private readonly messageEvent: MessageEvent,
     private readonly chatMemberEvent: ChatMemberEvent,
     private readonly authMiddleware: AuthMiddleware,
@@ -76,8 +84,11 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
       }
 
       try {
+        const webhookSecret =
+          this.configService.get<string>('BOT_WEBHOOK_SECRET')?.trim() || undefined;
         await this.bot.api.setWebhook(webhookUrl, {
           drop_pending_updates: true,
+          secret_token: webhookSecret,
         });
         this.logger.log(`Webhook o'rnatildi: ${webhookUrl}`);
       } catch (error) {
@@ -93,6 +104,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   private setupHandlers() {
     // 1. Start command - auth talab qilmaydi
     this.startCommand.register(this.bot);
+    this.helpCommand.register(this.bot);
 
     // 2. Chat member event - bloklash/blokdan chiqarish
     this.chatMemberEvent.register(this.bot);
@@ -101,9 +113,12 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.authMiddleware.register(this.bot);
 
     // 4. Qolgan command va event lar - auth kerak
-    this.helpCommand.register(this.bot);
     this.warehousesCommand.register(this.bot);
     this.alertsCommand.register(this.bot);
+    this.statsCommand.register(this.bot);
+    this.productsCommand.register(this.bot);
+    this.expensesCommand.register(this.bot);
+    this.settingsCommand.register(this.bot);
     this.messageEvent.register(this.bot);
 
     this.bot.catch(async (err) => {
@@ -136,6 +151,17 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
   getBot(): Bot {
     return this.bot;
+  }
+
+  isWebhookSecretValid(req: Request): boolean {
+    const webhookSecret =
+      this.configService.get<string>('BOT_WEBHOOK_SECRET')?.trim() || null;
+
+    if (!webhookSecret) {
+      return true;
+    }
+
+    return req.header('x-telegram-bot-api-secret-token') === webhookSecret;
   }
 
   async sendMessage(telegramId: number, text: string): Promise<boolean> {

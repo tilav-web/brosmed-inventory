@@ -1,23 +1,18 @@
 import { Bot, Context } from 'grammy';
 import { Injectable, Logger } from '@nestjs/common';
-import { WarehouseService } from 'src/modules/warehouse/services/warehouse.service';
-
-interface WarehouseItem {
-  name: string;
-  location: string;
-  type: string;
-}
+import { BotContentService } from '../services/bot-content.service';
 
 @Injectable()
 export class MessageEvent {
   private readonly logger = new Logger(MessageEvent.name);
 
-  constructor(private readonly warehouseService: WarehouseService) {}
+  constructor(private readonly botContentService: BotContentService) {}
 
   register(bot: Bot) {
     bot.on('message:text', async (ctx: Context) => {
       const text = ctx.message?.text;
       if (!text) return;
+      if (text.startsWith('/')) return;
 
       switch (text) {
         case '📦 Omborlar':
@@ -25,15 +20,15 @@ export class MessageEvent {
           break;
 
         case '📊 Statistika':
-          await ctx.reply("📊 Statistika bo'limi hali tayyor emas.");
+          await this.handleStats(ctx);
           break;
 
         case '💊 Mahsulotlar':
-          await ctx.reply("💊 Mahsulotlar bo'limi hali tayyor emas.");
+          await this.handleProducts(ctx);
           break;
 
         case '📋 Chiqimlar':
-          await ctx.reply("📋 Chiqimlar bo'limi hali tayyor emas.");
+          await this.handleExpenses(ctx);
           break;
 
         case '🔔 Ogohlantirishlar':
@@ -41,7 +36,7 @@ export class MessageEvent {
           break;
 
         case '⚙️ Sozlamalar':
-          await ctx.reply("⚙️ Sozlamalar bo'limi hali tayyor emas.");
+          await this.handleSettings(ctx);
           break;
 
         default:
@@ -55,24 +50,7 @@ export class MessageEvent {
 
   private async handleWarehouses(ctx: Context) {
     try {
-      const query = { page: 1, limit: 20 };
-      const result = await this.warehouseService.findAll(query);
-
-      const warehouses = (result as { data: WarehouseItem[] }).data;
-
-      if (!warehouses || warehouses.length === 0) {
-        await ctx.reply('📦 Hozircha omborlar mavjud emas.');
-        return;
-      }
-
-      let text = `📦 <b>Omborlar ro'yxati:</b>\n\n`;
-
-      for (const warehouse of warehouses) {
-        text += `🔹 <b>${warehouse.name}</b>\n`;
-        text += `   📍 ${warehouse.location}\n`;
-        text += `   🏷️ Turi: ${warehouse.type}\n\n`;
-      }
-
+      const text = await this.botContentService.buildWarehousesMessage();
       await ctx.reply(text, { parse_mode: 'HTML' });
     } catch (error) {
       this.logger.error('Omborlarni yuklashda xatolik:', error);
@@ -82,44 +60,56 @@ export class MessageEvent {
 
   private async handleAlerts(ctx: Context) {
     try {
-      const result = (await this.warehouseService.findAll({
-        page: 1,
-        limit: 100,
-      })) as { data: { id: string; name: string }[] };
-
-      let text = `🔔 <b>Ogohlantirishlar:</b>\n\n`;
-      let hasAlerts = false;
-
-      for (const warehouse of result.data) {
-        const details = (await this.warehouseService.findByIdWithDetails(
-          warehouse.id,
-        )) as {
-          alerts: {
-            count: number;
-            items: { type: string; message: string }[];
-          };
-        };
-
-        if (details.alerts.count > 0) {
-          hasAlerts = true;
-          text += `📦 <b>${warehouse.name}</b>\n`;
-
-          for (const alert of details.alerts.items) {
-            const icon = alert.type === 'low_stock' ? '⚠️' : '⏰';
-            text += `   ${icon} ${alert.message}\n`;
-          }
-          text += '\n';
-        }
-      }
-
-      if (!hasAlerts) {
-        text += "✅ Hozircha ogohlantirishlar yo'q.";
-      }
-
+      const text = await this.botContentService.buildAlertsMessage();
       await ctx.reply(text, { parse_mode: 'HTML' });
     } catch (error) {
       this.logger.error('Ogohlantirishlarni yuklashda xatolik:', error);
       await ctx.reply('❌ Ogohlantirishlarni yuklashda xatolik yuz berdi.');
+    }
+  }
+
+  private async handleStats(ctx: Context) {
+    try {
+      const text = await this.botContentService.buildStatsMessage();
+      await ctx.reply(text, { parse_mode: 'HTML' });
+    } catch (error) {
+      this.logger.error('Statistikani yuklashda xatolik:', error);
+      await ctx.reply('❌ Statistikani yuklashda xatolik yuz berdi.');
+    }
+  }
+
+  private async handleProducts(ctx: Context) {
+    try {
+      const text = await this.botContentService.buildProductsMessage();
+      await ctx.reply(text, { parse_mode: 'HTML' });
+    } catch (error) {
+      this.logger.error('Mahsulotlarni yuklashda xatolik:', error);
+      await ctx.reply('❌ Mahsulotlarni yuklashda xatolik yuz berdi.');
+    }
+  }
+
+  private async handleExpenses(ctx: Context) {
+    try {
+      const text = await this.botContentService.buildExpensesMessage();
+      await ctx.reply(text, { parse_mode: 'HTML' });
+    } catch (error) {
+      this.logger.error('Chiqimlarni yuklashda xatolik:', error);
+      await ctx.reply('❌ Chiqimlarni yuklashda xatolik yuz berdi.');
+    }
+  }
+
+  private async handleSettings(ctx: Context) {
+    try {
+      if (!ctx.from) {
+        await ctx.reply("❌ Foydalanuvchi ma'lumoti topilmadi.");
+        return;
+      }
+
+      const text = await this.botContentService.buildSettingsMessage(ctx.from.id);
+      await ctx.reply(text, { parse_mode: 'HTML' });
+    } catch (error) {
+      this.logger.error('Sozlamalarni yuklashda xatolik:', error);
+      await ctx.reply('❌ Sozlamalarni yuklashda xatolik yuz berdi.');
     }
   }
 }

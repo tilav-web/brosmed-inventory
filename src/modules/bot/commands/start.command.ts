@@ -27,7 +27,8 @@ export class StartCommand {
           `Salom, <b>${name}</b>! 👋\n\n` +
             `Brosmed Inventory botiga xush kelibsiz.\n` +
             `Omborxonalar boshqarish tizimini shu yerda nazorat qilishingiz mumkin.\n\n` +
-            `Buyruqlar uchun tugmalardan foydalaning yoki /help ni bosing.`,
+            `Buyruqlar uchun tugmalardan foydalaning yoki /help ni bosing.\n` +
+            `Asosiy buyruqlar: /stats, /products, /expenses, /warehouses, /alerts`,
           {
             parse_mode: 'HTML',
             reply_markup: mainKeyboard(),

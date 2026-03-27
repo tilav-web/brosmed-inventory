@@ -9,6 +9,10 @@ export class HelpCommand {
         `📖 <b>Buyruqlar ro'yxati:</b>\n\n` +
         `/start - Botni ishga tushirish\n` +
         `/help - Yordam\n` +
+        `/stats - Umumiy statistika\n` +
+        `/products - Mahsulotlar holati\n` +
+        `/expenses - So'nggi chiqimlar\n` +
+        `/settings - Profil va sozlamalar\n` +
         `/warehouses - Omborlar ro'yxati\n` +
         `/alerts - Ogohlantirishlar\n\n` +
         `💡 Tugmalar orqali ham harakat qilishingiz mumkin.`;

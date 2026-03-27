@@ -19,6 +19,8 @@ export class AuthMiddleware {
         return;
       }
 
+      await this.botUserService.touchActivity(telegramUser.id);
+
       if (user.status === BotUserStatus.BLOCKED) {
         await ctx.reply("🚫 Siz bloklangansiz. Admin bilan bog'laning.");
         return;

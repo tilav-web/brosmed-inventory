@@ -58,6 +58,13 @@ export class BotUserService {
     return this.botUserRepository.save(user);
   }
 
+  async touchActivity(telegramId: number): Promise<void> {
+    await this.botUserRepository.update(
+      { telegram_id: telegramId },
+      { last_active_at: new Date() },
+    );
+  }
+
   async markAsBlocked(telegramId: number): Promise<void> {
     await this.botUserRepository.update(
       { telegram_id: telegramId },

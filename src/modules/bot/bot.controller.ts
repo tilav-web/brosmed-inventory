@@ -12,6 +12,10 @@ export class BotController {
   @ApiOperation({ summary: 'Telegram bot webhook endpoint' })
   @ApiOkResponse({ description: 'Webhook qabul qilindi' })
   async handleWebhook(@Req() req: Request, @Res() res: Response) {
+    if (!this.botService.isWebhookSecretValid(req)) {
+      return res.status(401).json({ message: 'Webhook secret noto‘g‘ri' });
+    }
+
     const callback = this.botService.webhookCallback;
     if (!callback) {
       return res.status(503).json({
