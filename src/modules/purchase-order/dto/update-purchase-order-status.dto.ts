@@ -26,7 +26,11 @@ export class ReceiveOrderItemDto {
   @IsDateString()
   expiration_alert_date?: string;
 
-  @ApiPropertyOptional({ example: 'BATCH-2026-001' })
+  @ApiPropertyOptional({
+    example: 'BATCH-2026-001',
+    description:
+      'Ixtiyoriy. Yuborilmasa tizim avtomatik batch number yaratadi',
+  })
   @IsOptional()
   @IsString()
   @MaxLength(255)

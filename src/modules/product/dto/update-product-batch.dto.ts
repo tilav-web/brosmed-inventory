@@ -17,4 +17,10 @@ export class UpdateProductBatchDto {
   @IsString()
   @MaxLength(255)
   batch_number?: string;
+
+  @ApiPropertyOptional({ example: 'SN-12345678' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  serial_number?: string;
 }

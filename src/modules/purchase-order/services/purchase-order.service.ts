@@ -86,6 +86,13 @@ export class PurchaseOrderService {
     await manager.getRepository(Product).save(product);
   }
 
+  private buildAutoBatchNumber(
+    orderNumber: string,
+    itemIndex: number,
+  ): string {
+    return `BATCH-${orderNumber}-${String(itemIndex + 1).padStart(3, '0')}`;
+  }
+
   async findAll(query: ListPurchaseOrdersQueryDto) {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
@@ -558,12 +565,12 @@ export class PurchaseOrderService {
         );
       }
 
-      for (const item of order.items) {
+      for (const [index, item] of order.items.entries()) {
         const update = itemUpdates.get(item.id);
 
         let expiration_date: Date | null = null;
         let expiration_alert_date: Date | null = null;
-        let batch_number: string | null = null;
+        let batch_number = this.buildAutoBatchNumber(order.order_number, index);
         let serial_number: string | null = null;
 
         if (update) {
@@ -589,8 +596,9 @@ export class PurchaseOrderService {
           expiration_alert_date = update.expiration_alert_date
             ? new Date(update.expiration_alert_date)
             : null;
-          batch_number = update.batch_number ?? null;
-          serial_number = update.serial_number ?? null;
+          const requestedBatchNumber = update.batch_number?.trim();
+          batch_number = requestedBatchNumber || batch_number;
+          serial_number = update.serial_number?.trim() || null;
         }
 
         const product = lockedProducts.get(item.product.id);

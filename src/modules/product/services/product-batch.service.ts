@@ -72,6 +72,10 @@ export class ProductBatchService {
       batch.batch_number = dto.batch_number ?? null;
     }
 
+    if (dto.serial_number !== undefined) {
+      batch.serial_number = dto.serial_number ?? null;
+    }
+
     return this.productBatchRepository.save(batch);
   }
 

@@ -45,7 +45,7 @@ export class ProductBatchController {
 
   @Patch(':id')
   @Roles(Role.ADMIN, Role.WAREHOUSE)
-  @ApiOperation({ summary: 'Product batch srokini yangilash' })
+  @ApiOperation({ summary: 'Product batch ma`lumotlarini yangilash' })
   @ApiBody({ type: UpdateProductBatchDto })
   @ApiOkResponse({ description: 'Product batch yangilandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
