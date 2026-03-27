@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { existsSync } from 'node:fs';
 import PDFDocument from 'pdfkit';
@@ -76,6 +76,7 @@ interface InventoryDataset {
 
 @Injectable()
 export class ReportService {
+  private readonly logger = new Logger(ReportService.name);
   private readonly pdfFontPath = this.resolvePdfFontPath();
 
   constructor(
@@ -83,7 +84,13 @@ export class ReportService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(Warehouse)
     private readonly warehouseRepository: Repository<Warehouse>,
-  ) {}
+  ) {
+    if (!this.pdfFontPath) {
+      this.logger.warn(
+        'PDF font file topilmadi. PDF export Helvetica bilan davom etadi, Unicode matn soddalashtirilishi mumkin.',
+      );
+    }
+  }
 
   async getInventoryReport(
     query: GetInventoryReportQueryDto,
@@ -326,49 +333,68 @@ export class ReportService {
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      doc.font(this.pdfFontPath);
-      doc.fontSize(18).text('Inventory Report', { align: 'left' });
+      this.applyPdfFont(doc);
+      doc.fontSize(18).text(this.toPdfText('Inventory Report'), { align: 'left' });
       doc.moveDown(0.5);
       doc.fontSize(10);
-      doc.text(`Generated at: ${report.generated_at}`);
-      doc.text(`Warehouse: ${report.filters.warehouse_id ?? 'All warehouses'}`);
-      doc.text(`Date from: ${report.filters.date_from ?? '-'}`);
-      doc.text(`Date to: ${report.filters.date_to ?? '-'}`);
-      doc.text(`Date filter field: ${report.filters.date_filter_field}`);
+      doc.text(this.toPdfText(`Generated at: ${report.generated_at}`));
+      doc.text(
+        this.toPdfText(
+          `Warehouse: ${report.filters.warehouse_id ?? 'All warehouses'}`,
+        ),
+      );
+      doc.text(this.toPdfText(`Date from: ${report.filters.date_from ?? '-'}`));
+      doc.text(this.toPdfText(`Date to: ${report.filters.date_to ?? '-'}`));
+      doc.text(
+        this.toPdfText(`Date filter field: ${report.filters.date_filter_field}`),
+      );
       doc.moveDown();
 
-      doc.fontSize(13).text('Summary');
+      doc.fontSize(13).text(this.toPdfText('Summary'));
       doc.fontSize(10);
-      doc.text(`Total positions: ${report.summary.total_positions}`);
-      doc.text(`Total units: ${this.formatNumber(report.summary.total_units)}`);
-      doc.text(`Total value: ${this.formatCurrency(report.summary.total_value)}`);
+      doc.text(this.toPdfText(`Total positions: ${report.summary.total_positions}`));
+      doc.text(
+        this.toPdfText(
+          `Total units: ${this.formatNumber(report.summary.total_units)}`,
+        ),
+      );
+      doc.text(
+        this.toPdfText(
+          `Total value: ${this.formatCurrency(report.summary.total_value)}`,
+        ),
+      );
       doc.moveDown();
 
-      doc.fontSize(13).text('Warehouse distribution');
+      doc.fontSize(13).text(this.toPdfText('Warehouse distribution'));
       doc.moveDown(0.5);
       for (const row of report.warehouse_distribution) {
         doc
           .fontSize(10)
           .text(
-            `${row.warehouse_name}: positions ${row.positions_count}, units ${this.formatNumber(row.total_units)}, value ${this.formatCurrency(row.total_value)}`,
+            this.toPdfText(
+              `${row.warehouse_name}: positions ${row.positions_count}, units ${this.formatNumber(row.total_units)}, value ${this.formatCurrency(row.total_value)}`,
+            ),
           );
       }
 
       doc.moveDown();
-      doc.fontSize(13).text('Detailed list');
+      doc.fontSize(13).text(this.toPdfText('Detailed list'));
       doc.moveDown(0.5);
 
       for (const item of report.details) {
         if (doc.y > 760) {
           doc.addPage();
-          doc.font(this.pdfFontPath).fontSize(13).text('Detailed list');
+          this.applyPdfFont(doc);
+          doc.fontSize(13).text(this.toPdfText('Detailed list'));
           doc.moveDown(0.5);
         }
 
         doc
           .fontSize(10)
           .text(
-            `${item.product_name} | ${item.warehouse_name} | ${this.formatNumber(item.quantity)} ${item.unit} | ${this.formatCurrency(item.average_price)} | ${this.formatCurrency(item.total_value)}`,
+            this.toPdfText(
+              `${item.product_name} | ${item.warehouse_name} | ${this.formatNumber(item.quantity)} ${item.unit} | ${this.formatCurrency(item.average_price)} | ${this.formatCurrency(item.total_value)}`,
+            ),
           );
       }
 
@@ -437,14 +463,40 @@ export class ReportService {
 
   private resolvePdfFontPath() {
     const candidates = [
+      process.env.PDF_FONT_PATH,
       '/usr/share/fonts/TTF/DejaVuSans.ttf',
       '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
       '/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf',
+      '/usr/share/fonts/noto/NotoSans-Regular.ttf',
+      '/usr/share/fonts/liberation/LiberationSans-Regular.ttf',
     ];
 
-    return (
-      candidates.find((candidate) => existsSync(candidate)) ?? candidates[0]
+    return candidates.find(
+      (candidate): candidate is string => !!candidate && existsSync(candidate),
     );
+  }
+
+  private applyPdfFont(doc: InstanceType<typeof PDFDocument>) {
+    if (this.pdfFontPath) {
+      doc.font(this.pdfFontPath);
+      return;
+    }
+
+    doc.font('Helvetica');
+  }
+
+  private toPdfText(value: string) {
+    if (this.pdfFontPath) {
+      return value;
+    }
+
+    return value
+      .normalize('NFKD')
+      .replace(/[\u2018\u2019\u02BC]/g, "'")
+      .replace(/[\u2013\u2014]/g, '-')
+      .replace(/\u00A0/g, ' ')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '?');
   }
 
   private buildFilename(prefix: string, extension: 'pdf' | 'xlsx') {
