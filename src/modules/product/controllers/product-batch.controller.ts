@@ -33,6 +33,16 @@ import { ListProductBatchsQueryDto } from '../dto/list-product-batch-query.dto';
 export class ProductBatchController {
   constructor(private readonly productBatchService: ProductBatchService) {}
 
+  @Get(':id')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({ summary: 'Bitta product batchni id bo`yicha olish' })
+  @ApiOkResponse({ description: 'Product batch topildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productBatchService.findById(id);
+  }
+
   @Patch(':id')
   @Roles(Role.ADMIN, Role.WAREHOUSE)
   @ApiOperation({ summary: 'Product batch srokini yangilash' })

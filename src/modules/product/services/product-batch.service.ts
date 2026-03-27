@@ -16,6 +16,16 @@ export class ProductBatchService {
     private readonly productBatchRepository: Repository<ProductBatch>,
   ) {}
 
+  async findById(id: string) {
+    const batch = await this.productBatchRepository.findOne({ where: { id } });
+
+    if (!batch) {
+      throw new NotFoundException('Product batch topilmadi');
+    }
+
+    return batch;
+  }
+
   async update(id: string, dto: UpdateProductBatchDto) {
     const hasUpdateField = Object.values(dto).some(
       (value) => value !== undefined && value !== null,
