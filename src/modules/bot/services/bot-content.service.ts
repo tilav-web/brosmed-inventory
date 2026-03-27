@@ -172,7 +172,10 @@ export class BotContentService {
         .getCount(),
       this.productBatchRepository
         .createQueryBuilder('batch')
-        .select('COALESCE(SUM(batch.quantity * batch.price_at_purchase), 0)', 'total')
+        .select(
+          'COALESCE(SUM(batch.quantity * batch.price_at_purchase), 0)',
+          'total',
+        )
         .where('batch.quantity > 0')
         .getRawOne<{ total: string | null }>(),
       this.expenseRepository.find({
@@ -181,7 +184,9 @@ export class BotContentService {
       }),
     ]);
 
-    const inventoryValue = Number(Number(inventoryValueRaw?.total ?? 0).toFixed(2));
+    const inventoryValue = Number(
+      Number(inventoryValueRaw?.total ?? 0).toFixed(2),
+    );
 
     let text = '📊 <b>Umumiy statistika</b>\n\n';
     text += `💊 Mahsulotlar: <b>${totalProducts}</b> ta\n`;
@@ -204,32 +209,33 @@ export class BotContentService {
   }
 
   async buildProductsMessage(): Promise<string> {
-    const [totalProducts, lowStockProducts, featuredProducts] = await Promise.all([
-      this.productRepository.count(),
-      this.productRepository
-        .createQueryBuilder('product')
-        .where('product.quantity > 0')
-        .andWhere('product.quantity <= product.min_limit')
-        .getCount(),
-      this.productRepository
-        .createQueryBuilder('product')
-        .leftJoin('product.warehouse', 'warehouse')
-        .select('product.id', 'id')
-        .addSelect('product.name', 'name')
-        .addSelect('product.quantity', 'quantity')
-        .addSelect('product.min_limit', 'min_limit')
-        .addSelect('product.unit', 'unit')
-        .addSelect('warehouse.name', 'warehouse_name')
-        .where('product.quantity > 0')
-        .orderBy(
-          'CASE WHEN product.quantity <= product.min_limit THEN 0 ELSE 1 END',
-          'ASC',
-        )
-        .addOrderBy('product.quantity', 'ASC')
-        .addOrderBy('product.name', 'ASC')
-        .limit(12)
-        .getRawMany<ProductRow>(),
-    ]);
+    const [totalProducts, lowStockProducts, featuredProducts] =
+      await Promise.all([
+        this.productRepository.count(),
+        this.productRepository
+          .createQueryBuilder('product')
+          .where('product.quantity > 0')
+          .andWhere('product.quantity <= product.min_limit')
+          .getCount(),
+        this.productRepository
+          .createQueryBuilder('product')
+          .leftJoin('product.warehouse', 'warehouse')
+          .select('product.id', 'id')
+          .addSelect('product.name', 'name')
+          .addSelect('product.quantity', 'quantity')
+          .addSelect('product.min_limit', 'min_limit')
+          .addSelect('product.unit', 'unit')
+          .addSelect('warehouse.name', 'warehouse_name')
+          .where('product.quantity > 0')
+          .orderBy(
+            'CASE WHEN product.quantity <= product.min_limit THEN 0 ELSE 1 END',
+            'ASC',
+          )
+          .addOrderBy('product.quantity', 'ASC')
+          .addOrderBy('product.name', 'ASC')
+          .limit(12)
+          .getRawMany<ProductRow>(),
+      ]);
 
     if (!featuredProducts.length) {
       return `💊 <b>Mahsulotlar</b>\n\nJami: <b>${totalProducts}</b> ta\nHozircha omborda qoldiq yo'q.`;
@@ -307,7 +313,8 @@ export class BotContentService {
     let text = '⚙️ <b>Sozlamalar va profil</b>\n\n';
     text += `🆔 Telegram ID: <b>${user.telegram_id}</b>\n`;
     text += `👤 Ism: <b>${this.escapeHtml(
-      [user.first_name, user.last_name].filter(Boolean).join(' ') || 'Kiritilmagan',
+      [user.first_name, user.last_name].filter(Boolean).join(' ') ||
+        'Kiritilmagan',
     )}</b>\n`;
     text += `🔗 Username: <b>${this.escapeHtml(
       user.username ? `@${user.username}` : 'yoʻq',
@@ -315,7 +322,8 @@ export class BotContentService {
     text += `📌 Holat: <b>${this.mapBotUserStatus(user.status)}</b>\n`;
     text += `✅ Tasdiq: <b>${user.is_approved ? 'tasdiqlangan' : 'tasdiqlanmagan'}</b>\n`;
     text += `🕒 So‘nggi faollik: <b>${this.formatDate(user.last_active_at)}</b>\n`;
-    text += '\n💡 Buyruqlar: /help /stats /products /expenses /warehouses /alerts';
+    text +=
+      '\n💡 Buyruqlar: /help /stats /products /expenses /warehouses /alerts';
 
     return text;
   }

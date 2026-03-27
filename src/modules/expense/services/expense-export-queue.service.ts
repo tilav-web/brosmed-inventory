@@ -42,11 +42,12 @@ export class ExpenseExportQueueService
     this.worker = new Worker<ExpenseExportJobData>(
       'expense-export',
       async (job: Job<ExpenseExportJobData>) => {
-        const buffer = await this.exportService.buildExcelBuffer(job.data.query);
+        const buffer = await this.exportService.buildExcelBuffer(
+          job.data.query,
+        );
         const filename =
           job.data.filename ?? this.buildDefaultFilename('expenses');
-        const caption =
-          job.data.caption ?? 'Expense export tayyor bo`ldi';
+        const caption = job.data.caption ?? 'Expense export tayyor bo`ldi';
 
         const sent = await this.botService.sendDocumentToApprovedUsers(
           buffer,

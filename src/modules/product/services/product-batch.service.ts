@@ -16,6 +16,22 @@ export class ProductBatchService {
     private readonly productBatchRepository: Repository<ProductBatch>,
   ) {}
 
+  private hasField(
+    dto: UpdateProductBatchDto,
+    field: keyof UpdateProductBatchDto,
+  ): boolean {
+    return Object.hasOwn(dto, field);
+  }
+
+  private normalizeNullableText(value: string | null | undefined) {
+    if (value == null) {
+      return null;
+    }
+
+    const normalizedValue = value.trim();
+    return normalizedValue.length > 0 ? normalizedValue : null;
+  }
+
   async findById(id: string) {
     const batch = await this.productBatchRepository.findOne({ where: { id } });
 
@@ -27,9 +43,19 @@ export class ProductBatchService {
   }
 
   async update(id: string, dto: UpdateProductBatchDto) {
-    const hasUpdateField = Object.values(dto).some(
-      (value) => value !== undefined && value !== null,
+    const hasExpirationDateField = this.hasField(dto, 'expiration_date');
+    const hasExpirationAlertDateField = this.hasField(
+      dto,
+      'expiration_alert_date',
     );
+    const hasBatchNumberField = this.hasField(dto, 'batch_number');
+    const hasSerialNumberField = this.hasField(dto, 'serial_number');
+
+    const hasUpdateField =
+      hasExpirationDateField ||
+      hasExpirationAlertDateField ||
+      hasBatchNumberField ||
+      hasSerialNumberField;
 
     if (!hasUpdateField) {
       throw new BadRequestException('Hech qanday maydon yuborilmadi!');
@@ -40,46 +66,86 @@ export class ProductBatchService {
       throw new NotFoundException('Product batch topilmadi');
     }
 
-    if (dto.expiration_alert_date && !dto.expiration_date) {
+    const nextExpirationDate = hasExpirationDateField
+      ? dto.expiration_date
+        ? new Date(dto.expiration_date)
+        : null
+      : batch.expiration_date;
+    const nextExpirationAlertDate = hasExpirationAlertDateField
+      ? dto.expiration_alert_date
+        ? new Date(dto.expiration_alert_date)
+        : null
+      : batch.expiration_alert_date;
+
+    if (nextExpirationAlertDate && !nextExpirationDate) {
       throw new BadRequestException(
-        'expiration_alert_date berilsa, expiration_date ham berilishi kerak',
+        'expiration_alert_date bo‘lishi uchun expiration_date ham bo‘lishi kerak',
       );
     }
 
-    if (dto.expiration_alert_date && dto.expiration_date) {
-      const alertDate = new Date(dto.expiration_alert_date);
-      const expirationDate = new Date(dto.expiration_date);
-      if (alertDate > expirationDate) {
-        throw new BadRequestException(
-          'expiration_alert_date expiration_date dan oldin yoki teng bo‘lishi kerak',
-        );
-      }
+    if (
+      nextExpirationAlertDate &&
+      nextExpirationDate &&
+      nextExpirationAlertDate > nextExpirationDate
+    ) {
+      throw new BadRequestException(
+        'expiration_alert_date expiration_date dan oldin yoki teng bo‘lishi kerak',
+      );
     }
 
-    if (dto.expiration_date !== undefined) {
-      batch.expiration_date = dto.expiration_date
-        ? new Date(dto.expiration_date)
-        : null;
+    if (hasExpirationDateField) {
+      batch.expiration_date = nextExpirationDate;
     }
 
-    if (dto.expiration_alert_date !== undefined) {
-      batch.expiration_alert_date = dto.expiration_alert_date
-        ? new Date(dto.expiration_alert_date)
-        : null;
+    if (hasExpirationAlertDateField) {
+      batch.expiration_alert_date = nextExpirationAlertDate;
     }
 
-    if (dto.batch_number !== undefined) {
-      batch.batch_number = dto.batch_number ?? null;
+    if (hasBatchNumberField) {
+      batch.batch_number = this.normalizeNullableText(dto.batch_number);
     }
 
-    if (dto.serial_number !== undefined) {
-      batch.serial_number = dto.serial_number ?? null;
+    if (hasSerialNumberField) {
+      batch.serial_number = this.normalizeNullableText(dto.serial_number);
     }
 
     return this.productBatchRepository.save(batch);
   }
 
   async findAll(query: ListProductBatchsQueryDto) {
+    const { page, limit } = query;
+    const skip = (page - 1) * limit;
+
+    const qb = this.productBatchRepository.createQueryBuilder('batch');
+
+    const productId =
+      typeof query.product_id === 'string' ? query.product_id : undefined;
+
+    if (productId) {
+      qb.andWhere('batch.product_id = :productId', {
+        productId,
+      });
+    }
+
+    qb.orderBy('batch.received_at', 'DESC')
+      .addOrderBy('batch.id', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    const [data, total] = await qb.getManyAndCount();
+
+    return {
+      data,
+      meta: {
+        page: Number(page),
+        limit: Number(limit),
+        total,
+        total_pages: Math.ceil(total / limit) || 1,
+      },
+    };
+  }
+
+  async findAlerts(query: ListProductBatchsQueryDto) {
     const { page, limit } = query;
     const skip = (page - 1) * limit;
 

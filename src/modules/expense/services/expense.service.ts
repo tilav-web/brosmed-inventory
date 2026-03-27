@@ -325,7 +325,10 @@ export class ExpenseService {
     const result = await manager
       .getRepository(Expense)
       .createQueryBuilder('expense')
-      .select("MAX(CAST(SPLIT_PART(expense.expense_number, '-', 3) AS int))", 'max')
+      .select(
+        "MAX(CAST(SPLIT_PART(expense.expense_number, '-', 3) AS int))",
+        'max',
+      )
       .where('expense.expense_number LIKE :prefix', {
         prefix: `EXP-${year}-%`,
       })
@@ -412,7 +415,6 @@ export class ExpenseService {
       const expenseRepo = manager.getRepository(Expense);
       const expenseItemRepo = manager.getRepository(ExpenseItem);
       const productRepo = manager.getRepository(Product);
-      const productBatchRepo = manager.getRepository(ProductBatch);
       const warehouseRepo = manager.getRepository(Warehouse);
       const userRepo = manager.getRepository(User);
 
@@ -442,7 +444,10 @@ export class ExpenseService {
       const existingReservedByBatch = new Map<string, number>();
 
       for (const item of dto.items) {
-        const batch = await this.lockBatchForUpdate(manager, item.product_batch_id);
+        const batch = await this.lockBatchForUpdate(
+          manager,
+          item.product_batch_id,
+        );
 
         if (!batch) {
           throw new NotFoundException(
@@ -590,7 +595,9 @@ export class ExpenseService {
       const sortedItems = [...expense.items].sort((left, right) => {
         const leftKey = left.product_batch_id ?? left.id;
         const rightKey = right.product_batch_id ?? right.id;
-        return leftKey.localeCompare(rightKey) || left.id.localeCompare(right.id);
+        return (
+          leftKey.localeCompare(rightKey) || left.id.localeCompare(right.id)
+        );
       });
 
       for (const item of sortedItems) {
@@ -623,8 +630,9 @@ export class ExpenseService {
       }
 
       const lockedProducts = new Map<string, Product>();
-      const productIds = Array.from(new Set(sortedItems.map((item) => item.product.id)))
-        .sort((left, right) => left.localeCompare(right));
+      const productIds = Array.from(
+        new Set(sortedItems.map((item) => item.product.id)),
+      ).sort((left, right) => left.localeCompare(right));
 
       for (const productId of productIds) {
         lockedProducts.set(
@@ -952,26 +960,33 @@ export class ExpenseService {
       },
     );
 
-    const allAlerts = [...expiredAlerts, ...expiringAlerts, ...lowStockAlerts].sort(
-      (left, right) => {
-        const severityScore = this.getSeverityScore(right.severity) -
-          this.getSeverityScore(left.severity);
-        if (severityScore !== 0) {
-          return severityScore;
-        }
+    const allAlerts = [
+      ...expiredAlerts,
+      ...expiringAlerts,
+      ...lowStockAlerts,
+    ].sort((left, right) => {
+      const severityScore =
+        this.getSeverityScore(right.severity) -
+        this.getSeverityScore(left.severity);
+      if (severityScore !== 0) {
+        return severityScore;
+      }
 
-        const leftDays = left.days_left ?? Number.MAX_SAFE_INTEGER;
-        const rightDays = right.days_left ?? Number.MAX_SAFE_INTEGER;
-        if (leftDays !== rightDays) {
-          return leftDays - rightDays;
-        }
+      const leftDays = left.days_left ?? Number.MAX_SAFE_INTEGER;
+      const rightDays = right.days_left ?? Number.MAX_SAFE_INTEGER;
+      if (leftDays !== rightDays) {
+        return leftDays - rightDays;
+      }
 
-        return left.product_name.localeCompare(right.product_name);
-      },
+      return left.product_name.localeCompare(right.product_name);
+    });
+
+    const expiredProductIds = new Set(
+      expiredBatchesRaw.map((row) => row.product_id),
     );
-
-    const expiredProductIds = new Set(expiredBatchesRaw.map((row) => row.product_id));
-    const lowStockProductIds = new Set(lowStockProductsRaw.map((row) => row.product_id));
+    const lowStockProductIds = new Set(
+      lowStockProductsRaw.map((row) => row.product_id),
+    );
 
     const expiredProducts = expiredProductIds.size;
     const expiringProducts = new Set(
@@ -988,13 +1003,15 @@ export class ExpenseService {
       0,
     );
 
-    const inventoryValueByWarehouse = inventoryValueByWarehouseRaw.map((row) => ({
-      warehouse_id: row.warehouse_id,
-      warehouse_name: row.warehouse_name,
-      total_inventory_value: Number(
-        Number(row.total_inventory_value ?? 0).toFixed(2),
-      ),
-    }));
+    const inventoryValueByWarehouse = inventoryValueByWarehouseRaw.map(
+      (row) => ({
+        warehouse_id: row.warehouse_id,
+        warehouse_name: row.warehouse_name,
+        total_inventory_value: Number(
+          Number(row.total_inventory_value ?? 0).toFixed(2),
+        ),
+      }),
+    );
 
     const totalInventoryValue = Number(
       inventoryValueByWarehouse
@@ -1004,8 +1021,16 @@ export class ExpenseService {
 
     const stockStatusItems = [
       { status: 'normal' as const, label: 'Normal', count: normalProducts },
-      { status: 'low_stock' as const, label: 'Kam qoldiq', count: lowStockProducts },
-      { status: 'expired' as const, label: 'Muddati o‘tgan', count: expiredProducts },
+      {
+        status: 'low_stock' as const,
+        label: 'Kam qoldiq',
+        count: lowStockProducts,
+      },
+      {
+        status: 'expired' as const,
+        label: 'Muddati o‘tgan',
+        count: expiredProducts,
+      },
     ].map((item) => ({
       ...item,
       percentage:

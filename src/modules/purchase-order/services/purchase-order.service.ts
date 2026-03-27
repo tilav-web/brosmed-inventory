@@ -86,10 +86,7 @@ export class PurchaseOrderService {
     await manager.getRepository(Product).save(product);
   }
 
-  private buildAutoBatchNumber(
-    orderNumber: string,
-    itemIndex: number,
-  ): string {
+  private buildAutoBatchNumber(orderNumber: string, itemIndex: number): string {
     return `BATCH-${orderNumber}-${String(itemIndex + 1).padStart(3, '0')}`;
   }
 
@@ -555,8 +552,9 @@ export class PurchaseOrderService {
       }
 
       const lockedProducts = new Map<string, Product>();
-      const productIds = Array.from(new Set(order.items.map((i) => i.product.id)))
-        .sort((left, right) => left.localeCompare(right));
+      const productIds = Array.from(
+        new Set(order.items.map((i) => i.product.id)),
+      ).sort((left, right) => left.localeCompare(right));
 
       for (const productId of productIds) {
         lockedProducts.set(

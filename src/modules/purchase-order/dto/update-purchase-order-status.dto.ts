@@ -28,8 +28,7 @@ export class ReceiveOrderItemDto {
 
   @ApiPropertyOptional({
     example: 'BATCH-2026-001',
-    description:
-      'Ixtiyoriy. Yuborilmasa tizim avtomatik batch number yaratadi',
+    description: 'Ixtiyoriy. Yuborilmasa tizim avtomatik batch number yaratadi',
   })
   @IsOptional()
   @IsString()

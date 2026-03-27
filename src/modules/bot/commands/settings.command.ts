@@ -12,7 +12,9 @@ export class SettingsCommand {
         return;
       }
 
-      const text = await this.botContentService.buildSettingsMessage(ctx.from.id);
+      const text = await this.botContentService.buildSettingsMessage(
+        ctx.from.id,
+      );
       await ctx.reply(text, { parse_mode: 'HTML' });
     });
   }

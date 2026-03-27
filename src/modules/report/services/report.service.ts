@@ -167,7 +167,9 @@ export class ReportService {
       };
 
       current.positions_count += 1;
-      current.total_units = Number((current.total_units + item.quantity).toFixed(2));
+      current.total_units = Number(
+        (current.total_units + item.quantity).toFixed(2),
+      );
       current.total_value = Number(
         (current.total_value + item.total_value).toFixed(2),
       );
@@ -195,11 +197,7 @@ export class ReportService {
     const qb = this.productRepository
       .createQueryBuilder('product')
       .leftJoin('product.warehouse', 'warehouse')
-      .leftJoin(
-        'product.batches',
-        'batch',
-        'batch.quantity > 0',
-      )
+      .leftJoin('product.batches', 'batch', 'batch.quantity > 0')
       .select('product.id', 'product_id')
       .addSelect('product.name', 'product_name')
       .addSelect('warehouse.id', 'warehouse_id')
@@ -263,7 +261,10 @@ export class ReportService {
     ]);
     summarySheet.addRow(['Date from', report.filters.date_from ?? '-']);
     summarySheet.addRow(['Date to', report.filters.date_to ?? '-']);
-    summarySheet.addRow(['Date filter field', report.filters.date_filter_field]);
+    summarySheet.addRow([
+      'Date filter field',
+      report.filters.date_filter_field,
+    ]);
     summarySheet.addRow([]);
     summarySheet.addRow(['Metric', 'Value']);
     summarySheet.addRow(['Total positions', report.summary.total_positions]);
@@ -334,7 +335,9 @@ export class ReportService {
       doc.on('error', reject);
 
       this.applyPdfFont(doc);
-      doc.fontSize(18).text(this.toPdfText('Inventory Report'), { align: 'left' });
+      doc
+        .fontSize(18)
+        .text(this.toPdfText('Inventory Report'), { align: 'left' });
       doc.moveDown(0.5);
       doc.fontSize(10);
       doc.text(this.toPdfText(`Generated at: ${report.generated_at}`));
@@ -346,13 +349,17 @@ export class ReportService {
       doc.text(this.toPdfText(`Date from: ${report.filters.date_from ?? '-'}`));
       doc.text(this.toPdfText(`Date to: ${report.filters.date_to ?? '-'}`));
       doc.text(
-        this.toPdfText(`Date filter field: ${report.filters.date_filter_field}`),
+        this.toPdfText(
+          `Date filter field: ${report.filters.date_filter_field}`,
+        ),
       );
       doc.moveDown();
 
       doc.fontSize(13).text(this.toPdfText('Summary'));
       doc.fontSize(10);
-      doc.text(this.toPdfText(`Total positions: ${report.summary.total_positions}`));
+      doc.text(
+        this.toPdfText(`Total positions: ${report.summary.total_positions}`),
+      );
       doc.text(
         this.toPdfText(
           `Total units: ${this.formatNumber(report.summary.total_units)}`,
@@ -490,13 +497,20 @@ export class ReportService {
       return value;
     }
 
-    return value
+    const normalizedValue = value
       .normalize('NFKD')
       .replace(/[\u2018\u2019\u02BC]/g, "'")
       .replace(/[\u2013\u2014]/g, '-')
       .replace(/\u00A0/g, ' ')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '?');
+      .replace(/[\u0300-\u036f]/g, '');
+
+    return Array.from(normalizedValue, (char) => {
+      const code = char.charCodeAt(0);
+      const isAllowedAscii =
+        code === 9 || code === 10 || code === 13 || (code >= 32 && code <= 126);
+
+      return isAllowedAscii ? char : '?';
+    }).join('');
   }
 
   private buildFilename(prefix: string, extension: 'pdf' | 'xlsx') {

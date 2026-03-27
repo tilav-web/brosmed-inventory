@@ -33,14 +33,29 @@ import { ListProductBatchsQueryDto } from '../dto/list-product-batch-query.dto';
 export class ProductBatchController {
   constructor(private readonly productBatchService: ProductBatchService) {}
 
-  @Get(':id')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
-  @ApiOperation({ summary: 'Bitta product batchni id bo`yicha olish' })
-  @ApiOkResponse({ description: 'Product batch topildi' })
+  @Get()
+  @ApiOperation({ summary: 'Barcha partiyalarni pagination bilan olish' })
+  @ApiResponse({ status: 200, description: 'Muvaffaqiyatli qaytarildi.' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.productBatchService.findById(id);
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  async findAll(@Query() query: ListProductBatchsQueryDto) {
+    return await this.productBatchService.findAll(query);
+  }
+
+  @Get('alerts')
+  @ApiOperation({
+    summary: 'Sroki yaqinlashgan partiyalarni pagination bilan olish',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Sroki yaqinlashgan partiyalar muvaffaqiyatli qaytarildi.',
+  })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  async findAlerts(@Query() query: ListProductBatchsQueryDto) {
+    return await this.productBatchService.findAlerts(query);
   }
 
   @Patch(':id')
@@ -57,13 +72,13 @@ export class ProductBatchController {
     return this.productBatchService.update(id, dto);
   }
 
-  @Get()
-  @ApiOperation({ summary: 'Barcha partiyalarni pagination bilan olish' })
-  @ApiResponse({ status: 200, description: 'Muvaffaqiyatli qaytarildi.' })
+  @Get(':id')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({ summary: 'Bitta product batchni id bo`yicha olish' })
+  @ApiOkResponse({ description: 'Product batch topildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
-  async findAll(@Query() query: ListProductBatchsQueryDto) {
-    return await this.productBatchService.findAll(query);
+  findOne(@Param('id', ParseUUIDPipe) id: string) {
+    return this.productBatchService.findById(id);
   }
 }

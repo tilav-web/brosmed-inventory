@@ -85,7 +85,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
       try {
         const webhookSecret =
-          this.configService.get<string>('BOT_WEBHOOK_SECRET')?.trim() || undefined;
+          this.configService.get<string>('BOT_WEBHOOK_SECRET')?.trim() ||
+          undefined;
         await this.bot.api.setWebhook(webhookUrl, {
           drop_pending_updates: true,
           secret_token: webhookSecret,
