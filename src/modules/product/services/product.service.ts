@@ -122,14 +122,14 @@ export class ProductService {
     return warehouse;
   }
 
-  private async findUnitNameOrFail(unitId: string): Promise<string> {
+  private async findUnitOrFail(unitId: string): Promise<Unit> {
     const unit = await this.unitRepository.findOne({ where: { id: unitId } });
 
     if (!unit) {
       throw new NotFoundException('Unit topilmadi');
     }
 
-    return unit.name;
+    return unit;
   }
 
   private async findSupplierOrFail(supplierId: string): Promise<Supplier> {
@@ -148,17 +148,18 @@ export class ProductService {
     const [category, warehouse, unit, supplier] = await Promise.all([
       this.findCategoryOrFail(dto.category_id),
       this.findWarehouseOrFail(dto.warehouse_id),
-      this.findUnitNameOrFail(dto.unit_id),
+      this.findUnitOrFail(dto.unit_id),
       this.findSupplierOrFail(dto.supplier_id),
     ]);
 
     const product = this.productRepository.create({
       name: dto.name,
       quantity: 0,
+      unit: unit.name,
+      unit_id: unit.id,
       min_limit: dto.min_limit ?? 10,
       mxik_code: dto.mxik_code ?? null,
       storage_conditions: dto.storage_conditions ?? null,
-      unit,
       category,
       supplier,
       warehouse,
@@ -243,7 +244,9 @@ export class ProductService {
     }
 
     if (dto.unit_id !== undefined) {
-      product.unit = await this.findUnitNameOrFail(dto.unit_id);
+      const unit = await this.findUnitOrFail(dto.unit_id);
+      product.unit = unit.name;
+      product.unit_id = unit.id;
     }
 
     return this.productRepository.save(product);

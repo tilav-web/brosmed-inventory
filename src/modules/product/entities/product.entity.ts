@@ -10,6 +10,7 @@ import {
 } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
+import { Unit } from 'src/modules/unit/entities/unit.entity';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { ProductBatch } from './product-batch.entity';
 import { ProductStatus } from '../enums/product-status.enum';
@@ -32,6 +33,15 @@ export class Product {
   // O`lchov birligi nomi (snapshot).
   @Column({ type: 'varchar' })
   unit: string;
+
+  // Unit ID (asosiy manba yozuvi, unit o`chirilib ketsa null bo`ladi).
+  @ManyToOne(() => Unit, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'unit_id' })
+  unit_reference: Unit | null;
+
+  // Unit ID.
+  @Column({ type: 'uuid', nullable: true })
+  unit_id: string | null;
 
   // Minimal qoldiq (qayta buyurtma nuqtasi).
   @Column({ type: 'int', default: 10 })

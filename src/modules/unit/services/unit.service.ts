@@ -7,6 +7,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import Redis from 'ioredis';
+import { Product } from 'src/modules/product/entities/product.entity';
 import { CreateUnitDto } from '../dto/create-unit.dto';
 import { ListUnitsQueryDto } from '../dto/list-units-query.dto';
 import { UpdateUnitDto } from '../dto/update-unit.dto';
@@ -27,6 +28,8 @@ export class UnitService {
   constructor(
     @InjectRepository(Unit)
     private readonly unitRepository: Repository<Unit>,
+    @InjectRepository(Product)
+    private readonly productRepository: Repository<Product>,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
   ) {}
@@ -113,6 +116,11 @@ export class UnitService {
         throw new ConflictException('Bunday unit name mavjud');
       }
       unit.name = normalizedName;
+
+      await this.productRepository.update(
+        { unit_id: unit.id },
+        { unit: normalizedName },
+      );
     }
 
     const updated = await this.unitRepository.save(unit);
@@ -123,6 +131,10 @@ export class UnitService {
 
   async delete(id: string): Promise<{ message: string }> {
     const unit = await this.findById(id);
+    await this.productRepository.update(
+      { unit_id: unit.id },
+      { unit_id: null },
+    );
     await this.unitRepository.delete(unit.id);
 
     await this.clearCache();
