@@ -31,7 +31,11 @@ export class ListProductBatchsQueryDto {
         return true;
       }
 
-      if (normalizedValue === 'false' || normalizedValue === '0' || normalizedValue === '') {
+      if (
+        normalizedValue === 'false' ||
+        normalizedValue === '0' ||
+        normalizedValue === ''
+      ) {
         return false;
       }
     }
