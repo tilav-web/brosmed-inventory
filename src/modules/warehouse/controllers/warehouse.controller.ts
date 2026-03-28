@@ -8,6 +8,7 @@ import {
   Patch,
   Post,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -22,6 +23,7 @@ import {
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { GetWarehouseDashboardQueryDto } from '../dto/get-warehouse-dashboard-query.dto';
@@ -46,6 +48,22 @@ export class WarehouseController {
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
   findAll(@Query() query: ListWarehousesQueryDto) {
     return this.warehouseService.findAll(query);
+  }
+
+  @Get('my/dashboard')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary:
+      'Joriy warehouse userga biriktirilgan barcha warehouse lar uchun umumiy dashboard',
+  })
+  @ApiOkResponse({ description: 'Joriy warehouse user dashboard ma`lumotlari' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyDashboard(
+    @Req() req: { user: AuthUser },
+    @Query() query: GetWarehouseDashboardQueryDto,
+  ) {
+    return this.warehouseService.getDashboardByUser(req.user.id, query);
   }
 
   @Get(':id')

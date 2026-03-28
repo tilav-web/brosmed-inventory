@@ -34,6 +34,18 @@ export interface WarehouseWithTotalValue extends Warehouse {
   total_inventory_value: number;
 }
 
+type DashboardWarehouseView = {
+  id: string;
+  name: string;
+  type: Warehouse['type'];
+  location: string;
+  manager: {
+    id: string;
+    first_name: string;
+    last_name: string;
+  } | null;
+};
+
 @Injectable()
 export class WarehouseService {
   constructor(
@@ -187,19 +199,26 @@ export class WarehouseService {
     return result;
   }
 
-  async getDashboard(id: string, query: GetWarehouseDashboardQueryDto) {
-    const warehouse = await this.warehouseRepository.findOne({
-      where: { id },
-      relations: {
-        manager: true,
-      },
-    });
+  private mapDashboardWarehouse(warehouse: Warehouse): DashboardWarehouseView {
+    return {
+      id: warehouse.id,
+      name: warehouse.name,
+      type: warehouse.type,
+      location: warehouse.location,
+      manager: warehouse.manager
+        ? {
+            id: warehouse.manager.id,
+            first_name: warehouse.manager.first_name,
+            last_name: warehouse.manager.last_name,
+          }
+        : null,
+    };
+  }
 
-    if (!warehouse) {
-      throw new NotFoundException('Warehouse topilmadi');
-    }
-
-    const recentLimit = Math.min(query.recent_limit ?? 5, 20);
+  private async buildDashboardMetrics(
+    warehouseIds: string[],
+    recentLimit: number,
+  ) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -214,20 +233,19 @@ export class WarehouseService {
       pendingIssueRaw,
       recentExpensesRaw,
     ] = await Promise.all([
-      this.productRepository.count({
-        where: {
-          warehouse_id: id,
-        },
-      }),
       this.productRepository
         .createQueryBuilder('product')
-        .where('product.warehouse_id = :warehouseId', { warehouseId: id })
+        .where('product.warehouse_id IN (:...warehouseIds)', { warehouseIds })
+        .getCount(),
+      this.productRepository
+        .createQueryBuilder('product')
+        .where('product.warehouse_id IN (:...warehouseIds)', { warehouseIds })
         .andWhere('product.quantity > 0')
         .andWhere('product.quantity <= product.min_limit')
         .getCount(),
       this.productBatchRepository
         .createQueryBuilder('batch')
-        .where('batch.warehouse_id = :warehouseId', { warehouseId: id })
+        .where('batch.warehouse_id IN (:...warehouseIds)', { warehouseIds })
         .andWhere('batch.quantity > 0')
         .andWhere('batch.expiration_date IS NOT NULL')
         .andWhere('batch.expiration_date >= :today', { today })
@@ -237,7 +255,7 @@ export class WarehouseService {
         .createQueryBuilder('item')
         .leftJoin('item.expense', 'expense')
         .select('COUNT(DISTINCT expense.id)', 'count')
-        .where('item.warehouse_id = :warehouseId', { warehouseId: id })
+        .where('item.warehouse_id IN (:...warehouseIds)', { warehouseIds })
         .andWhere('expense.status = :status', {
           status: ExpenseStatus.PENDING_ISSUE,
         })
@@ -247,10 +265,8 @@ export class WarehouseService {
         .innerJoin(
           'expense.items',
           'item',
-          'item.warehouse_id = :warehouseId',
-          {
-            warehouseId: id,
-          },
+          'item.warehouse_id IN (:...warehouseIds)',
+          { warehouseIds },
         )
         .select('expense.id', 'id')
         .addSelect('expense.expense_number', 'expense_number')
@@ -280,19 +296,6 @@ export class WarehouseService {
     ]);
 
     return {
-      warehouse: {
-        id: warehouse.id,
-        name: warehouse.name,
-        type: warehouse.type,
-        location: warehouse.location,
-        manager: warehouse.manager
-          ? {
-              id: warehouse.manager.id,
-              first_name: warehouse.manager.first_name,
-              last_name: warehouse.manager.last_name,
-            }
-          : null,
-      },
       summary: {
         total_products: totalProducts,
         pending_issue: Number(pendingIssueRaw?.count ?? 0),
@@ -308,6 +311,65 @@ export class WarehouseService {
         status: expense.status,
         total_price: Number(Number(expense.total_price ?? 0).toFixed(2)),
       })),
+    };
+  }
+
+  async getDashboardByUser(
+    userId: string,
+    query: GetWarehouseDashboardQueryDto,
+  ) {
+    const warehouses = await this.warehouseRepository.find({
+      where: { manager_id: userId },
+      relations: {
+        manager: true,
+      },
+      order: {
+        name: 'ASC',
+      },
+    });
+
+    if (!warehouses.length) {
+      throw new NotFoundException(
+        'Foydalanuvchiga biriktirilgan warehouse topilmadi',
+      );
+    }
+
+    const recentLimit = Math.min(query.recent_limit ?? 5, 20);
+    const metrics = await this.buildDashboardMetrics(
+      warehouses.map((warehouse) => warehouse.id),
+      recentLimit,
+    );
+
+    return {
+      warehouses: warehouses.map((warehouse) =>
+        this.mapDashboardWarehouse(warehouse),
+      ),
+      summary: {
+        ...metrics.summary,
+        warehouses_count: warehouses.length,
+      },
+      recent_expenses: metrics.recent_expenses,
+    };
+  }
+
+  async getDashboard(id: string, query: GetWarehouseDashboardQueryDto) {
+    const warehouse = await this.warehouseRepository.findOne({
+      where: { id },
+      relations: {
+        manager: true,
+      },
+    });
+
+    if (!warehouse) {
+      throw new NotFoundException('Warehouse topilmadi');
+    }
+
+    const recentLimit = Math.min(query.recent_limit ?? 5, 20);
+    const metrics = await this.buildDashboardMetrics([id], recentLimit);
+
+    return {
+      warehouse: this.mapDashboardWarehouse(warehouse),
+      ...metrics,
     };
   }
 
