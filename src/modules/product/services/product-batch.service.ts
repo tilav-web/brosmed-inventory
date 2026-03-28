@@ -4,7 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Repository, SelectQueryBuilder } from 'typeorm';
 import { UpdateProductBatchDto } from '../dto/update-product-batch.dto';
 import { ProductBatch } from '../entities/product-batch.entity';
 import { ListProductBatchsQueryDto } from '../dto/list-product-batch-query.dto';
@@ -30,6 +30,15 @@ export class ProductBatchService {
 
     const normalizedValue = value.trim();
     return normalizedValue.length > 0 ? normalizedValue : null;
+  }
+
+  private applyActiveBatchFilter(
+    qb: SelectQueryBuilder<ProductBatch>,
+    includeDepleted: boolean,
+  ) {
+    if (!includeDepleted) {
+      qb.andWhere('batch.quantity > 0');
+    }
   }
 
   async findById(id: string) {
@@ -113,7 +122,7 @@ export class ProductBatchService {
   }
 
   async findAll(query: ListProductBatchsQueryDto) {
-    const { page, limit } = query;
+    const { page, limit, include_depleted } = query;
     const skip = (page - 1) * limit;
 
     const qb = this.productBatchRepository.createQueryBuilder('batch');
@@ -126,6 +135,8 @@ export class ProductBatchService {
         productId,
       });
     }
+
+    this.applyActiveBatchFilter(qb, include_depleted);
 
     qb.orderBy('batch.received_at', 'DESC')
       .addOrderBy('batch.id', 'DESC')
@@ -146,7 +157,7 @@ export class ProductBatchService {
   }
 
   async findAlerts(query: ListProductBatchsQueryDto) {
-    const { page, limit } = query;
+    const { page, limit, include_depleted } = query;
     const skip = (page - 1) * limit;
 
     const qb = this.productBatchRepository.createQueryBuilder('batch');
@@ -159,6 +170,8 @@ export class ProductBatchService {
         productId,
       });
     }
+
+    this.applyActiveBatchFilter(qb, include_depleted);
 
     // Sroki yaqinlashgan batchlar: alert_date keldi yoki o`tgan, lekin hali tugamagan
     const today = new Date();
