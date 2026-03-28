@@ -1,9 +1,11 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsInt,
   IsOptional,
   IsString,
   IsUUID,
+  Length,
   MaxLength,
   Min,
   MinLength,
@@ -17,9 +19,17 @@ export class UpdateProductDto {
   @MaxLength(255)
   name?: string;
 
-  @ApiPropertyOptional({ example: 'MXIK code' })
+  @ApiPropertyOptional({
+    example: '12345678901234567',
+    minLength: 17,
+    maxLength: 17,
+  })
+  @Transform(({ value }: { value: unknown }) =>
+    typeof value === 'string' ? value.trim() || undefined : value,
+  )
+  @IsOptional()
   @IsString()
-  @MaxLength(255)
+  @Length(17, 17)
   mxik_code?: string;
 
   @ApiPropertyOptional({ example: 5 })

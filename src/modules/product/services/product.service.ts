@@ -156,6 +156,7 @@ export class ProductService {
       name: dto.name,
       quantity: 0,
       min_limit: dto.min_limit ?? 10,
+      mxik_code: dto.mxik_code ?? null,
       storage_conditions: dto.storage_conditions ?? null,
       unit,
       category,
@@ -201,6 +202,9 @@ export class ProductService {
     }
     if (dto.min_limit !== undefined) {
       product.min_limit = dto.min_limit;
+    }
+    if (dto.mxik_code !== undefined) {
+      product.mxik_code = dto.mxik_code;
     }
     if (dto.storage_conditions !== undefined) {
       product.storage_conditions = dto.storage_conditions;
