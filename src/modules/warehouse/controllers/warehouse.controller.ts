@@ -24,6 +24,7 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
+import { GetWarehouseDashboardQueryDto } from '../dto/get-warehouse-dashboard-query.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
 import { ListCategoryStatsQueryDto } from '../dto/list-category-stats-query.dto';
 import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
@@ -56,6 +57,22 @@ export class WarehouseController {
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.warehouseService.findById(id);
+  }
+
+  @Get(':id/dashboard')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({
+    summary:
+      'Warehouse dashboard: summary kartalar va recent expenses bitta response da',
+  })
+  @ApiOkResponse({ description: 'Warehouse dashboard ma`lumotlari' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  getDashboard(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query() query: GetWarehouseDashboardQueryDto,
+  ) {
+    return this.warehouseService.getDashboard(id, query);
   }
 
   @Get(':id/details')

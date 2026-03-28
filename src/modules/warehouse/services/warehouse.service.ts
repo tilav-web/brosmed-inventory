@@ -8,6 +8,7 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { ILike, Repository } from 'typeorm';
 import Redis from 'ioredis';
+import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { Role } from 'src/modules/user/enums/role.enum';
@@ -15,6 +16,7 @@ import { User } from 'src/modules/user/entities/user.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
+import { GetWarehouseDashboardQueryDto } from '../dto/get-warehouse-dashboard-query.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
 import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
@@ -43,6 +45,8 @@ export class WarehouseService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
+    @InjectRepository(Expense)
+    private readonly expenseRepository: Repository<Expense>,
     @InjectRepository(ExpenseItem)
     private readonly expenseItemRepository: Repository<ExpenseItem>,
     @InjectRepository(Category)
@@ -181,6 +185,130 @@ export class WarehouseService {
     await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 300);
 
     return result;
+  }
+
+  async getDashboard(id: string, query: GetWarehouseDashboardQueryDto) {
+    const warehouse = await this.warehouseRepository.findOne({
+      where: { id },
+      relations: {
+        manager: true,
+      },
+    });
+
+    if (!warehouse) {
+      throw new NotFoundException('Warehouse topilmadi');
+    }
+
+    const recentLimit = Math.min(query.recent_limit ?? 5, 20);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const in30Days = new Date(today);
+    in30Days.setDate(in30Days.getDate() + 30);
+    in30Days.setHours(23, 59, 59, 999);
+
+    const [
+      totalProducts,
+      lowStockCount,
+      expiringSoonCount,
+      pendingIssueRaw,
+      recentExpensesRaw,
+    ] = await Promise.all([
+      this.productRepository.count({
+        where: {
+          warehouse_id: id,
+        },
+      }),
+      this.productRepository
+        .createQueryBuilder('product')
+        .where('product.warehouse_id = :warehouseId', { warehouseId: id })
+        .andWhere('product.quantity > 0')
+        .andWhere('product.quantity <= product.min_limit')
+        .getCount(),
+      this.productBatchRepository
+        .createQueryBuilder('batch')
+        .where('batch.warehouse_id = :warehouseId', { warehouseId: id })
+        .andWhere('batch.quantity > 0')
+        .andWhere('batch.expiration_date IS NOT NULL')
+        .andWhere('batch.expiration_date >= :today', { today })
+        .andWhere('batch.expiration_date <= :in30Days', { in30Days })
+        .getCount(),
+      this.expenseItemRepository
+        .createQueryBuilder('item')
+        .leftJoin('item.expense', 'expense')
+        .select('COUNT(DISTINCT expense.id)', 'count')
+        .where('item.warehouse_id = :warehouseId', { warehouseId: id })
+        .andWhere('expense.status = :status', {
+          status: ExpenseStatus.PENDING_ISSUE,
+        })
+        .getRawOne<{ count: string | null }>(),
+      this.expenseRepository
+        .createQueryBuilder('expense')
+        .innerJoin(
+          'expense.items',
+          'item',
+          'item.warehouse_id = :warehouseId',
+          {
+            warehouseId: id,
+          },
+        )
+        .select('expense.id', 'id')
+        .addSelect('expense.expense_number', 'expense_number')
+        .addSelect('expense.createdAt', 'created_at')
+        .addSelect('expense.staff_name', 'staff_name')
+        .addSelect('expense.purpose', 'purpose')
+        .addSelect('expense.status', 'status')
+        .addSelect('expense.total_price', 'total_price')
+        .groupBy('expense.id')
+        .addGroupBy('expense.expense_number')
+        .addGroupBy('expense.createdAt')
+        .addGroupBy('expense.staff_name')
+        .addGroupBy('expense.purpose')
+        .addGroupBy('expense.status')
+        .addGroupBy('expense.total_price')
+        .orderBy('expense.createdAt', 'DESC')
+        .limit(recentLimit)
+        .getRawMany<{
+          id: string;
+          expense_number: string;
+          created_at: Date;
+          staff_name: string;
+          purpose: string | null;
+          status: ExpenseStatus;
+          total_price: string;
+        }>(),
+    ]);
+
+    return {
+      warehouse: {
+        id: warehouse.id,
+        name: warehouse.name,
+        type: warehouse.type,
+        location: warehouse.location,
+        manager: warehouse.manager
+          ? {
+              id: warehouse.manager.id,
+              first_name: warehouse.manager.first_name,
+              last_name: warehouse.manager.last_name,
+            }
+          : null,
+      },
+      summary: {
+        total_products: totalProducts,
+        pending_issue: Number(pendingIssueRaw?.count ?? 0),
+        low_stock: lowStockCount,
+        expiring_soon: expiringSoonCount,
+      },
+      recent_expenses: recentExpensesRaw.map((expense) => ({
+        id: expense.id,
+        expense_number: expense.expense_number,
+        created_at: expense.created_at,
+        staff_name: expense.staff_name,
+        purpose: expense.purpose,
+        status: expense.status,
+        total_price: Number(Number(expense.total_price ?? 0).toFixed(2)),
+      })),
+    };
   }
 
   async findByIdWithDetails(id: string) {

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { Expense } from '../expense/entities/expense.entity';
 import { Product } from '../product/entities/product.entity';
 import { ProductBatch } from '../product/entities/product-batch.entity';
 import { User } from '../user/entities/user.entity';
@@ -16,6 +17,7 @@ import { WarehouseService } from './services/warehouse.service';
       User,
       Product,
       ProductBatch,
+      Expense,
       ExpenseItem,
       Category,
     ]),
