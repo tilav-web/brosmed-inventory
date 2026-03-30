@@ -414,8 +414,12 @@ export class ExpenseService {
     }));
   }
 
-  async findById(id: string, user?: AuthUser) {
-    const expense = await this.expenseRepository.findOne({
+  async findById(id: string, user?: AuthUser, manager?: EntityManager) {
+    const repo = manager
+      ? manager.getRepository(Expense)
+      : this.expenseRepository;
+
+    const expense = await repo.findOne({
       where: { id },
       relations: {
         manager: true,
@@ -436,6 +440,22 @@ export class ExpenseService {
     }
 
     return expense;
+  }
+
+  private async lockExpenseForUpdate(
+    manager: EntityManager,
+    expenseId: string,
+  ): Promise<void> {
+    const expense = await manager
+      .getRepository(Expense)
+      .createQueryBuilder('expense')
+      .setLock('pessimistic_write')
+      .where('expense.id = :expenseId', { expenseId })
+      .getOne();
+
+    if (!expense) {
+      throw new NotFoundException('Expense topilmadi');
+    }
   }
 
   private async generateExpenseNumber(manager: EntityManager): Promise<string> {
@@ -723,21 +743,8 @@ export class ExpenseService {
       const expenseRepo = manager.getRepository(Expense);
       const productBatchRepo = manager.getRepository(ProductBatch);
 
-      const expense = await expenseRepo
-        .createQueryBuilder('expense')
-        .setLock('pessimistic_write')
-        .leftJoinAndSelect('expense.items', 'item')
-        .leftJoinAndSelect('item.product', 'product')
-        .leftJoinAndSelect('item.warehouse', 'warehouse')
-        .leftJoinAndSelect('item.product_batch', 'product_batch')
-        .where('expense.id = :id', { id })
-        .getOne();
-
-      if (!expense) {
-        throw new NotFoundException('Expense topilmadi');
-      }
-
-      await this.ensureExpenseAccess(expense, actor);
+      await this.lockExpenseForUpdate(manager, id);
+      const expense = await this.findById(id, actor, manager);
 
       if (expense.status !== ExpenseStatus.PENDING_ISSUE) {
         throw new BadRequestException(

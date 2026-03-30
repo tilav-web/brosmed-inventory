@@ -209,6 +209,22 @@ export class PurchaseOrderService {
     return order;
   }
 
+  private async lockOrderForUpdate(
+    manager: EntityManager,
+    orderId: string,
+  ): Promise<void> {
+    const order = await manager
+      .getRepository(PurchaseOrder)
+      .createQueryBuilder('order')
+      .setLock('pessimistic_write')
+      .where('order.id = :orderId', { orderId })
+      .getOne();
+
+    if (!order) {
+      throw new NotFoundException('Purchase order topilmadi');
+    }
+  }
+
   async getStatistics(user: AuthUser): Promise<Record<string, number>> {
     const cacheKey =
       user.role === Role.ADMIN
@@ -670,21 +686,8 @@ export class PurchaseOrderService {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const productBatchRepo = manager.getRepository(ProductBatch);
 
-      const order = await orderRepo
-        .createQueryBuilder('order')
-        .setLock('pessimistic_write')
-        .leftJoinAndSelect('order.items', 'item')
-        .leftJoinAndSelect('item.product', 'product')
-        .leftJoinAndSelect('order.supplier', 'supplier')
-        .leftJoinAndSelect('order.warehouse', 'warehouse')
-        .where('order.id = :id', { id })
-        .getOne();
-
-      if (!order) {
-        throw new NotFoundException('Purchase order topilmadi');
-      }
-
-      this.ensureAccountantOwnsOrder(order, actor.id);
+      await this.lockOrderForUpdate(manager, id);
+      const order = await this.findById(id, actor, manager);
 
       if (order.status !== OrderStatus.DELIVERED) {
         throw new BadRequestException(
