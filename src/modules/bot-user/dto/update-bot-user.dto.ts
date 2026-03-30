@@ -25,7 +25,12 @@ export class UpdateBotUserDto {
   })
   is_approved?: boolean;
 
-  @ApiPropertyOptional({ enum: Role, example: Role.WAREHOUSE })
+  @ApiPropertyOptional({
+    enum: Role,
+    example: Role.WAREHOUSE,
+    description:
+      "Ixtiyoriy. linked_user_id yuborilsa role tizim useridan avtomatik olinadi. linked_user_id yo'q bo'lsa vaqtinchalik role sifatida ishlatiladi.",
+  })
   @IsOptional()
   @IsEnum(Role)
   role?: Role;

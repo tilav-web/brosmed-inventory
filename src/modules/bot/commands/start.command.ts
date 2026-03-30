@@ -27,8 +27,8 @@ export class StartCommand {
         if (!user.role) {
           await ctx.reply(
             `Salom, <b>${name}</b>! 👋\n\n` +
-              `Akkauntingiz tasdiqlangan, lekin bot roli hali biriktirilmagan.\n` +
-              `Admin profilingizga <b>admin</b> yoki <b>warehouse</b> role biriktirishi kerak.`,
+              `Akkauntingiz tasdiqlangan, lekin bot hali tizimdagi foydalanuvchiga bog'lanmagan.\n` +
+              `Admin sizni kerakli userga biriktirgach, rolingiz avtomatik aniqlanadi.`,
             {
               parse_mode: 'HTML',
               reply_markup: { remove_keyboard: true },
@@ -43,8 +43,8 @@ export class StartCommand {
         ) {
           await ctx.reply(
             `Salom, <b>${name}</b>! 👋\n\n` +
-              `Sizga ${user.role} roli tanlangan, lekin tizimdagi user hali bog'lanmagan.\n` +
-              `Admin <b>linked_user_id</b> biriktirgach, profilingiz to'liq faollashadi.`,
+              `Siz uchun <b>${user.role}</b> user tanlangan, lekin bog'lash hali yakunlanmagan.\n` +
+              `Admin tizimdagi userni biriktirgach, profilingiz to'liq faollashadi.`,
             {
               parse_mode: 'HTML',
               reply_markup: { remove_keyboard: true },

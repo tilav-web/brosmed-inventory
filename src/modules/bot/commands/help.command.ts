@@ -58,7 +58,7 @@ export class HelpCommand {
         `📖 <b>Yordam</b>\n\n` +
         `/start - Holatni tekshirish\n` +
         `/help - Yordam\n\n` +
-        `Admin sizga bot role biriktirishi kerak.`
+        `Admin sizni tizimdagi userga biriktirishi kerak. Role avtomatik aniqlanadi.`
       );
     }
 
