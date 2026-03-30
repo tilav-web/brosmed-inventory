@@ -1,8 +1,16 @@
-import { Injectable, Logger, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  Inject,
+  Injectable,
+  Logger,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
+import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { hash } from 'bcrypt';
-import { In, Repository } from 'typeorm';
+import Redis from 'ioredis';
+import { DataSource, Repository } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
@@ -21,12 +29,58 @@ import { Role } from 'src/modules/user/enums/role.enum';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { WarehouseType } from 'src/modules/warehouse/enums/warehouse-type.enum';
 
+type SeedUsers = {
+  admin: User;
+  warehouse: User;
+  accountant: User;
+};
+
+type SeedReferences = {
+  units: {
+    box: Unit;
+    piece: Unit;
+    pack: Unit;
+  };
+  categories: {
+    antibiotics: Category;
+    vitamins: Category;
+    supplies: Category;
+    solutions: Category;
+  };
+  suppliers: {
+    primary: Supplier;
+    reserve: Supplier;
+  };
+};
+
+type SeedProducts = {
+  products: {
+    amoxicillin: Product;
+    paracetamol: Product;
+    syringe: Product;
+    bandage: Product;
+    vitaminC: Product;
+    saline: Product;
+  };
+  batches: {
+    amoxicillin: ProductBatch;
+    paracetamol: ProductBatch;
+    syringe: ProductBatch;
+    bandage: ProductBatch;
+    vitaminC: ProductBatch;
+    saline: ProductBatch;
+  };
+};
+
 @Injectable()
 export class SeedService implements OnApplicationBootstrap {
   private readonly logger = new Logger(SeedService.name);
 
   constructor(
     private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
+    @Inject('REDIS_CLIENT')
+    private readonly redis: Redis,
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
     @InjectRepository(Warehouse)
@@ -53,667 +107,760 @@ export class SeedService implements OnApplicationBootstrap {
 
   async onApplicationBootstrap(): Promise<void> {
     const nodeEnv = this.configService.get<string>('NODE_ENV');
-    if (nodeEnv !== 'development') {
+    const shouldSeed =
+      this.configService.get<string>('DEV_SEED_ON_BOOTSTRAP', 'true') ===
+      'true';
+
+    if (nodeEnv !== 'development' || !shouldSeed) {
       return;
     }
 
-    this.logger.log('Seeding development data...');
-    await this.seedAll();
-    this.logger.log('Seed completed.');
-  }
+    this.logger.log(
+      "Development seed ishga tushdi: eski data tozalanib demo ma'lumotlar yaratiladi",
+    );
 
-  private async seedAll(): Promise<void> {
-    const runId = this.buildRunId();
-    await this.seedAdmin(); // Yangi: Admin yaratish
-    const warehouseManagers = await this.seedUsers();
-    const warehouses = await this.seedWarehouses(warehouseManagers);
-    const units = await this.seedUnits();
-    const categories = await this.seedCategories();
-    const suppliers = await this.seedSuppliers();
-    const products = await this.seedProducts({
-      warehouses,
-      units,
-      categories,
-      suppliers,
-      runId,
+    const checkImageUrls = this.resetUploadsAndCreateCheckImages();
+    await this.flushRedis();
+    await this.resetDatabase();
+
+    const users = await this.seedUsers();
+    const warehouse = await this.seedWarehouse(users.warehouse);
+    const references = await this.seedReferences();
+    const inventory = await this.seedProductsAndBatches({
+      warehouse,
+      references,
     });
 
-    // Muhim: Batchlar yaratilgandan keyin ularni olishimiz kerak
-    const batches = await this.productBatchRepository.find({
-      relations: { product: true, warehouse: true },
+    await this.seedPurchaseOrders({
+      users,
+      warehouse,
+      references,
+      products: inventory.products,
     });
 
-    await this.seedPurchaseOrders({ suppliers, warehouses, products, runId });
     await this.seedExpenses({
-      warehouses,
-      products,
-      batches,
-      warehouseManagers,
-      runId,
+      users,
+      warehouse,
+      batches: inventory.batches,
+      checkImageUrls,
     });
+
+    await this.flushRedis();
+    this.logSeedSummary(users, warehouse);
   }
 
-  private async seedAdmin(): Promise<void> {
-    const existing = await this.userRepository.findOne({
-      where: { username: 'admin' },
-    });
-    if (!existing) {
-      const hashedPassword = await hash('admin123', 10);
-      await this.userRepository.save(
-        this.userRepository.create({
-          username: 'admin',
-          password: hashedPassword,
-          first_name: 'Super',
-          last_name: 'Admin',
-          role: Role.ADMIN,
-        }),
-      );
-      this.logger.log('Default admin created: admin / admin123');
+  private async flushRedis(): Promise<void> {
+    try {
+      await this.redis.flushdb();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Redis cache tozalanmadi: ${message}`);
     }
   }
 
-  private async seedUsers(): Promise<User[]> {
-    const usernames = [
-      'warehouse01',
-      'warehouse02',
-      'warehouse03',
-      'warehouse04',
-    ];
+  private resetUploadsAndCreateCheckImages(): [string, string] {
+    const checksDir = join(process.cwd(), 'uploads', 'checks');
+    rmSync(checksDir, { recursive: true, force: true });
+    mkdirSync(checksDir, { recursive: true });
 
-    const existingUsers = await this.userRepository.find({
-      where: { username: In(usernames) },
-    });
-    const existingUsernames = new Set(existingUsers.map((u) => u.username));
-
-    const toCreate = usernames
-      .filter((username) => !existingUsernames.has(username))
-      .map((username, index) =>
-        this.userRepository.create({
-          username,
-          password: 'temp',
-          first_name: `Warehouse${index + 1}`,
-          last_name: 'Manager',
-          role: Role.WAREHOUSE,
-        }),
-      );
-
-    if (toCreate.length > 0) {
-      const hashedPassword = await hash('warehouse123', 10);
-      for (const user of toCreate) {
-        user.password = hashedPassword;
-      }
-      await this.userRepository.save(toCreate);
-    }
-
-    return this.userRepository.find({
-      where: { username: In(usernames) },
-      order: { username: 'ASC' },
-    });
-  }
-
-  private async seedWarehouses(managers: User[]): Promise<Warehouse[]> {
-    const definitions = [
+    const files = [
       {
-        name: 'Toshkent Markaziy Ombor',
+        name: 'seed-check-1.svg',
+        label: 'Seed Check 1',
+        accent: '#2563eb',
+      },
+      {
+        name: 'seed-check-2.svg',
+        label: 'Seed Check 2',
+        accent: '#ea580c',
+      },
+    ] as const;
+
+    for (const file of files) {
+      writeFileSync(
+        join(checksDir, file.name),
+        this.buildSvgPlaceholder(file.label, file.accent),
+        'utf8',
+      );
+    }
+
+    return files.map((file) => `/uploads/checks/${file.name}`) as [
+      string,
+      string,
+    ];
+  }
+
+  private buildSvgPlaceholder(label: string, accent: string): string {
+    return `
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="800" viewBox="0 0 1200 800">
+  <rect width="1200" height="800" fill="#f8fafc"/>
+  <rect x="60" y="60" width="1080" height="680" rx="32" fill="#ffffff" stroke="#e2e8f0" stroke-width="6"/>
+  <rect x="120" y="120" width="180" height="56" rx="16" fill="${accent}" opacity="0.12"/>
+  <text x="140" y="156" font-family="Arial, sans-serif" font-size="28" fill="${accent}">${label}</text>
+  <text x="120" y="260" font-family="Arial, sans-serif" font-size="46" fill="#0f172a">Brosmed Demo Receipt</text>
+  <text x="120" y="330" font-family="Arial, sans-serif" font-size="30" fill="#475569">Development seed uchun namunaviy chek rasmi</text>
+  <line x1="120" y1="390" x2="1080" y2="390" stroke="#cbd5e1" stroke-width="4"/>
+  <text x="120" y="470" font-family="Arial, sans-serif" font-size="30" fill="#0f172a">Warehouse issue tasdiq fayli</text>
+  <text x="120" y="540" font-family="Arial, sans-serif" font-size="28" fill="#64748b">Bu fayl UI gallery va previewlarni test qilish uchun yaratilgan.</text>
+</svg>`.trim();
+  }
+
+  private async resetDatabase(): Promise<void> {
+    await this.dataSource.query(`
+      TRUNCATE TABLE
+        "bot_users",
+        "expense_items",
+        "expenses",
+        "order_items",
+        "purchase_orders",
+        "product_batches",
+        "products",
+        "suppliers",
+        "categories",
+        "units",
+        "warehouses",
+        "users"
+      RESTART IDENTITY CASCADE
+    `);
+  }
+
+  private async seedUsers(): Promise<SeedUsers> {
+    const credentials = [
+      {
+        role: Role.ADMIN,
+        username: this.configService.get<string>('ADMIN_USERNAME', 'admin'),
+        password: this.configService.get<string>('ADMIN_PASSWORD', 'admin12345'),
+        first_name: 'System',
+        last_name: 'Admin',
+      },
+      {
+        role: Role.WAREHOUSE,
+        username: this.configService.get<string>(
+          'WAREHOUSE_USERNAME',
+          'warehouse',
+        ),
+        password: this.configService.get<string>(
+          'WAREHOUSE_PASSWORD',
+          'warehouse12345',
+        ),
+        first_name: 'Warehouse',
+        last_name: 'Manager',
+      },
+      {
+        role: Role.ACCOUNTANT,
+        username: this.configService.get<string>(
+          'ACCOUNTANT_USERNAME',
+          'accountant',
+        ),
+        password: this.configService.get<string>(
+          'ACCOUNTANT_PASSWORD',
+          'accountant12345',
+        ),
+        first_name: 'Accountant',
+        last_name: 'Operator',
+      },
+    ] as const;
+
+    const users = await Promise.all(
+      credentials.map(async (entry) =>
+        this.userRepository.save(
+          this.userRepository.create({
+            username: entry.username,
+            password: await hash(entry.password, 10),
+            first_name: entry.first_name,
+            last_name: entry.last_name,
+            role: entry.role,
+          }),
+        ),
+      ),
+    );
+
+    return {
+      admin: users[0],
+      warehouse: users[1],
+      accountant: users[2],
+    };
+  }
+
+  private async seedWarehouse(manager: User): Promise<Warehouse> {
+    return this.warehouseRepository.save(
+      this.warehouseRepository.create({
+        name: 'Demo Medical Warehouse',
         type: WarehouseType.MEDICAL,
-        location: 'Toshkent sh., Yakkasaroy tumani',
-      },
-      {
-        name: 'Samarqand Filial Ombor',
-        type: WarehouseType.HOUSEHOLD,
-        location: 'Samarqand sh., Registon ko`chasi',
-      },
-      {
-        name: 'Farg`ona Zaxira Ombor',
-        type: WarehouseType.SPARE_PARTS,
-        location: 'Farg`ona sh., Mustaqillik ko`chasi',
-      },
-    ];
-
-    const existing = await this.warehouseRepository.find({
-      where: { name: In(definitions.map((d) => d.name)) },
-    });
-    const existingNames = new Set(existing.map((w) => w.name));
-
-    const toCreate = definitions
-      .filter((d) => !existingNames.has(d.name))
-      .map((d, index) =>
-        this.warehouseRepository.create({
-          name: d.name,
-          type: d.type,
-          location: d.location,
-          manager: managers[index % managers.length],
-          manager_id: managers[index % managers.length].id,
-        }),
-      );
-
-    if (toCreate.length > 0) {
-      await this.warehouseRepository.save(toCreate);
-    }
-
-    return this.warehouseRepository.find({
-      where: { name: In(definitions.map((d) => d.name)) },
-      order: { name: 'ASC' },
-    });
+        location: 'Toshkent sh., Chilonzor tumani',
+        manager,
+        manager_id: manager.id,
+      }),
+    );
   }
 
-  private async seedUnits(): Promise<Unit[]> {
-    const names = [
-      'dona',
-      'quti',
-      'paket',
-      'litr',
-      'ml',
-      'mg',
-      'g',
-      'kg',
-      'metr',
-    ];
+  private async seedReferences(): Promise<SeedReferences> {
+    const units = await this.unitRepository.save([
+      this.unitRepository.create({ name: 'quti' }),
+      this.unitRepository.create({ name: 'dona' }),
+      this.unitRepository.create({ name: 'paket' }),
+    ]);
 
-    const existing = await this.unitRepository.find({
-      where: { name: In(names) },
-    });
-    const existingNames = new Set(existing.map((u) => u.name));
-
-    const toCreate = names
-      .filter((name) => !existingNames.has(name))
-      .map((name) => this.unitRepository.create({ name }));
-
-    if (toCreate.length > 0) {
-      await this.unitRepository.save(toCreate);
-    }
-
-    return this.unitRepository.find({
-      where: { name: In(names) },
-      order: { name: 'ASC' },
-    });
-  }
-
-  private async seedCategories(): Promise<Category[]> {
-    const definitions = [
-      { name: 'Antibiotiklar', description: 'Bakterial infeksiyalar uchun' },
-      { name: 'Vitaminlar', description: 'Vitamin va mikroelementlar' },
-      { name: 'Og`riq qoldiruvchi', description: 'Analgetik vositalar' },
-      {
+    const categories = await this.categoryRepository.save([
+      this.categoryRepository.create({
+        name: 'Antibiotiklar',
+        description: 'Antibakterial preparatlar',
+      }),
+      this.categoryRepository.create({
+        name: 'Vitaminlar',
+        description: 'Vitamin va mikroelementlar',
+      }),
+      this.categoryRepository.create({
         name: 'Tibbiy sarf materiallari',
-        description: 'Bint, shprits va h.k.',
+        description: 'Shprits, bint va boshqa sarf materiallari',
+      }),
+      this.categoryRepository.create({
+        name: 'Infuzion eritmalar',
+        description: 'Tomchilatuvchi va eritma mahsulotlari',
+      }),
+    ]);
+
+    const suppliers = await this.supplierRepository.save([
+      this.supplierRepository.create({
+        company_name: 'Medline Demo Supply',
+        contact_person: 'Aziz Karimov',
+        email: 'demo-supply@brosmed.local',
+        phone: '+998901112233',
+      }),
+      this.supplierRepository.create({
+        company_name: 'Healthy Reserve Trade',
+        contact_person: 'Zarina Ismoilova',
+        email: 'reserve-supply@brosmed.local',
+        phone: '+998907778899',
+      }),
+    ]);
+
+    return {
+      units: {
+        box: units[0],
+        piece: units[1],
+        pack: units[2],
       },
-    ];
-
-    const existing = await this.categoryRepository.find({
-      where: { name: In(definitions.map((d) => d.name)) },
-    });
-    const existingNames = new Set(existing.map((c) => c.name));
-
-    const toCreate = definitions
-      .filter((d) => !existingNames.has(d.name))
-      .map((d) => this.categoryRepository.create(d));
-
-    if (toCreate.length > 0) {
-      await this.categoryRepository.save(toCreate);
-    }
-
-    return this.categoryRepository.find({ order: { name: 'ASC' } });
+      categories: {
+        antibiotics: categories[0],
+        vitamins: categories[1],
+        supplies: categories[2],
+        solutions: categories[3],
+      },
+      suppliers: {
+        primary: suppliers[0],
+        reserve: suppliers[1],
+      },
+    };
   }
 
-  private async seedSuppliers(): Promise<Supplier[]> {
+  private async seedProductsAndBatches(input: {
+    warehouse: Warehouse;
+    references: SeedReferences;
+  }): Promise<SeedProducts> {
+    const today = new Date();
     const definitions = [
       {
-        company_name: 'MedLine Pharma',
-        contact_person: 'Aziz Karimov',
-        email: 'sales@medline.uz',
-        phone: '+998901112233',
-      },
-      {
-        company_name: 'HealthPro Supply',
-        contact_person: 'Umar S.',
-        email: 'contact@healthpro.uz',
-        phone: '+998997778899',
-      },
-    ];
-
-    const existing = await this.supplierRepository.find({
-      where: { email: In(definitions.map((d) => d.email)) },
-    });
-    const existingEmails = new Set(existing.map((s) => s.email));
-
-    const toCreate = definitions
-      .filter((d) => !existingEmails.has(d.email))
-      .map((d) => this.supplierRepository.create(d));
-
-    if (toCreate.length > 0) {
-      await this.supplierRepository.save(toCreate);
-    }
-
-    return this.supplierRepository.find({ order: { company_name: 'ASC' } });
-  }
-
-  private async seedProducts(input: {
-    warehouses: Warehouse[];
-    units: Unit[];
-    categories: Category[];
-    suppliers: Supplier[];
-    runId: string;
-  }): Promise<Product[]> {
-    const [antibiotics, vitamins, painkillers, medicalSupplies] =
-      input.categories;
-    const [dona, quti, paket] = input.units;
-    const [supplier1, supplier2] = input.suppliers;
-    const [warehouse1, warehouse2, warehouse3] = input.warehouses;
-
-    const definitions: {
-      name: string;
-      unit: Unit;
-      category: Category;
-      supplier: Supplier;
-      warehouse: Warehouse;
-      min_limit: number;
-      quantity: number;
-      batchExpiryDays: number;
-    }[] = [
-      // Toshkent Markaziy Ombor (Medical)
-      {
+        key: 'amoxicillin',
         name: 'Amoksitsillin 500mg',
-        unit: quti,
-        category: antibiotics,
-        supplier: supplier1,
-        warehouse: warehouse1,
+        quantity: 140,
         min_limit: 20,
-        quantity: 150,
-        batchExpiryDays: 300,
+        price: 24000,
+        expiryDays: 240,
+        unit: input.references.units.box,
+        category: input.references.categories.antibiotics,
+        supplier: input.references.suppliers.primary,
       },
       {
+        key: 'paracetamol',
         name: 'Paratsetamol 500mg',
-        unit: quti,
-        category: painkillers,
-        supplier: supplier1,
-        warehouse: warehouse1,
-        min_limit: 30,
-        quantity: 8,
-        batchExpiryDays: 15,
-      },
-      {
-        name: 'Ibuprofen 200mg',
-        unit: quti,
-        category: painkillers,
-        supplier: supplier2,
-        warehouse: warehouse1,
-        min_limit: 15,
-        quantity: 200,
-        batchExpiryDays: 400,
-      },
-      {
-        name: 'C Vitamin 1000mg',
-        unit: quti,
-        category: vitamins,
-        supplier: supplier2,
-        warehouse: warehouse1,
-        min_limit: 10,
-        quantity: 5,
-        batchExpiryDays: 7,
-      },
-      {
-        name: 'Shprits 5ml',
-        unit: dona,
-        category: medicalSupplies,
-        supplier: supplier1,
-        warehouse: warehouse1,
-        min_limit: 50,
-        quantity: 300,
-        batchExpiryDays: 600,
-      },
-      {
-        name: 'Bint steril 10m',
-        unit: dona,
-        category: medicalSupplies,
-        supplier: supplier1,
-        warehouse: warehouse1,
-        min_limit: 25,
         quantity: 12,
-        batchExpiryDays: 20,
-      },
-      {
-        name: 'Deksametazon 4mg/ml',
-        unit: quti,
-        category: antibiotics,
-        supplier: supplier1,
-        warehouse: warehouse1,
-        min_limit: 10,
-        quantity: 45,
-        batchExpiryDays: 250,
-      },
-
-      // Samarqand Filial Ombor
-      {
-        name: 'Metformin 500mg',
-        unit: quti,
-        category: antibiotics,
-        supplier: supplier1,
-        warehouse: warehouse2,
         min_limit: 20,
-        quantity: 180,
-        batchExpiryDays: 350,
+        price: 12000,
+        expiryDays: 18,
+        unit: input.references.units.box,
+        category: input.references.categories.vitamins,
+        supplier: input.references.suppliers.primary,
       },
       {
-        name: 'Aspirin 100mg',
-        unit: quti,
-        category: painkillers,
-        supplier: supplier2,
-        warehouse: warehouse2,
-        min_limit: 25,
-        quantity: 3,
-        batchExpiryDays: 10,
+        key: 'syringe',
+        name: 'Shprits 5ml',
+        quantity: 280,
+        min_limit: 60,
+        price: 1500,
+        expiryDays: 480,
+        unit: input.references.units.piece,
+        category: input.references.categories.supplies,
+        supplier: input.references.suppliers.primary,
       },
       {
-        name: "Tibbiy qo'lqoplar",
-        unit: quti,
-        category: medicalSupplies,
-        supplier: supplier2,
-        warehouse: warehouse2,
-        min_limit: 40,
-        quantity: 250,
-        batchExpiryDays: 500,
-      },
-      {
-        name: 'D3 Vitamini 2000ME',
-        unit: quti,
-        category: vitamins,
-        supplier: supplier1,
-        warehouse: warehouse2,
-        min_limit: 15,
-        quantity: 60,
-        batchExpiryDays: 280,
-      },
-      {
-        name: 'Tibbiy niqob 50 dona',
-        unit: paket,
-        category: medicalSupplies,
-        supplier: supplier1,
-        warehouse: warehouse2,
+        key: 'bandage',
+        name: 'Bint steril 10m',
+        quantity: 35,
         min_limit: 30,
+        price: 3200,
+        expiryDays: 75,
+        unit: input.references.units.piece,
+        category: input.references.categories.supplies,
+        supplier: input.references.suppliers.reserve,
+      },
+      {
+        key: 'vitaminC',
+        name: 'C Vitamin 1000mg',
         quantity: 18,
-        batchExpiryDays: 25,
-      },
-
-      // Farg'ona Zaxira Ombor
-      {
-        name: 'Tramadol 50mg',
-        unit: quti,
-        category: painkillers,
-        supplier: supplier2,
-        warehouse: warehouse3,
-        min_limit: 10,
-        quantity: 70,
-        batchExpiryDays: 320,
-      },
-      {
-        name: 'B Kompleks Vitamini',
-        unit: quti,
-        category: vitamins,
-        supplier: supplier1,
-        warehouse: warehouse3,
-        min_limit: 20,
-        quantity: 6,
-        batchExpiryDays: 5,
-      },
-      {
-        name: 'Fiziologik eritma 500ml',
-        unit: quti,
-        category: medicalSupplies,
-        supplier: supplier1,
-        warehouse: warehouse3,
-        min_limit: 50,
-        quantity: 400,
-        batchExpiryDays: 450,
-      },
-      {
-        name: 'Ketoprofen 100mg',
-        unit: quti,
-        category: painkillers,
-        supplier: supplier2,
-        warehouse: warehouse3,
-        min_limit: 12,
-        quantity: 40,
-        batchExpiryDays: 200,
-      },
-      {
-        name: 'Penitsillin 1mln',
-        unit: quti,
-        category: antibiotics,
-        supplier: supplier1,
-        warehouse: warehouse3,
         min_limit: 15,
-        quantity: 9,
-        batchExpiryDays: 30,
+        price: 18000,
+        expiryDays: 25,
+        unit: input.references.units.box,
+        category: input.references.categories.vitamins,
+        supplier: input.references.suppliers.reserve,
       },
-    ];
+      {
+        key: 'saline',
+        name: 'Natriy xlorid 0.9% 500ml',
+        quantity: 9,
+        min_limit: 15,
+        price: 9000,
+        expiryDays: -5,
+        unit: input.references.units.box,
+        category: input.references.categories.solutions,
+        supplier: input.references.suppliers.primary,
+      },
+    ] as const;
 
-    const existingNames = definitions.map((d) => d.name);
-    const existing = await this.productRepository.find({
-      where: { name: In(existingNames) },
-    });
-    if (existing.length > 0) {
-      return this.productRepository.find({
-        relations: { warehouse: true, supplier: true, category: true },
-      });
-    }
+    const products = {} as SeedProducts['products'];
+    const batches = {} as SeedProducts['batches'];
+    let batchIndex = 1;
 
-    const today = new Date();
-    const createdProducts: Product[] = [];
-    let batchIndex = 0;
+    for (const definition of definitions) {
+      const expirationDate = this.addDays(today, definition.expiryDays);
+      const expirationAlertDate = this.buildExpirationAlertDate(
+        today,
+        definition.expiryDays,
+      );
 
-    for (const def of definitions) {
-      const statuses: ProductStatus[] = [];
-
-      if (def.quantity > 0) statuses.push(ProductStatus.IN_STOCK);
-      if (def.quantity <= def.min_limit && def.quantity > 0)
-        statuses.push(ProductStatus.LOW_STOCK);
-      if (def.batchExpiryDays <= 30) statuses.push(ProductStatus.EXPIRING_SOON);
-      if (def.batchExpiryDays <= 0) statuses.push(ProductStatus.EXPIRED);
-
-      const product = this.productRepository.create({
-        name: def.name,
-        quantity: def.quantity,
-        min_limit: def.min_limit,
-        unit: def.unit.name,
-        category: def.category,
-        supplier: def.supplier,
-        warehouse: def.warehouse,
-        statuses,
-        expiration_date: this.addDays(today, def.batchExpiryDays),
-        expiration_alert_date: this.addDays(today, def.batchExpiryDays - 30),
-      });
-
-      const saved = await this.productRepository.save(product);
-
-      batchIndex += 1;
-      await this.productBatchRepository.save(
-        this.productBatchRepository.create({
-          product: saved,
-          product_id: saved.id,
-          warehouse: def.warehouse,
-          warehouse_id: def.warehouse.id,
-          supplier: def.supplier,
-          supplier_id: def.supplier.id,
-          quantity: def.quantity,
-          price_at_purchase: this.randomNumber(5000, 80000, 2),
-          expiration_date: this.addDays(today, def.batchExpiryDays),
-          expiration_alert_date: this.addDays(today, def.batchExpiryDays - 30),
-          batch_number: `BATCH-${input.runId}-${String(batchIndex).padStart(3, '0')}`,
+      const product = await this.productRepository.save(
+        this.productRepository.create({
+          name: definition.name,
+          quantity: definition.quantity,
+          unit: definition.unit.name,
+          unit_reference: definition.unit,
+          unit_id: definition.unit.id,
+          min_limit: definition.min_limit,
+          supplier: definition.supplier,
+          supplier_id: definition.supplier.id,
+          category: definition.category,
+          category_id: definition.category.id,
+          warehouse: input.warehouse,
+          warehouse_id: input.warehouse.id,
+          statuses: this.buildProductStatuses(
+            definition.quantity,
+            definition.min_limit,
+            expirationDate,
+          ),
+          expiration_date: expirationDate,
+          expiration_alert_date: expirationAlertDate,
         }),
       );
 
-      createdProducts.push(saved);
+      const batch = await this.productBatchRepository.save(
+        this.productBatchRepository.create({
+          product,
+          product_id: product.id,
+          warehouse: input.warehouse,
+          warehouse_id: input.warehouse.id,
+          supplier: definition.supplier,
+          supplier_id: definition.supplier.id,
+          quantity: definition.quantity,
+          price_at_purchase: definition.price,
+          expiration_date: expirationDate,
+          expiration_alert_date: expirationAlertDate,
+          batch_number: `BATCH-DEMO-${String(batchIndex).padStart(3, '0')}`,
+          serial_number: `SERIAL-DEMO-${String(batchIndex).padStart(3, '0')}`,
+          depleted_at: null,
+        }),
+      );
+
+      products[definition.key] = product;
+      batches[definition.key] = batch;
+      batchIndex += 1;
     }
 
-    return createdProducts;
+    return { products, batches };
   }
 
   private async seedPurchaseOrders(input: {
-    suppliers: Supplier[];
-    warehouses: Warehouse[];
-    products: Product[];
-    runId: string;
+    users: SeedUsers;
+    warehouse: Warehouse;
+    references: SeedReferences;
+    products: SeedProducts['products'];
   }): Promise<void> {
-    const existingCount = await this.purchaseOrderRepository.count();
-    if (existingCount > 0) return;
+    const year = new Date().getFullYear();
 
-    const today = new Date();
-    let orderIndex = 0;
+    await this.createPurchaseOrder({
+      orderNumber: `PO-${year}-001`,
+      status: OrderStatus.PENDING,
+      users: input.users,
+      supplier: input.references.suppliers.primary,
+      warehouse: input.warehouse,
+      orderDate: this.addDays(new Date(), -2),
+      deliveryDate: this.addDays(new Date(), 2),
+      items: [
+        {
+          product: input.products.amoxicillin,
+          quantity: 30,
+          price_at_purchase: 22000,
+        },
+        {
+          product: input.products.syringe,
+          quantity: 100,
+          price_at_purchase: 1400,
+        },
+      ],
+    });
 
-    for (const warehouse of input.warehouses) {
-      const warehouseProducts = input.products.filter(
-        (p) => p.warehouse_id === warehouse.id,
-      );
-      if (warehouseProducts.length === 0) continue;
+    await this.createPurchaseOrder({
+      orderNumber: `PO-${year}-002`,
+      status: OrderStatus.CONFIRMED,
+      users: input.users,
+      supplier: input.references.suppliers.reserve,
+      warehouse: input.warehouse,
+      orderDate: this.addDays(new Date(), -5),
+      deliveryDate: this.addDays(new Date(), 1),
+      decidedAt: this.addDays(new Date(), -4),
+      items: [
+        {
+          product: input.products.vitaminC,
+          quantity: 20,
+          price_at_purchase: 16500,
+        },
+      ],
+    });
 
-      const orderCount = this.randomInt(2, 3);
+    await this.createPurchaseOrder({
+      orderNumber: `PO-${year}-003`,
+      status: OrderStatus.DELIVERED,
+      users: input.users,
+      supplier: input.references.suppliers.primary,
+      warehouse: input.warehouse,
+      orderDate: this.addDays(new Date(), -8),
+      deliveryDate: this.addDays(new Date(), -1),
+      decidedAt: this.addDays(new Date(), -7),
+      items: [
+        {
+          product: input.products.paracetamol,
+          quantity: 40,
+          price_at_purchase: 10800,
+        },
+        {
+          product: input.products.bandage,
+          quantity: 25,
+          price_at_purchase: 3000,
+        },
+      ],
+    });
 
-      for (let i = 0; i < orderCount; i += 1) {
-        orderIndex += 1;
-        const itemsCount = this.randomInt(1, 3);
-        const items: OrderItem[] = [];
-        let total = 0;
+    await this.createPurchaseOrder({
+      orderNumber: `PO-${year}-004`,
+      status: OrderStatus.CANCELLED,
+      users: input.users,
+      supplier: input.references.suppliers.reserve,
+      warehouse: input.warehouse,
+      orderDate: this.addDays(new Date(), -4),
+      deliveryDate: this.addDays(new Date(), 3),
+      decidedAt: this.addDays(new Date(), -3),
+      items: [
+        {
+          product: input.products.saline,
+          quantity: 15,
+          price_at_purchase: 8700,
+        },
+      ],
+    });
+  }
 
-        for (let j = 0; j < itemsCount; j += 1) {
-          const product = this.pick(warehouseProducts);
-          const quantity = this.randomInt(10, 50);
-          const price = this.randomNumber(4000, 40000, 2);
-          total += quantity * price;
+  private async createPurchaseOrder(input: {
+    orderNumber: string;
+    status: OrderStatus;
+    users: SeedUsers;
+    supplier: Supplier;
+    warehouse: Warehouse;
+    orderDate: Date;
+    deliveryDate: Date | null;
+    decidedAt?: Date;
+    items: Array<{
+      product: Product;
+      quantity: number;
+      price_at_purchase: number;
+    }>;
+  }): Promise<void> {
+    const total = input.items.reduce(
+      (sum, item) => sum + item.quantity * item.price_at_purchase,
+      0,
+    );
 
-          items.push(
-            this.orderItemRepository.create({
-              product,
-              quantity,
-              price_at_purchase: price,
-            }),
-          );
-        }
+    const items = input.items.map((item) =>
+      this.orderItemRepository.create({
+        product: item.product,
+        product_id: item.product.id,
+        quantity: item.quantity,
+        price_at_purchase: item.price_at_purchase,
+      }),
+    );
 
-        const status = this.pick([
-          OrderStatus.PENDING,
-          OrderStatus.CONFIRMED,
-          OrderStatus.DELIVERED,
-          OrderStatus.CANCELLED,
-        ]);
-        const order = this.purchaseOrderRepository.create({
-          order_number: `PO-${input.runId}-${String(orderIndex).padStart(3, '0')}`,
-          status,
-          is_received: status === OrderStatus.DELIVERED,
-          order_date: this.addDays(today, -this.randomInt(1, 30)),
-          total_amount: Number(total.toFixed(2)),
-          supplier: this.pick(input.suppliers),
-          warehouse,
-          items,
-        });
+    const order = this.purchaseOrderRepository.create({
+      order_number: input.orderNumber,
+      status: input.status,
+      is_received: false,
+      created_by_id: input.users.accountant.id,
+      decided_by_id:
+        input.status === OrderStatus.PENDING ? null : input.users.admin.id,
+      decided_at: input.status === OrderStatus.PENDING ? null : input.decidedAt,
+      received_by_id: null,
+      received_at: null,
+      order_date: input.orderDate,
+      delivery_date: input.deliveryDate,
+      total_amount: Number(total.toFixed(2)),
+      supplier: input.supplier,
+      supplier_id: input.supplier.id,
+      warehouse: input.warehouse,
+      warehouse_id: input.warehouse.id,
+      items,
+    });
 
-        for (const item of items) {
-          item.purchase_order = order;
-        }
-        await this.purchaseOrderRepository.save(order);
-      }
+    for (const item of items) {
+      item.purchase_order = order;
     }
+
+    await this.purchaseOrderRepository.save(order);
   }
 
   private async seedExpenses(input: {
-    warehouses: Warehouse[];
-    products: Product[];
-    batches: ProductBatch[];
-    warehouseManagers: User[];
-    runId: string;
+    users: SeedUsers;
+    warehouse: Warehouse;
+    batches: SeedProducts['batches'];
+    checkImageUrls: [string, string];
   }): Promise<void> {
-    const existingCount = await this.expenseRepository.count();
-    if (existingCount > 0) return;
+    const year = new Date().getFullYear();
 
-    const staffNames = [
-      'Ali Valiyev',
-      'Hasan Husanov',
-      'Dilshod Karimov',
-      'Nodira Azimova',
-      'Rustam Saidov',
-    ];
-    const purposes = [
-      'Klinikaga berildi',
-      'Jarrohlik bo`limiga',
-      'Poliklinikaga yuborildi',
-      'Favqulodda holat uchun',
-      'Ambulator davolash',
-      'Laboratoriyaga',
-      'Reanimatsiya bo`limiga',
-    ];
-    const statuses = [
-      ExpenseStatus.COMPLETED,
-      ExpenseStatus.COMPLETED,
-      ExpenseStatus.COMPLETED,
-      ExpenseStatus.PENDING_ISSUE,
-      ExpenseStatus.PENDING_PHOTO,
-    ];
+    await this.createExpense({
+      expenseNumber: `EXP-${year}-001`,
+      status: ExpenseStatus.PENDING_APPROVAL,
+      users: input.users,
+      createdAt: this.addDays(new Date(), -1),
+      staffName: 'Terapiya bo`limi',
+      purpose: 'Kunlik sarf uchun tayyorlandi',
+      type: ExpenseType.USAGE,
+      items: [
+        { batch: input.batches.paracetamol, quantity: 4 },
+        { batch: input.batches.bandage, quantity: 6 },
+      ],
+    });
 
-    let expenseIndex = 0;
-    const today = new Date();
+    await this.createExpense({
+      expenseNumber: `EXP-${year}-002`,
+      status: ExpenseStatus.PENDING_ISSUE,
+      users: input.users,
+      createdAt: this.addDays(new Date(), -2),
+      approvedAt: this.addDays(new Date(), -1),
+      staffName: 'Jarrohlik bo`limi',
+      purpose: 'Tasdiqlangan, ombordan chiqarish kutilmoqda',
+      type: ExpenseType.USAGE,
+      items: [{ batch: input.batches.amoxicillin, quantity: 8 }],
+    });
 
-    for (const warehouse of input.warehouses) {
-      const warehouseBatches = input.batches.filter(
-        (b) => b.warehouse_id === warehouse.id,
+    await this.createExpense({
+      expenseNumber: `EXP-${year}-003`,
+      status: ExpenseStatus.PENDING_PHOTO,
+      users: input.users,
+      createdAt: this.addDays(new Date(), -3),
+      approvedAt: this.addDays(new Date(), -2),
+      issuedAt: this.addDays(new Date(), -1),
+      staffName: 'Poliklinika',
+      purpose: 'Mahsulot berilgan, chek rasmi kutilmoqda',
+      type: ExpenseType.USAGE,
+      items: [
+        { batch: input.batches.syringe, quantity: 20 },
+        { batch: input.batches.bandage, quantity: 4 },
+      ],
+    });
+
+    await this.createExpense({
+      expenseNumber: `EXP-${year}-004`,
+      status: ExpenseStatus.PENDING_CONFIRMATION,
+      users: input.users,
+      createdAt: this.addDays(new Date(), -4),
+      approvedAt: this.addDays(new Date(), -3),
+      issuedAt: this.addDays(new Date(), -2),
+      staffName: 'Kardiologiya',
+      purpose: 'Foto yuklangan, final review kutilmoqda',
+      type: ExpenseType.USAGE,
+      images: [input.checkImageUrls[0], input.checkImageUrls[1]],
+      items: [{ batch: input.batches.vitaminC, quantity: 3 }],
+    });
+
+    await this.createExpense({
+      expenseNumber: `EXP-${year}-005`,
+      status: ExpenseStatus.REVISION_REQUIRED,
+      users: input.users,
+      createdAt: this.addDays(new Date(), -5),
+      approvedAt: this.addDays(new Date(), -4),
+      issuedAt: this.addDays(new Date(), -3),
+      revisionRequestedAt: this.addDays(new Date(), -1),
+      revisionReason:
+        'Chek rasmi noaniq. Mahsulot nomi va miqdori aniq ko`rinadigan qilib qayta yuklang.',
+      staffName: 'Reanimatsiya bo`limi',
+      purpose: 'Qayta rasm yuklash talab qilinadi',
+      type: ExpenseType.USAGE,
+      images: [input.checkImageUrls[0]],
+      items: [{ batch: input.batches.saline, quantity: 2 }],
+    });
+
+    await this.createExpense({
+      expenseNumber: `EXP-${year}-006`,
+      status: ExpenseStatus.COMPLETED,
+      users: input.users,
+      createdAt: this.addDays(new Date(), -6),
+      approvedAt: this.addDays(new Date(), -5),
+      issuedAt: this.addDays(new Date(), -4),
+      confirmedAt: this.addDays(new Date(), -3),
+      staffName: 'Laboratoriya',
+      purpose: 'Yakunlangan chiqim',
+      type: ExpenseType.USAGE,
+      images: [input.checkImageUrls[0], input.checkImageUrls[1]],
+      items: [
+        { batch: input.batches.amoxicillin, quantity: 5 },
+        { batch: input.batches.syringe, quantity: 15 },
+      ],
+    });
+
+    await this.createExpense({
+      expenseNumber: `EXP-${year}-007`,
+      status: ExpenseStatus.CANCELLED,
+      users: input.users,
+      createdAt: this.addDays(new Date(), -2),
+      cancelledAt: this.addDays(new Date(), -1),
+      staffName: 'Qabul bo`limi',
+      purpose: 'Bekor qilingan chiqim so`rovi',
+      type: ExpenseType.EXPIRED,
+      items: [{ batch: input.batches.paracetamol, quantity: 2 }],
+    });
+  }
+
+  private async createExpense(input: {
+    expenseNumber: string;
+    status: ExpenseStatus;
+    users: SeedUsers;
+    createdAt: Date;
+    approvedAt?: Date;
+    issuedAt?: Date;
+    confirmedAt?: Date;
+    cancelledAt?: Date;
+    revisionRequestedAt?: Date;
+    revisionReason?: string;
+    staffName: string;
+    purpose: string;
+    type: ExpenseType;
+    images?: string[];
+    items: Array<{ batch: ProductBatch; quantity: number }>;
+  }): Promise<void> {
+    const total = input.items.reduce(
+      (sum, item) =>
+        sum + item.quantity * Number(item.batch.price_at_purchase),
+      0,
+    );
+
+    const items = input.items.map((item) =>
+      this.expenseItemRepository.create({
+        product: item.batch.product,
+        warehouse: item.batch.warehouse,
+        product_batch: item.batch,
+        product_batch_id: item.batch.id,
+        quantity: item.quantity,
+      }),
+    );
+
+    const expense = this.expenseRepository.create({
+      expense_number: input.expenseNumber,
+      status: input.status,
+      type: input.type,
+      images: input.images ?? [],
+      total_price: Number(total.toFixed(2)),
+      manager_id: input.users.accountant.id,
+      issued_by_id: input.issuedAt ? input.users.warehouse.id : null,
+      issued_at: input.issuedAt ?? null,
+      approved_by_id: input.approvedAt ? input.users.admin.id : null,
+      approved_at: input.approvedAt ?? null,
+      confirmed_by_id: input.confirmedAt ? input.users.admin.id : null,
+      confirmed_at: input.confirmedAt ?? null,
+      revision_reason: input.revisionReason ?? null,
+      revision_requested_by_id: input.revisionRequestedAt
+        ? input.users.admin.id
+        : null,
+      revision_requested_at: input.revisionRequestedAt ?? null,
+      cancelled_by_id: input.cancelledAt ? input.users.admin.id : null,
+      cancelled_at: input.cancelledAt ?? null,
+      staff_name: input.staffName,
+      purpose: input.purpose,
+      items,
+      createdAt: input.createdAt,
+    });
+
+    for (const item of items) {
+      item.expense = expense;
+    }
+
+    await this.expenseRepository.save(expense);
+  }
+
+  private buildProductStatuses(
+    quantity: number,
+    minLimit: number,
+    expirationDate: Date | null,
+  ): ProductStatus[] {
+    const statuses = new Set<ProductStatus>();
+
+    if (quantity > 0) {
+      statuses.add(ProductStatus.IN_STOCK);
+    }
+
+    if (quantity > 0 && quantity <= minLimit) {
+      statuses.add(ProductStatus.LOW_STOCK);
+    }
+
+    if (expirationDate) {
+      const today = new Date();
+      const normalizedToday = new Date(
+        today.getFullYear(),
+        today.getMonth(),
+        today.getDate(),
       );
-      if (warehouseBatches.length === 0) continue;
+      const normalizedExpiration = new Date(
+        expirationDate.getFullYear(),
+        expirationDate.getMonth(),
+        expirationDate.getDate(),
+      );
 
-      const expenseCount = this.randomInt(4, 6);
-
-      for (let i = 0; i < expenseCount; i += 1) {
-        expenseIndex += 1;
-        const items: ExpenseItem[] = [];
-        let total = 0;
-        const itemsCount = this.randomInt(1, 3);
-
-        for (let j = 0; j < itemsCount; j += 1) {
-          const batch = this.pick(warehouseBatches);
-          const quantity = this.randomInt(1, 10);
-          const lineTotal = quantity * Number(batch.price_at_purchase);
-          total += lineTotal;
-
-          items.push(
-            this.expenseItemRepository.create({
-              product: batch.product,
-              warehouse: batch.warehouse,
-              product_batch: batch,
-              product_batch_id: batch.id,
-              quantity,
-            }),
-          );
+      if (normalizedExpiration < normalizedToday) {
+        statuses.add(ProductStatus.EXPIRED);
+      } else {
+        const daysLeft = Math.ceil(
+          (normalizedExpiration.getTime() - normalizedToday.getTime()) /
+            (1000 * 60 * 60 * 24),
+        );
+        if (daysLeft <= 30) {
+          statuses.add(ProductStatus.EXPIRING_SOON);
         }
-
-        const status = this.pick(statuses);
-        const expense = this.expenseRepository.create({
-          expense_number: `EXP-${input.runId}-${String(expenseIndex).padStart(3, '0')}`,
-          status,
-          type: this.pick([ExpenseType.USAGE, ExpenseType.EXPIRED]),
-          total_price: Number(total.toFixed(2)),
-          staff_name: this.pick(staffNames),
-          purpose: this.pick(purposes),
-          manager: this.pick(input.warehouseManagers),
-          items,
-          createdAt: this.addDays(today, -this.randomInt(1, 30)),
-        });
-
-        for (const item of items) {
-          item.expense = expense;
-        }
-        await this.expenseRepository.save(expense);
       }
     }
+
+    return Array.from(statuses);
   }
 
-  private pick<T>(items: T[]): T {
-    return items[Math.floor(Math.random() * items.length)];
-  }
-
-  private randomInt(min: number, max: number): number {
-    return Math.floor(Math.random() * (max - min + 1)) + min;
-  }
-
-  private randomNumber(min: number, max: number, decimals = 0): number {
-    return Number((Math.random() * (max - min) + min).toFixed(decimals));
+  private buildExpirationAlertDate(baseDate: Date, expiryDays: number): Date {
+    const alertOffset =
+      expiryDays > 30 ? expiryDays - 30 : Math.max(expiryDays - 3, -7);
+    return this.addDays(baseDate, alertOffset);
   }
 
   private addDays(date: Date, days: number): Date {
@@ -722,7 +869,31 @@ export class SeedService implements OnApplicationBootstrap {
     return result;
   }
 
-  private buildRunId(): string {
-    return new Date().getTime().toString().slice(-8);
+  private logSeedSummary(users: SeedUsers, warehouse: Warehouse): void {
+    const adminPassword = this.configService.get<string>(
+      'ADMIN_PASSWORD',
+      'admin12345',
+    );
+    const warehousePassword = this.configService.get<string>(
+      'WAREHOUSE_PASSWORD',
+      'warehouse12345',
+    );
+    const accountantPassword = this.configService.get<string>(
+      'ACCOUNTANT_PASSWORD',
+      'accountant12345',
+    );
+
+    this.logger.log('Development seed tayyor.');
+    this.logger.log(`Admin: ${users.admin.username} / ${adminPassword}`);
+    this.logger.log(
+      `Warehouse: ${users.warehouse.username} / ${warehousePassword}`,
+    );
+    this.logger.log(
+      `Accountant: ${users.accountant.username} / ${accountantPassword}`,
+    );
+    this.logger.log(`Warehouse assigned: ${warehouse.name}`);
+    this.logger.log(
+      'Demo data ichida purchase order va expense approval flow holatlari ham yaratildi',
+    );
   }
 }

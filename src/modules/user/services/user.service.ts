@@ -85,7 +85,9 @@ export class UserService implements OnModuleInit {
 
   private assertRoleCreatableOrAssignable(role: Role): void {
     if (role === Role.ADMIN) {
-      throw new ForbiddenException("Admin role'ni yaratish yoki biriktirish mumkin emas");
+      throw new ForbiddenException(
+        "Admin role'ni yaratish yoki biriktirish mumkin emas",
+      );
     }
   }
 
@@ -259,7 +261,7 @@ export class UserService implements OnModuleInit {
 
       if (assignedWarehouses > 0) {
         throw new ConflictException(
-          "Bu warehouse userga ombor biriktirilgan. Avval warehouse managerini almashtiring",
+          'Bu warehouse userga ombor biriktirilgan. Avval warehouse managerini almashtiring',
         );
       }
     }
