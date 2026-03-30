@@ -14,6 +14,7 @@ async function bootstrap() {
       'http://localhost:5173',
       'http://127.0.0.1:5173',
       'https://brosmed-self.vercel.app',
+      'https://crm.brosmed.uz',
     ],
     credentials: true,
   });
