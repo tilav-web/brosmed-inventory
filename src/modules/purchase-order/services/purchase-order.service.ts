@@ -804,14 +804,17 @@ export class PurchaseOrderService {
   }
 
   private async notifyAdminsAboutNewOrder(order: PurchaseOrder) {
-    const creator = await this.userRepository.findOne({
-      where: { id: order.created_by_id },
-    });
+    const creator = order.created_by_id
+      ? await this.userRepository.findOne({
+          where: { id: order.created_by_id },
+        })
+      : null;
 
-    const creatorName = creator
-      ? [creator.first_name, creator.last_name].filter(Boolean).join(' ') ||
-        creator.username
-      : order.created_by_id;
+    const creatorName =
+      creator
+        ? [creator.first_name, creator.last_name].filter(Boolean).join(' ') ||
+          creator.username
+        : (order.created_by_id ?? "Noma'lum");
 
     const text =
       `🛒 <b>Yangi xarid so'rovi</b>\n\n` +

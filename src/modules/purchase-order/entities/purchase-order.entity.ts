@@ -32,8 +32,8 @@ export class PurchaseOrder {
   @Column({ type: 'boolean', default: false })
   is_received: boolean;
 
-  @Column({ type: 'uuid' })
-  created_by_id: string;
+  @Column({ type: 'uuid', nullable: true })
+  created_by_id: string | null;
 
   @Column({ type: 'uuid', nullable: true })
   decided_by_id: string | null;
