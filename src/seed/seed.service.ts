@@ -10,12 +10,13 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hash } from 'bcrypt';
 import Redis from 'ioredis';
-import { DataSource, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
 import { ExpenseStatus } from 'src/modules/expense/enums/expense-status.enum';
 import { ExpenseType } from 'src/modules/expense/enums/expense-type.enum';
+import { BotUser } from 'src/modules/bot-user/entities/bot-user.entity';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { ProductStatus } from 'src/modules/product/enums/product-status.enum';
@@ -78,7 +79,6 @@ export class SeedService implements OnApplicationBootstrap {
 
   constructor(
     private readonly configService: ConfigService,
-    private readonly dataSource: DataSource,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
     @InjectRepository(User)
@@ -103,6 +103,8 @@ export class SeedService implements OnApplicationBootstrap {
     private readonly expenseRepository: Repository<Expense>,
     @InjectRepository(ExpenseItem)
     private readonly expenseItemRepository: Repository<ExpenseItem>,
+    @InjectRepository(BotUser)
+    private readonly botUserRepository: Repository<BotUser>,
   ) {}
 
   async onApplicationBootstrap(): Promise<void> {
@@ -115,13 +117,20 @@ export class SeedService implements OnApplicationBootstrap {
       return;
     }
 
+    const hasExistingData = await this.hasExistingSeedData();
+    if (hasExistingData) {
+      this.logger.log(
+        "Development seed o'tkazib yuborildi: bazada mavjud ma'lumot bor, hech narsa o'chirilmadi",
+      );
+      return;
+    }
+
     this.logger.log(
-      "Development seed ishga tushdi: eski data tozalanib demo ma'lumotlar yaratiladi",
+      "Development seed ishga tushdi: bo'sh baza uchun demo ma'lumotlar yaratiladi",
     );
 
     const checkImageUrls = this.resetUploadsAndCreateCheckImages();
     await this.flushRedis();
-    await this.resetDatabase();
 
     const users = await this.seedUsers();
     const warehouse = await this.seedWarehouse(users.warehouse);
@@ -205,23 +214,46 @@ export class SeedService implements OnApplicationBootstrap {
 </svg>`.trim();
   }
 
-  private async resetDatabase(): Promise<void> {
-    await this.dataSource.query(`
-      TRUNCATE TABLE
-        "bot_users",
-        "expense_items",
-        "expenses",
-        "order_items",
-        "purchase_orders",
-        "product_batches",
-        "products",
-        "suppliers",
-        "categories",
-        "units",
-        "warehouses",
-        "users"
-      RESTART IDENTITY CASCADE
-    `);
+  private async hasExistingSeedData(): Promise<boolean> {
+    const [
+      totalUsers,
+      adminUsers,
+      warehouseCount,
+      categoryCount,
+      unitCount,
+      supplierCount,
+      productCount,
+      batchCount,
+      purchaseOrderCount,
+      expenseCount,
+      botUserCount,
+    ] = await Promise.all([
+      this.userRepository.count(),
+      this.userRepository.count({ where: { role: Role.ADMIN } }),
+      this.warehouseRepository.count(),
+      this.categoryRepository.count(),
+      this.unitRepository.count(),
+      this.supplierRepository.count(),
+      this.productRepository.count(),
+      this.productBatchRepository.count(),
+      this.purchaseOrderRepository.count(),
+      this.expenseRepository.count(),
+      this.botUserRepository.count(),
+    ]);
+
+    return (
+      totalUsers > adminUsers ||
+      adminUsers > 1 ||
+      warehouseCount > 0 ||
+      categoryCount > 0 ||
+      unitCount > 0 ||
+      supplierCount > 0 ||
+      productCount > 0 ||
+      batchCount > 0 ||
+      purchaseOrderCount > 0 ||
+      expenseCount > 0 ||
+      botUserCount > 0
+    );
   }
 
   private async seedUsers(): Promise<SeedUsers> {
@@ -262,8 +294,19 @@ export class SeedService implements OnApplicationBootstrap {
     ] as const;
 
     const users = await Promise.all(
-      credentials.map(async (entry) =>
-        this.userRepository.save(
+      credentials.map(async (entry) => {
+        const existing =
+          entry.role === Role.ADMIN
+            ? await this.userRepository.findOne({ where: { role: Role.ADMIN } })
+            : await this.userRepository.findOne({
+                where: { username: entry.username },
+              });
+
+        if (existing) {
+          return existing;
+        }
+
+        return this.userRepository.save(
           this.userRepository.create({
             username: entry.username,
             password: await hash(entry.password, 10),
@@ -271,8 +314,8 @@ export class SeedService implements OnApplicationBootstrap {
             last_name: entry.last_name,
             role: entry.role,
           }),
-        ),
-      ),
+        );
+      }),
     );
 
     return {

@@ -28,7 +28,7 @@ export class UserService implements OnModuleInit {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    await this.ensureDefaultUsers();
+    await this.ensureDefaultAdmin();
   }
 
   async findByUsername(username: string): Promise<User | null> {
@@ -270,55 +270,37 @@ export class UserService implements OnModuleInit {
     return { message: "User o'chirildi" };
   }
 
-  private async ensureDefaultUsers(): Promise<void> {
-    const defaults: Array<{ username: string; password: string; role: Role }> =
-      [
-        {
-          username: this.configService.get<string>('ADMIN_USERNAME', 'admin'),
-          password: this.configService.get<string>(
-            'ADMIN_PASSWORD',
-            'admin12345',
-          ),
-          role: Role.ADMIN,
-        },
-        {
-          username: this.configService.get<string>(
-            'WAREHOUSE_USERNAME',
-            'warehouse',
-          ),
-          password: this.configService.get<string>(
-            'WAREHOUSE_PASSWORD',
-            'warehouse12345',
-          ),
-          role: Role.WAREHOUSE,
-        },
-        {
-          username: this.configService.get<string>(
-            'ACCOUNTANT_USERNAME',
-            'accountant',
-          ),
-          password: this.configService.get<string>(
-            'ACCOUNTANT_PASSWORD',
-            'accountant12345',
-          ),
-          role: Role.ACCOUNTANT,
-        },
-      ];
+  private async ensureDefaultAdmin(): Promise<void> {
+    const existingAdmin = await this.userRepository.findOne({
+      where: { role: Role.ADMIN },
+    });
+    if (existingAdmin) {
+      return;
+    }
 
-    for (const account of defaults) {
-      const existing = await this.findByUsername(account.username);
-      if (existing) {
-        continue;
-      }
+    const username = this.configService.get<string>(
+      'ADMIN_USERNAME',
+      'nodir_hamrayev',
+    );
+    const password = this.configService.get<string>(
+      'ADMIN_PASSWORD',
+      '12345678',
+    );
 
-      const hashedPassword = await hash(account.password, 10);
-      await this.userRepository.save(
-        this.userRepository.create({
-          username: account.username,
-          password: hashedPassword,
-          role: account.role,
-        }),
+    const existingWithUsername = await this.findByUsername(username);
+    if (existingWithUsername) {
+      throw new ConflictException(
+        `ADMIN_USERNAME=${username} allaqachon mavjud, lekin admin role bilan emas`,
       );
     }
+
+    const hashedPassword = await hash(password, 10);
+    await this.userRepository.save(
+      this.userRepository.create({
+        username,
+        password: hashedPassword,
+        role: Role.ADMIN,
+      }),
+    );
   }
 }
