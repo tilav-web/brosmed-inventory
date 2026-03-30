@@ -171,7 +171,19 @@ export class UserService implements OnModuleInit {
           whereQb
             .where('user.first_name ILIKE :search', { search: `%${search}%` })
             .orWhere('user.last_name ILIKE :search', { search: `%${search}%` })
-            .orWhere('user.username ILIKE :search', { search: `%${search}%` });
+            .orWhere('user.username ILIKE :search', { search: `%${search}%` })
+            .orWhere(
+              "CONCAT_WS(' ', user.first_name, user.last_name) ILIKE :search",
+              {
+                search: `%${search}%`,
+              },
+            )
+            .orWhere(
+              "CONCAT_WS(' ', user.last_name, user.first_name) ILIKE :search",
+              {
+                search: `%${search}%`,
+              },
+            );
         }),
       );
     }
