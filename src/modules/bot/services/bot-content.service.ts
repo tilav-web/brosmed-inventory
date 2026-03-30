@@ -668,6 +668,7 @@ export class BotContentService {
       [ExpenseStatus.PENDING_ISSUE]: 0,
       [ExpenseStatus.PENDING_PHOTO]: 0,
       [ExpenseStatus.PENDING_CONFIRMATION]: 0,
+      [ExpenseStatus.REVISION_REQUIRED]: 0,
       [ExpenseStatus.COMPLETED]: 0,
       [ExpenseStatus.CANCELLED]: 0,
     };
@@ -698,6 +699,7 @@ export class BotContentService {
     text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
     text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
     text += `🟠 Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
+    text += `🔁 Qayta ko'rib chiqish: <b>${counts[ExpenseStatus.REVISION_REQUIRED]}</b>\n`;
     text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
@@ -748,6 +750,7 @@ export class BotContentService {
     text += `🟡 Berish kutilmoqda: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
     text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
     text += `🟠 Yakuniy tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
+    text += `🔁 Qayta ko'rib chiqish: <b>${counts[ExpenseStatus.REVISION_REQUIRED]}</b>\n`;
     text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
@@ -839,6 +842,7 @@ export class BotContentService {
     text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
     text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
     text += `🟠 Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
+    text += `🔁 Qayta ko'rib chiqish: <b>${counts[ExpenseStatus.REVISION_REQUIRED]}</b>\n`;
     text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
@@ -1063,6 +1067,8 @@ export class BotContentService {
         return '📷 Foto kutilmoqda';
       case ExpenseStatus.PENDING_CONFIRMATION:
         return '🟠 Tasdiq kutilmoqda';
+      case ExpenseStatus.REVISION_REQUIRED:
+        return "🔁 Qayta ko'rib chiqish kerak";
       case ExpenseStatus.COMPLETED:
         return '✅ Tasdiqlangan';
       case ExpenseStatus.CANCELLED:

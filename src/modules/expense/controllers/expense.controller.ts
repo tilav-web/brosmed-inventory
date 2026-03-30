@@ -38,6 +38,7 @@ import {
   ListExpenseItemsQueryDto,
 } from '../dto/list-expense-items-query.dto';
 import { ListExpensesQueryDto } from '../dto/list-expenses-query.dto';
+import { RequestExpenseRevisionDto } from '../dto/request-expense-revision.dto';
 import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 import { ExpenseExportQueueService } from '../services/expense-export-queue.service';
 import { ExpenseExportService } from '../services/expense-export.service';
@@ -216,6 +217,23 @@ export class ExpenseController {
     @Req() req: { user: AuthUser },
   ) {
     return this.expenseService.cancelExpense(id, req.user.id);
+  }
+
+  @Post(':id/request-revision')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: 'Foto yoki hujjatda xato bo`lsa qayta ko`rib chiqish so`rash',
+  })
+  @ApiBody({ type: RequestExpenseRevisionDto })
+  @ApiOkResponse({ description: 'Expense qayta ko`rib chiqish uchun yuborildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  requestRevision(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RequestExpenseRevisionDto,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.expenseService.requestRevision(id, dto.reason, req.user.id);
   }
 
   @Post(':id/issue')

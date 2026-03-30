@@ -16,6 +16,7 @@ import {
 import Redis from 'ioredis';
 import { InlineKeyboard } from 'grammy';
 import { BotService } from 'src/modules/bot/bot.service';
+import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
@@ -129,6 +130,7 @@ export class ExpenseService {
     private readonly redis: Redis,
     @Inject(forwardRef(() => BotService))
     private readonly botService: BotService,
+    private readonly botUserService: BotUserService,
   ) {}
 
   private async getAssignedWarehouseForUser(userId: string): Promise<Warehouse> {
@@ -823,11 +825,19 @@ export class ExpenseService {
     expense.status = ExpenseStatus.PENDING_ISSUE;
     expense.approved_by_id = adminUserId ?? null;
     expense.approved_at = new Date();
+    expense.revision_reason = null;
+    expense.revision_requested_by_id = null;
+    expense.revision_requested_at = null;
     expense.cancelled_by_id = null;
     expense.cancelled_at = null;
 
     const result = await this.expenseRepository.save(expense);
     await this.invalidateDashboardCache();
+
+    await this.notifyWarehouseManagersAboutApprovedExpense(result).catch(
+      () => undefined,
+    );
+
     return result;
   }
 
@@ -860,23 +870,32 @@ export class ExpenseService {
     actor?: AuthUser,
   ) {
     const expense = await this.findById(id, actor);
+    const isRevisionRetry = expense.status === ExpenseStatus.REVISION_REQUIRED;
 
-    if (expense.status !== ExpenseStatus.PENDING_PHOTO) {
+    if (
+      ![ExpenseStatus.PENDING_PHOTO, ExpenseStatus.REVISION_REQUIRED].includes(
+        expense.status,
+      )
+    ) {
       throw new BadRequestException(
-        "Faqat 'PENDING_PHOTO' statusdagi expense uchun foto yuklash mumkin",
+        "Faqat 'PENDING_PHOTO' yoki 'REVISION_REQUIRED' statusdagi expense uchun foto yuklash mumkin",
       );
     }
 
-    expense.images = images;
+    expense.images = isRevisionRetry ? [...expense.images, ...images] : images;
     expense.status = ExpenseStatus.PENDING_CONFIRMATION;
+    expense.revision_reason = null;
+    expense.revision_requested_by_id = null;
+    expense.revision_requested_at = null;
 
     const result = await this.expenseRepository.save(expense);
     await this.invalidateDashboardCache();
 
     if (actor?.id) {
-      await this.notifyAdminsAboutExpenseReadyForConfirmation(result).catch(
-        () => undefined,
-      );
+      await this.notifyAdminsAboutExpenseReadyForConfirmation(
+        result,
+        isRevisionRetry,
+      ).catch(() => undefined);
     }
 
     return result;
@@ -900,6 +919,32 @@ export class ExpenseService {
     return result;
   }
 
+  async requestRevision(
+    id: string,
+    reason: string,
+    adminUserId?: string,
+  ) {
+    const expense = await this.findById(id);
+
+    if (expense.status !== ExpenseStatus.PENDING_CONFIRMATION) {
+      throw new BadRequestException(
+        "Faqat 'PENDING_CONFIRMATION' statusdagi expense qayta ko'rib chiqishga yuborilishi mumkin",
+      );
+    }
+
+    expense.status = ExpenseStatus.REVISION_REQUIRED;
+    expense.revision_reason = reason.trim();
+    expense.revision_requested_by_id = adminUserId ?? null;
+    expense.revision_requested_at = new Date();
+
+    const result = await this.expenseRepository.save(expense);
+    await this.invalidateDashboardCache();
+    await this.notifyWarehouseManagersAboutRevisionRequired(result).catch(
+      () => undefined,
+    );
+    return result;
+  }
+
   async handleAdminRequestDecisionFromBot(
     expenseId: string,
     action: 'approve' | 'cancel',
@@ -917,6 +962,17 @@ export class ExpenseService {
     adminUserId?: string | null,
   ) {
     return this.confirmExpense(expenseId, adminUserId ?? undefined);
+  }
+
+  async handleRevisionRequestFromBot(
+    expenseId: string,
+    adminUserId?: string | null,
+  ) {
+    return this.requestRevision(
+      expenseId,
+      "Telegram bot orqali qayta ko'rib chiqish so'raldi",
+      adminUserId ?? undefined,
+    );
   }
 
   async getDashboardSummary(): Promise<{
@@ -1328,6 +1384,30 @@ export class ExpenseService {
     return expense.items.find((item) => item.warehouse)?.warehouse ?? null;
   }
 
+  private async getApprovedWarehouseTelegramIds(expense: Expense) {
+    const warehouse = this.getExpenseWarehouse(expense);
+    if (!warehouse?.id) {
+      return [];
+    }
+
+    const managedWarehouse = await this.warehouseRepository.findOne({
+      where: { id: warehouse.id },
+      select: { id: true, manager_id: true },
+    });
+
+    if (!managedWarehouse?.manager_id) {
+      return [];
+    }
+
+    const approvedBotUsers = await this.botUserService.getApprovedUsers(
+      Role.WAREHOUSE,
+    );
+
+    return approvedBotUsers
+      .filter((user) => user.linked_user_id === managedWarehouse.manager_id)
+      .map((user) => user.telegram_id);
+  }
+
   private getExpenseCreatorName(expense: Expense) {
     if (expense.manager) {
       return (
@@ -1360,10 +1440,56 @@ export class ExpenseService {
     });
   }
 
-  private async notifyAdminsAboutExpenseReadyForConfirmation(expense: Expense) {
+  private async notifyWarehouseManagersAboutApprovedExpense(expense: Expense) {
+    const warehouse = this.getExpenseWarehouse(expense);
+    const telegramIds = await this.getApprovedWarehouseTelegramIds(expense);
+
+    if (!telegramIds.length) {
+      return;
+    }
+
+    const text =
+      `📦 <b>Yangi chiqim tasdiqlandi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
+      `🙍 Xodim: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>\n\n` +
+      `Mahsulotni chiqaring va chek rasmlarini yuklang.`;
+
+    for (const telegramId of telegramIds) {
+      await this.botService.sendMessage(telegramId, text);
+    }
+  }
+
+  private async notifyWarehouseManagersAboutRevisionRequired(expense: Expense) {
+    const warehouse = this.getExpenseWarehouse(expense);
+    const telegramIds = await this.getApprovedWarehouseTelegramIds(expense);
+
+    if (!telegramIds.length) {
+      return;
+    }
+
+    const text =
+      `🔁 <b>Chiqim qayta ko'rib chiqishga yuborildi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
+      `📝 Sabab: <b>${this.escapeHtml(expense.revision_reason ?? "Qayta tekshirish kerak")}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>\n\n` +
+      `Chek yoki rasmlarni to'g'rilab qayta yuklang.`;
+
+    for (const telegramId of telegramIds) {
+      await this.botService.sendMessage(telegramId, text);
+    }
+  }
+
+  private async notifyAdminsAboutExpenseReadyForConfirmation(
+    expense: Expense,
+    isRevisionRetry = false,
+  ) {
     const warehouse = this.getExpenseWarehouse(expense);
     const text =
-      `📷 <b>Chiqim uchun foto yuklandi</b>\n\n` +
+      `📷 <b>${isRevisionRetry ? "Qayta yuklangan chiqim rasmlari" : "Chiqim uchun foto yuklandi"}</b>\n\n` +
       `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
       `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
       `🙍 Xodim: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
@@ -1371,10 +1497,9 @@ export class ExpenseService {
       `🖼 Rasm soni: <b>${expense.images.length}</b>\n` +
       `📌 Status: <b>${expense.status}</b>`;
 
-    const keyboard = new InlineKeyboard().text(
-      '✅ Yakuniy tasdiqlash',
-      `expense_final:confirm:${expense.id}`,
-    );
+    const keyboard = new InlineKeyboard()
+      .text('✅ Yakuniy tasdiqlash', `expense_final:confirm:${expense.id}`)
+      .text('🔁 Qayta ko‘rib chiqish', `expense_final:revision:${expense.id}`);
 
     await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
       reply_markup: keyboard,

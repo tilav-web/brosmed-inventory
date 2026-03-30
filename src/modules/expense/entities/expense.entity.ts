@@ -81,6 +81,18 @@ export class Expense {
   @Column({ type: 'timestamp', nullable: true })
   confirmed_at: Date | null;
 
+  // Yakuniy tekshiruvda qayta ko`rib chiqish so`ralgan sabab.
+  @Column({ type: 'text', nullable: true })
+  revision_reason: string | null;
+
+  // Qayta ko`rib chiqishni so`ragan admin ID.
+  @Column({ type: 'uuid', nullable: true })
+  revision_requested_by_id: string | null;
+
+  // Qayta ko`rib chiqish so`ralgan vaqt.
+  @Column({ type: 'timestamp', nullable: true })
+  revision_requested_at: Date | null;
+
   // Chiqimni bekor qilgan admin ID.
   @Column({ type: 'uuid', nullable: true })
   cancelled_by_id: string | null;
