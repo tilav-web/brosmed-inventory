@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Body,
   Controller,
+  ForbiddenException,
   Get,
   Param,
   ParseUUIDPipe,
@@ -93,20 +94,27 @@ export class ExpenseController {
   }
 
   @Get('export')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
   @ApiOperation({
     summary: 'Expense itemlarini Excel formatda export qilish',
   })
   @ApiOkResponse({ description: 'Excel eksport' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  @ApiForbiddenResponse({ description: 'Faqat admin/hisobchi kirishi mumkin' })
   async exportItems(
     @Query() query: ListExpenseItemsQueryDto,
+    @Req() req: { user: AuthUser },
     @Res() res: Response,
   ) {
     const exportTarget = query.export_target ?? ExportTarget.DOWNLOAD;
 
     if (exportTarget === ExportTarget.BOT) {
+      if (req.user.role !== Role.ADMIN) {
+        throw new ForbiddenException(
+          'Exportni botga yuborish faqat admin uchun ruxsat etilgan',
+        );
+      }
+
       const approvedUsers = await this.botUserService.getApprovedUsers(
         Role.ADMIN,
       );
@@ -127,7 +135,10 @@ export class ExpenseController {
       });
     }
 
-    const buffer = await this.expenseExportService.buildExcelBuffer(query);
+    const buffer = await this.expenseExportService.buildExcelBuffer(
+      query,
+      req.user,
+    );
     const filename = this.buildDefaultFilename('expenses');
 
     res.setHeader(
