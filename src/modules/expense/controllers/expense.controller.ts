@@ -45,7 +45,6 @@ import { ExpenseService } from '../services/expense.service';
 
 @Controller('expenses')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN, Role.WAREHOUSE)
 @ApiTags('expenses')
 @ApiBearerAuth('bearer')
 export class ExpenseController {
@@ -58,6 +57,7 @@ export class ExpenseController {
   ) {}
 
   @Get('dashboard/summary')
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Ombor dashboard statistikasi' })
   @ApiOkResponse({ description: 'Dashboard statistikasi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
@@ -67,6 +67,7 @@ export class ExpenseController {
   }
 
   @Get('dashboard/overview')
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary:
       'Dashboard overview: kartalar, ogohlantirishlar va chartlar uchun umumiy statistika',
@@ -79,15 +80,17 @@ export class ExpenseController {
   }
 
   @Get()
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
   @ApiOperation({ summary: 'Expense lar ro`yxati (pagination + filter)' })
   @ApiOkResponse({ description: 'Expense lar ro`yxati' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  findAll(@Query() query: ListExpensesQueryDto) {
-    return this.expenseService.findAll(query);
+  findAll(@Req() req: { user: AuthUser }, @Query() query: ListExpensesQueryDto) {
+    return this.expenseService.findAll(query, req.user);
   }
 
   @Get('export')
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Expense itemlarini Excel formatda export qilish',
   })
@@ -101,7 +104,9 @@ export class ExpenseController {
     const exportTarget = query.export_target ?? ExportTarget.DOWNLOAD;
 
     if (exportTarget === ExportTarget.BOT) {
-      const approvedUsers = await this.botUserService.getApprovedUsers();
+      const approvedUsers = await this.botUserService.getApprovedUsers(
+        Role.ADMIN,
+      );
       if (approvedUsers.length === 0) {
         return res.status(409).json({
           message:
@@ -131,6 +136,7 @@ export class ExpenseController {
   }
 
   @Get('items')
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Expense itemlar ro`yxati (pagination + filter)',
   })
@@ -142,6 +148,7 @@ export class ExpenseController {
   }
 
   @Get('warehouse-stats')
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Warehouse bo`yicha expense item statistikasi',
   })
@@ -153,15 +160,17 @@ export class ExpenseController {
   }
 
   @Get(':id')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
   @ApiOperation({ summary: 'Bitta expense ni id bo`yicha olish' })
   @ApiOkResponse({ description: 'Expense topildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.expenseService.findById(id);
+  findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: { user: AuthUser }) {
+    return this.expenseService.findById(id, req.user);
   }
 
   @Post('save-and-receipt')
+  @Roles(Role.ADMIN)
   @ApiOperation({ summary: 'Sarfni saqlash va chek ma`lumotini qaytarish' })
   @ApiBody({ type: CreateExpenseDto })
   @ApiOkResponse({ description: 'Expense saqlandi va receipt qaytarildi' })
@@ -175,18 +184,25 @@ export class ExpenseController {
   }
 
   @Post(':id/issue')
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
   @ApiOperation({
     summary: 'Tovar berish: statusni PENDING_PHOTO ga o`tkazish',
   })
   @ApiOkResponse({ description: 'Tovar berildi, foto tasdiq kutilmoqda' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  issueExpense(@Param('id', ParseUUIDPipe) id: string) {
-    return this.expenseService.issueExpense(id);
+  issueExpense(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.expenseService.issueExpense(id, req.user);
   }
 
   @Post(':id/upload-check')
-  @ApiOperation({ summary: 'Check rasmlarini yuklash va expense ni yakunlash' })
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Check rasmlarini yuklash va expense ni tasdiq kutish bosqichiga o`tkazish',
+  })
   @ApiConsumes('multipart/form-data')
   @ApiOkResponse({ description: 'Foto saqlandi va expense yakunlandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
@@ -200,6 +216,7 @@ export class ExpenseController {
   )
   async uploadCheck(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
     @UploadedFiles() files?: { buffer: Buffer; mimetype?: string }[],
   ) {
     if (!files?.length) {
@@ -219,7 +236,24 @@ export class ExpenseController {
       entityId: id,
     });
 
-    return this.expenseService.attachImagesAndComplete(id, images);
+    return this.expenseService.attachImagesAndMarkPendingConfirmation(
+      id,
+      images,
+      req.user,
+    );
+  }
+
+  @Post(':id/confirm')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Foto yuklangan expense ni yakuniy tasdiqlash' })
+  @ApiOkResponse({ description: 'Expense tasdiqlandi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  confirmExpense(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.expenseService.confirmExpense(id, req.user.id);
   }
 
   private buildDefaultFilename(prefix: string) {

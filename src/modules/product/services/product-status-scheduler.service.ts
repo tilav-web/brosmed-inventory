@@ -88,9 +88,10 @@ export class ProductStatusSchedulerService {
     });
 
     await this.expenseService.issueExpense(expense.id);
-    await this.expenseService.attachImagesAndComplete(expense.id, [
+    await this.expenseService.attachImagesAndMarkPendingConfirmation(expense.id, [
       'SYSTEM_AUTO',
     ]);
+    await this.expenseService.confirmExpense(expense.id);
 
     this.logger.log(
       `Auto write-off completed for ${expiredBatches.length} batches.`,

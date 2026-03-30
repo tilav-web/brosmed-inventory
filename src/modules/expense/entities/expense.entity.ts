@@ -57,6 +57,22 @@ export class Expense {
   @JoinColumn({ name: 'manager_id' })
   manager: User | null;
 
+  // Ombordan real chiqarishni amalga oshirgan warehouse user ID.
+  @Column({ type: 'uuid', nullable: true })
+  issued_by_id: string | null;
+
+  // Mahsulot ombordan chiqarilgan vaqt.
+  @Column({ type: 'timestamp', nullable: true })
+  issued_at: Date | null;
+
+  // Foto yuklangach hujjatni tasdiqlagan admin ID.
+  @Column({ type: 'uuid', nullable: true })
+  confirmed_by_id: string | null;
+
+  // Chiqim yakuniy tasdiqlangan vaqt.
+  @Column({ type: 'timestamp', nullable: true })
+  confirmed_at: Date | null;
+
   // Chiqimni rasmiylashtirgan xodim ismi.
   @Column({ type: 'varchar' })
   staff_name: string;

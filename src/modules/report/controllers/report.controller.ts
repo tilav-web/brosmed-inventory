@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Res, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Req, Res, UseGuards } from '@nestjs/common';
 import type { Response } from 'express';
 import {
   ApiBearerAuth,
@@ -11,6 +11,7 @@ import {
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { Role } from 'src/modules/user/enums/role.enum';
 import {
   ExportInventoryReportQueryDto,
@@ -34,8 +35,11 @@ export class ReportController {
   @ApiOkResponse({ description: 'Inventory report muvaffaqiyatli olindi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  getInventoryReport(@Query() query: GetInventoryReportQueryDto) {
-    return this.reportService.getInventoryReport(query);
+  getInventoryReport(
+    @Req() req: { user: AuthUser },
+    @Query() query: GetInventoryReportQueryDto,
+  ) {
+    return this.reportService.getInventoryReport(query, req.user);
   }
 
   @Get('inventory/export')
@@ -46,10 +50,14 @@ export class ReportController {
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
   async exportInventoryReport(
+    @Req() req: { user: AuthUser },
     @Query() query: ExportInventoryReportQueryDto,
     @Res() res: Response,
   ) {
-    const file = await this.reportService.buildInventoryExportBuffer(query);
+    const file = await this.reportService.buildInventoryExportBuffer(
+      query,
+      req.user,
+    );
 
     res.setHeader('Content-Type', file.contentType);
     res.setHeader(

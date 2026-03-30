@@ -55,16 +55,121 @@ export class WarehouseController {
   @Roles(Role.WAREHOUSE)
   @ApiOperation({
     summary:
-      'Joriy warehouse userga biriktirilgan barcha warehouse lar uchun umumiy dashboard',
+      'Joriy warehouse userga biriktirilgan warehouse bo`yicha umumiy ma`lumot',
   })
   @ApiOkResponse({ description: 'Joriy warehouse user dashboard ma`lumotlari' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
-  getMyDashboard(
+  getMyDashboard(@Req() req: { user: AuthUser }) {
+    return this.warehouseService.getMyDashboard(req.user.id);
+  }
+
+  @Get('my')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Joriy warehouse userga biriktirilgan warehouse ni olish',
+  })
+  @ApiOkResponse({ description: 'Joriy warehouse topildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyWarehouse(@Req() req: { user: AuthUser }) {
+    return this.warehouseService.getMyWarehouse(req.user.id);
+  }
+
+  @Get('my/dashboard/stats')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Joriy warehouse user uchun dashboard statistikasi',
+  })
+  @ApiOkResponse({ description: 'Dashboard statistikasi qaytdi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyDashboardStats(@Req() req: { user: AuthUser }) {
+    return this.warehouseService.getMyDashboardStats(req.user.id);
+  }
+
+  @Get('my/dashboard/recent-expenses')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Joriy warehouse user uchun so`nggi chiqimlar',
+  })
+  @ApiOkResponse({ description: 'So`nggi chiqimlar qaytdi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyRecentExpenses(
     @Req() req: { user: AuthUser },
     @Query() query: GetWarehouseDashboardQueryDto,
   ) {
-    return this.warehouseService.getDashboardByUser(req.user.id, query);
+    return this.warehouseService.getMyRecentExpenses(req.user.id, query);
+  }
+
+  @Get('my/details')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Joriy warehouse user uchun warehouse batafsil ma`lumotlari',
+  })
+  @ApiOkResponse({ description: 'Warehouse batafsil ma`lumotlari qaytdi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyDetails(@Req() req: { user: AuthUser }) {
+    return this.warehouseService.getMyDetails(req.user.id);
+  }
+
+  @Get('my/expenses')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Joriy warehouse user uchun expense lar ro`yxati',
+  })
+  @ApiOkResponse({ description: 'Warehouse expense lar qaytdi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyExpenses(
+    @Req() req: { user: AuthUser },
+    @Query() query: ListWarehouseExpensesQueryDto,
+  ) {
+    return this.warehouseService.getMyWarehouseExpenses(req.user.id, query);
+  }
+
+  @Get('my/products')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Joriy warehouse user uchun mahsulotlar ro`yxati',
+  })
+  @ApiOkResponse({ description: 'Warehouse productlari qaytdi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyProducts(@Req() req: { user: AuthUser }) {
+    return this.warehouseService.getMyProducts(req.user.id);
+  }
+
+  @Get('my/category-stats')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Joriy warehouse user uchun kategoriya statistikasi',
+  })
+  @ApiOkResponse({ description: 'Kategoriya statistikasi qaytdi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyCategoryStats(
+    @Req() req: { user: AuthUser },
+    @Query() query: ListCategoryStatsQueryDto,
+  ) {
+    return this.warehouseService.getMyCategoryStats(req.user.id, query);
+  }
+
+  @Get('my/low-stock')
+  @Roles(Role.WAREHOUSE)
+  @ApiOperation({
+    summary: 'Joriy warehouse user uchun kam qolgan mahsulotlar',
+  })
+  @ApiOkResponse({ description: 'Kam qolgan mahsulotlar qaytdi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
+  getMyLowStockProducts(
+    @Req() req: { user: AuthUser },
+    @Query() query: ListCategoryStatsQueryDto,
+  ) {
+    return this.warehouseService.getMyLowStockProducts(req.user.id, query);
   }
 
   @Get(':id')
@@ -80,7 +185,7 @@ export class WarehouseController {
   }
 
   @Get(':id/dashboard')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary:
       'Warehouse dashboard: summary kartalar va recent expenses bitta response da',
@@ -96,7 +201,7 @@ export class WarehouseController {
   }
 
   @Get(':id/details')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary:
       'Warehouse toliq malumotlari - statistika, chiqimlar, ogohlantirishlar',
@@ -109,7 +214,7 @@ export class WarehouseController {
   }
 
   @Get(':id/expenses')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Warehouse sarflari (pagination + search)',
   })
@@ -124,7 +229,7 @@ export class WarehouseController {
   }
 
   @Get(':id/products')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Tanlangan warehouse dagi productlar ro`yxati',
   })
@@ -136,7 +241,7 @@ export class WarehouseController {
   }
 
   @Get(':id/category-stats')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Warehouse kategoriyalari bo`yicha statistika (pagination)',
   })
@@ -151,7 +256,7 @@ export class WarehouseController {
   }
 
   @Get(':id/low-stock')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN)
   @ApiOperation({
     summary: 'Zakupka kerak bolgan mahsulotlar (quantity <= min_limit)',
   })

@@ -46,6 +46,25 @@ type DashboardWarehouseView = {
   } | null;
 };
 
+type WarehouseDashboardSummary = {
+  total_products: number;
+  pending_issue: number;
+  low_stock: number;
+  expiring_soon: number;
+};
+
+type WarehouseRecentExpenseView = {
+  id: string;
+  expense_number: string;
+  created_at: Date;
+  staff_name: string;
+  purpose: string | null;
+  status: ExpenseStatus;
+  total_price: number;
+  issued_at: Date | null;
+  confirmed_at: Date | null;
+};
+
 @Injectable()
 export class WarehouseService {
   constructor(
@@ -215,10 +234,54 @@ export class WarehouseService {
     };
   }
 
-  private async buildDashboardMetrics(
-    warehouseIds: string[],
-    recentLimit: number,
-  ) {
+  private normalizeRecentLimit(limit?: number) {
+    return Math.min(limit ?? 5, 20);
+  }
+
+  private async getWarehouseOrThrow(id: string) {
+    const warehouse = await this.warehouseRepository.findOne({
+      where: { id },
+      relations: {
+        manager: true,
+      },
+    });
+
+    if (!warehouse) {
+      throw new NotFoundException('Warehouse topilmadi');
+    }
+
+    return warehouse;
+  }
+
+  private async getManagedWarehouseByUser(userId: string) {
+    const warehouses = await this.warehouseRepository.find({
+      where: { manager_id: userId },
+      relations: {
+        manager: true,
+      },
+      order: {
+        createdAt: 'ASC',
+      },
+    });
+
+    if (!warehouses.length) {
+      throw new NotFoundException(
+        'Foydalanuvchiga biriktirilgan warehouse topilmadi',
+      );
+    }
+
+    if (warehouses.length > 1) {
+      throw new ConflictException(
+        "Warehouse userga faqat bitta warehouse biriktirilishi kerak",
+      );
+    }
+
+    return warehouses[0];
+  }
+
+  private async buildDashboardSummary(
+    warehouseId: string,
+  ): Promise<WarehouseDashboardSummary> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -231,21 +294,20 @@ export class WarehouseService {
       lowStockCount,
       expiringSoonCount,
       pendingIssueRaw,
-      recentExpensesRaw,
     ] = await Promise.all([
       this.productRepository
         .createQueryBuilder('product')
-        .where('product.warehouse_id IN (:...warehouseIds)', { warehouseIds })
+        .where('product.warehouse_id = :warehouseId', { warehouseId })
         .getCount(),
       this.productRepository
         .createQueryBuilder('product')
-        .where('product.warehouse_id IN (:...warehouseIds)', { warehouseIds })
+        .where('product.warehouse_id = :warehouseId', { warehouseId })
         .andWhere('product.quantity > 0')
         .andWhere('product.quantity <= product.min_limit')
         .getCount(),
       this.productBatchRepository
         .createQueryBuilder('batch')
-        .where('batch.warehouse_id IN (:...warehouseIds)', { warehouseIds })
+        .where('batch.warehouse_id = :warehouseId', { warehouseId })
         .andWhere('batch.quantity > 0')
         .andWhere('batch.expiration_date IS NOT NULL')
         .andWhere('batch.expiration_date >= :today', { today })
@@ -255,121 +317,194 @@ export class WarehouseService {
         .createQueryBuilder('item')
         .leftJoin('item.expense', 'expense')
         .select('COUNT(DISTINCT expense.id)', 'count')
-        .where('item.warehouse_id IN (:...warehouseIds)', { warehouseIds })
+        .where('item.warehouse_id = :warehouseId', { warehouseId })
         .andWhere('expense.status = :status', {
           status: ExpenseStatus.PENDING_ISSUE,
         })
         .getRawOne<{ count: string | null }>(),
-      this.expenseRepository
-        .createQueryBuilder('expense')
-        .innerJoin(
-          'expense.items',
-          'item',
-          'item.warehouse_id IN (:...warehouseIds)',
-          { warehouseIds },
-        )
-        .select('expense.id', 'id')
-        .addSelect('expense.expense_number', 'expense_number')
-        .addSelect('expense.createdAt', 'created_at')
-        .addSelect('expense.staff_name', 'staff_name')
-        .addSelect('expense.purpose', 'purpose')
-        .addSelect('expense.status', 'status')
-        .addSelect('expense.total_price', 'total_price')
-        .groupBy('expense.id')
-        .addGroupBy('expense.expense_number')
-        .addGroupBy('expense.createdAt')
-        .addGroupBy('expense.staff_name')
-        .addGroupBy('expense.purpose')
-        .addGroupBy('expense.status')
-        .addGroupBy('expense.total_price')
-        .orderBy('expense.createdAt', 'DESC')
-        .limit(recentLimit)
-        .getRawMany<{
-          id: string;
-          expense_number: string;
-          created_at: Date;
-          staff_name: string;
-          purpose: string | null;
-          status: ExpenseStatus;
-          total_price: string;
-        }>(),
     ]);
 
     return {
-      summary: {
-        total_products: totalProducts,
-        pending_issue: Number(pendingIssueRaw?.count ?? 0),
-        low_stock: lowStockCount,
-        expiring_soon: expiringSoonCount,
-      },
-      recent_expenses: recentExpensesRaw.map((expense) => ({
-        id: expense.id,
-        expense_number: expense.expense_number,
-        created_at: expense.created_at,
-        staff_name: expense.staff_name,
-        purpose: expense.purpose,
-        status: expense.status,
-        total_price: Number(Number(expense.total_price ?? 0).toFixed(2)),
-      })),
+      total_products: totalProducts,
+      pending_issue: Number(pendingIssueRaw?.count ?? 0),
+      low_stock: lowStockCount,
+      expiring_soon: expiringSoonCount,
     };
+  }
+
+  private async getRecentExpenses(
+    warehouseId: string,
+    recentLimit: number,
+  ): Promise<WarehouseRecentExpenseView[]> {
+    const rows = await this.expenseRepository
+      .createQueryBuilder('expense')
+      .innerJoin(
+        'expense.items',
+        'item',
+        'item.warehouse_id = :warehouseId',
+        { warehouseId },
+      )
+      .select('expense.id', 'id')
+      .addSelect('expense.expense_number', 'expense_number')
+      .addSelect('expense.createdAt', 'created_at')
+      .addSelect('expense.staff_name', 'staff_name')
+      .addSelect('expense.purpose', 'purpose')
+      .addSelect('expense.status', 'status')
+      .addSelect('expense.total_price', 'total_price')
+      .addSelect('expense.issued_at', 'issued_at')
+      .addSelect('expense.confirmed_at', 'confirmed_at')
+      .groupBy('expense.id')
+      .addGroupBy('expense.expense_number')
+      .addGroupBy('expense.createdAt')
+      .addGroupBy('expense.staff_name')
+      .addGroupBy('expense.purpose')
+      .addGroupBy('expense.status')
+      .addGroupBy('expense.total_price')
+      .addGroupBy('expense.issued_at')
+      .addGroupBy('expense.confirmed_at')
+      .orderBy('expense.createdAt', 'DESC')
+      .limit(recentLimit)
+      .getRawMany<{
+        id: string;
+        expense_number: string;
+        created_at: Date;
+        staff_name: string;
+        purpose: string | null;
+        status: ExpenseStatus;
+        total_price: string;
+        issued_at: Date | null;
+        confirmed_at: Date | null;
+      }>();
+
+    return rows.map((expense) => ({
+      id: expense.id,
+      expense_number: expense.expense_number,
+      created_at: expense.created_at,
+      staff_name: expense.staff_name,
+      purpose: expense.purpose,
+      status: expense.status,
+      total_price: Number(Number(expense.total_price ?? 0).toFixed(2)),
+      issued_at: expense.issued_at,
+      confirmed_at: expense.confirmed_at,
+    }));
   }
 
   async getDashboardByUser(
     userId: string,
     query: GetWarehouseDashboardQueryDto,
   ) {
-    const warehouses = await this.warehouseRepository.find({
-      where: { manager_id: userId },
-      relations: {
-        manager: true,
-      },
-      order: {
-        name: 'ASC',
-      },
-    });
-
-    if (!warehouses.length) {
-      throw new NotFoundException(
-        'Foydalanuvchiga biriktirilgan warehouse topilmadi',
-      );
-    }
-
-    const recentLimit = Math.min(query.recent_limit ?? 5, 20);
-    const metrics = await this.buildDashboardMetrics(
-      warehouses.map((warehouse) => warehouse.id),
-      recentLimit,
-    );
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    const recentLimit = this.normalizeRecentLimit(query.recent_limit);
+    const [summary, recentExpenses] = await Promise.all([
+      this.buildDashboardSummary(warehouse.id),
+      this.getRecentExpenses(warehouse.id, recentLimit),
+    ]);
 
     return {
-      warehouses: warehouses.map((warehouse) =>
-        this.mapDashboardWarehouse(warehouse),
-      ),
+      warehouses: [this.mapDashboardWarehouse(warehouse)],
       summary: {
-        ...metrics.summary,
-        warehouses_count: warehouses.length,
+        ...summary,
+        warehouses_count: 1,
       },
-      recent_expenses: metrics.recent_expenses,
+      recent_expenses: recentExpenses,
     };
   }
 
   async getDashboard(id: string, query: GetWarehouseDashboardQueryDto) {
-    const warehouse = await this.warehouseRepository.findOne({
-      where: { id },
-      relations: {
-        manager: true,
-      },
-    });
-
-    if (!warehouse) {
-      throw new NotFoundException('Warehouse topilmadi');
-    }
-
-    const recentLimit = Math.min(query.recent_limit ?? 5, 20);
-    const metrics = await this.buildDashboardMetrics([id], recentLimit);
+    const warehouse = await this.getWarehouseOrThrow(id);
+    const recentLimit = this.normalizeRecentLimit(query.recent_limit);
+    const [summary, recentExpenses] = await Promise.all([
+      this.buildDashboardSummary(id),
+      this.getRecentExpenses(id, recentLimit),
+    ]);
 
     return {
       warehouse: this.mapDashboardWarehouse(warehouse),
-      ...metrics,
+      summary,
+      recent_expenses: recentExpenses,
+    };
+  }
+
+  async getMyWarehouse(userId: string): Promise<WarehouseWithTotalValue> {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    return this.findById(warehouse.id);
+  }
+
+  async getMyDashboard(userId: string) {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    return {
+      warehouse: this.mapDashboardWarehouse(warehouse),
+    };
+  }
+
+  async getMyDashboardStats(userId: string) {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    return {
+      warehouse: this.mapDashboardWarehouse(warehouse),
+      summary: await this.buildDashboardSummary(warehouse.id),
+    };
+  }
+
+  async getMyRecentExpenses(
+    userId: string,
+    query: GetWarehouseDashboardQueryDto,
+  ) {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    return {
+      warehouse: this.mapDashboardWarehouse(warehouse),
+      data: await this.getRecentExpenses(
+        warehouse.id,
+        this.normalizeRecentLimit(query.recent_limit),
+      ),
+    };
+  }
+
+  async getMyDetails(userId: string) {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    return this.findByIdWithDetails(warehouse.id);
+  }
+
+  async getMyWarehouseExpenses(
+    userId: string,
+    query: ListWarehouseExpensesQueryDto,
+  ) {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    const expenses = await this.getWarehouseExpenses(warehouse.id, query);
+    return {
+      warehouse: this.mapDashboardWarehouse(warehouse),
+      ...expenses,
+    };
+  }
+
+  async getMyProducts(userId: string) {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    return {
+      warehouse: this.mapDashboardWarehouse(warehouse),
+      data: await this.getProductsByWarehouseId(warehouse.id),
+    };
+  }
+
+  async getMyCategoryStats(
+    userId: string,
+    query: { page?: number; limit?: number },
+  ) {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    const stats = await this.getCategoryStats(warehouse.id, query);
+    return {
+      warehouse: this.mapDashboardWarehouse(warehouse),
+      ...stats,
+    };
+  }
+
+  async getMyLowStockProducts(
+    userId: string,
+    query: { page?: number; limit?: number },
+  ) {
+    const warehouse = await this.getManagedWarehouseByUser(userId);
+    const products = await this.getLowStockProductsPaginated(warehouse.id, query);
+    return {
+      warehouse: this.mapDashboardWarehouse(warehouse),
+      ...products,
     };
   }
 
@@ -419,21 +554,22 @@ export class WarehouseService {
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
 
-    const qb = this.expenseItemRepository
-      .createQueryBuilder('item')
-      .leftJoinAndSelect('item.expense', 'expense')
-      .leftJoinAndSelect('item.product', 'product')
-      .leftJoinAndSelect('item.product_batch', 'batch')
-      .where('item.warehouse_id = :id', { id })
-      .andWhere('expense.status = :status', {
-        status: query.status ?? ExpenseStatus.COMPLETED,
-      });
+    const qb = this.expenseRepository
+      .createQueryBuilder('expense')
+      .innerJoin('expense.items', 'item', 'item.warehouse_id = :id', { id })
+      .leftJoin('item.product', 'product');
 
     if (search) {
       qb.andWhere(
         '(expense.staff_name ILIKE :search OR expense.purpose ILIKE :search OR product.name ILIKE :search)',
         { search: `%${search}%` },
       );
+    }
+
+    if (query.status) {
+      qb.andWhere('expense.status = :status', {
+        status: query.status,
+      });
     }
 
     if (query.date_from || query.date_to) {
@@ -449,20 +585,58 @@ export class WarehouseService {
       }
     }
 
-    qb.orderBy('expense.createdAt', 'DESC')
-      .skip((page - 1) * limit)
-      .take(limit);
+    const totalRaw = await qb
+      .clone()
+      .select('COUNT(DISTINCT expense.id)', 'count')
+      .getRawOne<{ count: string | null }>();
 
-    const [items, total] = await qb.getManyAndCount();
+    const rows = await qb
+      .clone()
+      .select('expense.id', 'id')
+      .addSelect('expense.expense_number', 'expense_number')
+      .addSelect('expense.createdAt', 'created_at')
+      .addSelect('expense.staff_name', 'staff_name')
+      .addSelect('expense.purpose', 'purpose')
+      .addSelect('expense.status', 'status')
+      .addSelect('expense.total_price', 'total_price')
+      .addSelect('expense.issued_at', 'issued_at')
+      .addSelect('expense.confirmed_at', 'confirmed_at')
+      .groupBy('expense.id')
+      .addGroupBy('expense.expense_number')
+      .addGroupBy('expense.createdAt')
+      .addGroupBy('expense.staff_name')
+      .addGroupBy('expense.purpose')
+      .addGroupBy('expense.status')
+      .addGroupBy('expense.total_price')
+      .addGroupBy('expense.issued_at')
+      .addGroupBy('expense.confirmed_at')
+      .orderBy('expense.createdAt', 'DESC')
+      .offset((page - 1) * limit)
+      .limit(limit)
+      .getRawMany<{
+        id: string;
+        expense_number: string;
+        created_at: Date;
+        staff_name: string;
+        purpose: string | null;
+        status: ExpenseStatus;
+        total_price: string;
+        issued_at: Date | null;
+        confirmed_at: Date | null;
+      }>();
 
-    const data = items.map((item) => ({
-      id: item.id,
-      date: item.expense?.createdAt,
-      staff_name: item.expense?.staff_name,
-      product_name: item.product?.name,
-      quantity: item.quantity,
-      unit: item.product?.unit,
-      purpose: item.expense?.purpose,
+    const total = Number(totalRaw?.count ?? 0);
+
+    const data = rows.map((expense) => ({
+      id: expense.id,
+      expense_number: expense.expense_number,
+      created_at: expense.created_at,
+      staff_name: expense.staff_name,
+      purpose: expense.purpose,
+      status: expense.status,
+      total_price: Number(Number(expense.total_price ?? 0).toFixed(2)),
+      issued_at: expense.issued_at,
+      confirmed_at: expense.confirmed_at,
     }));
 
     return {
@@ -657,6 +831,30 @@ export class WarehouseService {
     return manager;
   }
 
+  private async ensureWarehouseManagerCanBeAssigned(
+    managerId: string,
+    currentWarehouseId?: string,
+  ): Promise<User> {
+    const manager = await this.ensureWarehouseManager(managerId);
+
+    const assignedWarehouses = await this.warehouseRepository.find({
+      where: { manager_id: manager.id },
+      select: { id: true },
+    });
+
+    const conflictingAssignment = assignedWarehouses.find(
+      (warehouse) => warehouse.id !== currentWarehouseId,
+    );
+
+    if (conflictingAssignment) {
+      throw new ConflictException(
+        "Warehouse role'li userga faqat bitta warehouse biriktirilishi mumkin",
+      );
+    }
+
+    return manager;
+  }
+
   async create(dto: CreateWarehouseDto) {
     const existing = await this.warehouseRepository.findOne({
       where: { name: dto.name },
@@ -665,7 +863,9 @@ export class WarehouseService {
       throw new ConflictException('Bunday warehouse name mavjud');
     }
 
-    const manager = await this.ensureWarehouseManager(dto.manager_id);
+    const manager = await this.ensureWarehouseManagerCanBeAssigned(
+      dto.manager_id,
+    );
 
     const saved = await this.warehouseRepository.save(
       this.warehouseRepository.create({
@@ -705,7 +905,10 @@ export class WarehouseService {
     }
 
     if (dto.manager_id !== undefined) {
-      const manager = await this.ensureWarehouseManager(dto.manager_id);
+      const manager = await this.ensureWarehouseManagerCanBeAssigned(
+        dto.manager_id,
+        warehouse.id,
+      );
       warehouse.manager_id = manager.id;
       warehouse.manager = manager;
     }

@@ -1,10 +1,14 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
+import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
+import { Role } from 'src/modules/user/enums/role.enum';
+import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { UpdateProductBatchDto } from '../dto/update-product-batch.dto';
 import { ProductBatch } from '../entities/product-batch.entity';
 import { ListProductBatchsQueryDto } from '../dto/list-product-batch-query.dto';
@@ -14,6 +18,8 @@ export class ProductBatchService {
   constructor(
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
+    @InjectRepository(Warehouse)
+    private readonly warehouseRepository: Repository<Warehouse>,
   ) {}
 
   private hasField(
@@ -41,8 +47,50 @@ export class ProductBatchService {
     }
   }
 
-  async findById(id: string) {
-    const batch = await this.productBatchRepository.findOne({ where: { id } });
+  private async getAssignedWarehouseForUser(userId: string) {
+    const warehouses = await this.warehouseRepository.find({
+      where: { manager_id: userId },
+      select: { id: true },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (!warehouses.length) {
+      throw new NotFoundException(
+        "Warehouse userga biriktirilgan warehouse topilmadi",
+      );
+    }
+
+    if (warehouses.length > 1) {
+      throw new ForbiddenException(
+        "Warehouse userga faqat bitta warehouse biriktirilishi kerak",
+      );
+    }
+
+    return warehouses[0];
+  }
+
+  private async applyWarehouseScope(
+    qb: SelectQueryBuilder<ProductBatch>,
+    user?: AuthUser,
+  ) {
+    if (!user || user.role !== Role.WAREHOUSE) {
+      return;
+    }
+
+    const warehouse = await this.getAssignedWarehouseForUser(user.id);
+    qb.andWhere('batch.warehouse_id = :warehouseId', {
+      warehouseId: warehouse.id,
+    });
+  }
+
+  async findById(id: string, user?: AuthUser) {
+    const qb = this.productBatchRepository
+      .createQueryBuilder('batch')
+      .where('batch.id = :id', { id });
+
+    await this.applyWarehouseScope(qb, user);
+
+    const batch = await qb.getOne();
 
     if (!batch) {
       throw new NotFoundException('Product batch topilmadi');
@@ -51,7 +99,9 @@ export class ProductBatchService {
     return batch;
   }
 
-  async update(id: string, dto: UpdateProductBatchDto) {
+  async update(id: string, dto: UpdateProductBatchDto, user?: AuthUser) {
+    const batch = await this.findById(id, user);
+
     const hasExpirationDateField = this.hasField(dto, 'expiration_date');
     const hasExpirationAlertDateField = this.hasField(
       dto,
@@ -68,11 +118,6 @@ export class ProductBatchService {
 
     if (!hasUpdateField) {
       throw new BadRequestException('Hech qanday maydon yuborilmadi!');
-    }
-
-    const batch = await this.productBatchRepository.findOne({ where: { id } });
-    if (!batch) {
-      throw new NotFoundException('Product batch topilmadi');
     }
 
     const nextExpirationDate = hasExpirationDateField
@@ -121,7 +166,7 @@ export class ProductBatchService {
     return this.productBatchRepository.save(batch);
   }
 
-  async findAll(query: ListProductBatchsQueryDto) {
+  async findAll(query: ListProductBatchsQueryDto, user?: AuthUser) {
     const { page, limit, include_depleted } = query;
     const skip = (page - 1) * limit;
 
@@ -136,6 +181,7 @@ export class ProductBatchService {
       });
     }
 
+    await this.applyWarehouseScope(qb, user);
     this.applyActiveBatchFilter(qb, include_depleted);
 
     qb.orderBy('batch.received_at', 'DESC')
@@ -156,7 +202,7 @@ export class ProductBatchService {
     };
   }
 
-  async findAlerts(query: ListProductBatchsQueryDto) {
+  async findAlerts(query: ListProductBatchsQueryDto, user?: AuthUser) {
     const { page, limit, include_depleted } = query;
     const skip = (page - 1) * limit;
 
@@ -171,9 +217,9 @@ export class ProductBatchService {
       });
     }
 
+    await this.applyWarehouseScope(qb, user);
     this.applyActiveBatchFilter(qb, include_depleted);
 
-    // Sroki yaqinlashgan batchlar: alert_date keldi yoki o`tgan, lekin hali tugamagan
     const today = new Date();
     qb.andWhere('batch.expiration_alert_date IS NOT NULL')
       .andWhere('batch.expiration_alert_date <= :today', { today })

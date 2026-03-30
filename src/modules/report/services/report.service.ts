@@ -1,10 +1,18 @@
-import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import {
+  BadRequestException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { existsSync } from 'node:fs';
 import PDFDocument from 'pdfkit';
 import ExcelJS from 'exceljs';
 import { Repository, SelectQueryBuilder } from 'typeorm';
+import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { Product } from 'src/modules/product/entities/product.entity';
+import { Role } from 'src/modules/user/enums/role.enum';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import {
   ExportInventoryReportQueryDto,
@@ -92,10 +100,46 @@ export class ReportService {
     }
   }
 
+  private async resolveWarehouseScope(
+    requestedWarehouseId?: string,
+    user?: AuthUser,
+  ) {
+    if (!user || user.role !== Role.WAREHOUSE) {
+      return requestedWarehouseId;
+    }
+
+    const warehouses = await this.warehouseRepository.find({
+      where: { manager_id: user.id },
+      select: { id: true },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (!warehouses.length) {
+      throw new NotFoundException(
+        "Warehouse userga biriktirilgan warehouse topilmadi",
+      );
+    }
+
+    if (warehouses.length > 1) {
+      throw new ForbiddenException(
+        "Warehouse userga faqat bitta warehouse biriktirilishi kerak",
+      );
+    }
+
+    if (requestedWarehouseId && requestedWarehouseId !== warehouses[0].id) {
+      throw new ForbiddenException(
+        "Siz faqat o'zingizga biriktirilgan warehouse hisobotini ko'ra olasiz",
+      );
+    }
+
+    return warehouses[0].id;
+  }
+
   async getInventoryReport(
     query: GetInventoryReportQueryDto,
+    user?: AuthUser,
   ): Promise<InventoryReportResponse> {
-    const dataset = await this.buildInventoryDataset(query);
+    const dataset = await this.buildInventoryDataset(query, user);
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 50, 200);
     const total = dataset.details.length;
@@ -116,11 +160,14 @@ export class ReportService {
     };
   }
 
-  async buildInventoryExportBuffer(query: ExportInventoryReportQueryDto) {
+  async buildInventoryExportBuffer(
+    query: ExportInventoryReportQueryDto,
+    user?: AuthUser,
+  ) {
     const format = query.format ?? ReportExportFormat.EXCEL;
 
     if (format === ReportExportFormat.PDF) {
-      const buffer = await this.buildInventoryPdfBuffer(query);
+      const buffer = await this.buildInventoryPdfBuffer(query, user);
       return {
         buffer,
         filename: this.buildFilename('inventory_report', 'pdf'),
@@ -128,7 +175,7 @@ export class ReportService {
       };
     }
 
-    const buffer = await this.buildInventoryExcelBuffer(query);
+    const buffer = await this.buildInventoryExcelBuffer(query, user);
     return {
       buffer,
       filename: this.buildFilename('inventory_report', 'xlsx'),
@@ -139,12 +186,19 @@ export class ReportService {
 
   private async buildInventoryDataset(
     query: GetInventoryReportQueryDto,
+    user?: AuthUser,
   ): Promise<InventoryDataset> {
-    await this.validateWarehouse(query.warehouse_id);
-    this.validateDateRange(query.date_from, query.date_to);
+    const warehouseId = await this.resolveWarehouseScope(query.warehouse_id, user);
+    const effectiveQuery = {
+      ...query,
+      warehouse_id: warehouseId,
+    };
+
+    await this.validateWarehouse(effectiveQuery.warehouse_id);
+    this.validateDateRange(effectiveQuery.date_from, effectiveQuery.date_to);
 
     const generatedAt = new Date().toISOString();
-    const items = await this.getInventoryItems(query);
+    const items = await this.getInventoryItems(effectiveQuery);
 
     const summary = {
       total_positions: items.length,
@@ -180,9 +234,9 @@ export class ReportService {
     return {
       generated_at: generatedAt,
       filters: {
-        warehouse_id: query.warehouse_id ?? null,
-        date_from: query.date_from ?? null,
-        date_to: query.date_to ?? null,
+        warehouse_id: effectiveQuery.warehouse_id ?? null,
+        date_from: effectiveQuery.date_from ?? null,
+        date_to: effectiveQuery.date_to ?? null,
         date_filter_field: 'batch.received_at',
       },
       summary,
@@ -246,8 +300,9 @@ export class ReportService {
 
   private async buildInventoryExcelBuffer(
     query: GetInventoryReportQueryDto,
+    user?: AuthUser,
   ): Promise<Buffer> {
-    const report = await this.buildInventoryDataset(query);
+    const report = await this.buildInventoryDataset(query, user);
 
     const workbook = new ExcelJS.Workbook();
     const summarySheet = workbook.addWorksheet('Summary');
@@ -319,8 +374,9 @@ export class ReportService {
 
   private async buildInventoryPdfBuffer(
     query: GetInventoryReportQueryDto,
+    user?: AuthUser,
   ): Promise<Buffer> {
-    const report = await this.buildInventoryDataset(query);
+    const report = await this.buildInventoryDataset(query, user);
 
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({

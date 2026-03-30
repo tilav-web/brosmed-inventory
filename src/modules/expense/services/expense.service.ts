@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Inject,
   Injectable,
   NotFoundException,
@@ -17,7 +18,9 @@ import { ProductBatch } from 'src/modules/product/entities/product-batch.entity'
 import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
 import { OrderStatus } from 'src/modules/purchase-order/enums/order-status.enum';
 import { User } from 'src/modules/user/entities/user.entity';
+import { Role } from 'src/modules/user/enums/role.enum';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
+import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
 import { ListExpensesQueryDto } from '../dto/list-expenses-query.dto';
 import { ExpenseStatus } from '../enums/expense-status.enum';
@@ -123,17 +126,89 @@ export class ExpenseService {
     private readonly redis: Redis,
   ) {}
 
-  async findAll(query: ListExpensesQueryDto) {
+  private async getAssignedWarehouseForUser(userId: string): Promise<Warehouse> {
+    const warehouses = await this.warehouseRepository.find({
+      where: { manager_id: userId },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (warehouses.length === 0) {
+      throw new NotFoundException(
+        "Warehouse userga biriktirilgan warehouse topilmadi",
+      );
+    }
+
+    if (warehouses.length > 1) {
+      throw new ForbiddenException(
+        "Warehouse userga faqat bitta warehouse biriktirilishi kerak",
+      );
+    }
+
+    return warehouses[0];
+  }
+
+  private async ensureWarehouseExpenseAccess(
+    expense: Expense,
+    user?: AuthUser,
+  ): Promise<void> {
+    if (!user || user.role !== Role.WAREHOUSE) {
+      return;
+    }
+
+    const assignedWarehouse = await this.getAssignedWarehouseForUser(user.id);
+    const expenseWarehouseIds = new Set(
+      expense.items
+        .map((item) => item.warehouse?.id)
+        .filter((warehouseId): warehouseId is string => Boolean(warehouseId)),
+    );
+
+    if (!expenseWarehouseIds.size) {
+      throw new ForbiddenException("Expense uchun warehouse aniqlanmadi");
+    }
+
+    if (
+      expenseWarehouseIds.size !== 1 ||
+      !expenseWarehouseIds.has(assignedWarehouse.id)
+    ) {
+      throw new ForbiddenException(
+        "Siz faqat o'zingizga biriktirilgan warehouse chiqimlari bilan ishlay olasiz",
+      );
+    }
+  }
+
+  async findAll(query: ListExpensesQueryDto, user: AuthUser) {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
+    const assignedWarehouse =
+      user.role === Role.WAREHOUSE
+        ? await this.getAssignedWarehouseForUser(user.id)
+        : null;
 
     const qb = this.expenseRepository
       .createQueryBuilder('expense')
-      .leftJoinAndSelect('expense.manager', 'manager')
-      .leftJoinAndSelect('expense.items', 'item')
-      .leftJoinAndSelect('item.product', 'product')
-      .leftJoinAndSelect('item.warehouse', 'warehouse');
+      .leftJoinAndSelect('expense.manager', 'manager');
+
+    if (assignedWarehouse) {
+      qb.leftJoinAndSelect(
+        'expense.items',
+        'item',
+        'item.warehouse_id = :warehouseId',
+        { warehouseId: assignedWarehouse.id },
+      )
+        .leftJoinAndSelect('item.product', 'product')
+        .leftJoinAndSelect('item.warehouse', 'warehouse');
+      qb.innerJoin(
+        'expense.items',
+        'scope_item',
+        'scope_item.warehouse_id = :warehouseId',
+        { warehouseId: assignedWarehouse.id },
+      ).distinct(true);
+    } else {
+      qb.leftJoinAndSelect('expense.items', 'item')
+        .leftJoinAndSelect('item.product', 'product')
+        .leftJoinAndSelect('item.warehouse', 'warehouse');
+    }
 
     if (search) {
       qb.andWhere(
@@ -169,10 +244,14 @@ export class ExpenseService {
     };
   }
 
-  async findAllItems(query: ListExpenseItemsQueryDto) {
+  async findAllItems(query: ListExpenseItemsQueryDto, user?: AuthUser) {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
+    const assignedWarehouseId =
+      user?.role === Role.WAREHOUSE
+        ? (await this.getAssignedWarehouseForUser(user.id)).id
+        : undefined;
 
     const qb = this.expenseItemRepository
       .createQueryBuilder('item')
@@ -195,7 +274,11 @@ export class ExpenseService {
       qb.andWhere('expense.type = :type', { type: query.type });
     }
 
-    if (query.warehouse_id) {
+    if (assignedWarehouseId) {
+      qb.andWhere('warehouse.id = :warehouseId', {
+        warehouseId: assignedWarehouseId,
+      });
+    } else if (query.warehouse_id) {
       qb.andWhere('warehouse.id = :warehouseId', {
         warehouseId: query.warehouse_id,
       });
@@ -243,8 +326,12 @@ export class ExpenseService {
     };
   }
 
-  async getWarehouseStats(query: ListExpenseItemsQueryDto) {
+  async getWarehouseStats(query: ListExpenseItemsQueryDto, user?: AuthUser) {
     const search = query.search?.trim();
+    const assignedWarehouseId =
+      user?.role === Role.WAREHOUSE
+        ? (await this.getAssignedWarehouseForUser(user.id)).id
+        : undefined;
 
     const qb = this.expenseItemRepository
       .createQueryBuilder('item')
@@ -272,7 +359,11 @@ export class ExpenseService {
       qb.andWhere('expense.type = :type', { type: query.type });
     }
 
-    if (query.warehouse_id) {
+    if (assignedWarehouseId) {
+      qb.andWhere('warehouse.id = :warehouseId', {
+        warehouseId: assignedWarehouseId,
+      });
+    } else if (query.warehouse_id) {
       qb.andWhere('warehouse.id = :warehouseId', {
         warehouseId: query.warehouse_id,
       });
@@ -295,7 +386,7 @@ export class ExpenseService {
     }));
   }
 
-  async findById(id: string) {
+  async findById(id: string, user?: AuthUser) {
     const expense = await this.expenseRepository.findOne({
       where: { id },
       relations: {
@@ -310,6 +401,10 @@ export class ExpenseService {
 
     if (!expense) {
       throw new NotFoundException('Expense topilmadi');
+    }
+
+    if (user) {
+      await this.ensureWarehouseExpenseAccess(expense, user);
     }
 
     return expense;
@@ -442,6 +537,7 @@ export class ExpenseService {
       let totalPrice = 0;
       const requestReservedByBatch = new Map<string, number>();
       const existingReservedByBatch = new Map<string, number>();
+      let expenseWarehouseId: string | null = null;
 
       for (const item of dto.items) {
         const batch = await this.lockBatchForUpdate(
@@ -475,6 +571,14 @@ export class ExpenseService {
         ) {
           throw new BadRequestException(
             `Tanlangan partiya (Batch: ${batch.id}) tanlangan mahsulot yoki omborga tegishli emas`,
+          );
+        }
+
+        if (!expenseWarehouseId) {
+          expenseWarehouseId = warehouse.id;
+        } else if (expenseWarehouseId !== warehouse.id) {
+          throw new BadRequestException(
+            'Bitta expense ichida faqat bitta warehouse mahsulotlari bo‘lishi mumkin',
           );
         }
 
@@ -567,7 +671,7 @@ export class ExpenseService {
     return result;
   }
 
-  async issueExpense(id: string) {
+  async issueExpense(id: string, actor?: AuthUser) {
     const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
       const productBatchRepo = manager.getRepository(ProductBatch);
@@ -585,6 +689,8 @@ export class ExpenseService {
       if (!expense) {
         throw new NotFoundException('Expense topilmadi');
       }
+
+      await this.ensureWarehouseExpenseAccess(expense, actor);
 
       if (expense.status !== ExpenseStatus.PENDING_ISSUE) {
         throw new BadRequestException(
@@ -646,6 +752,8 @@ export class ExpenseService {
       }
 
       expense.status = ExpenseStatus.PENDING_PHOTO;
+      expense.issued_by_id = actor?.id ?? null;
+      expense.issued_at = new Date();
       await expenseRepo.save(expense);
 
       return {
@@ -658,17 +766,39 @@ export class ExpenseService {
     return result;
   }
 
-  async attachImagesAndComplete(id: string, images: string[]) {
-    const expense = await this.findById(id);
+  async attachImagesAndMarkPendingConfirmation(
+    id: string,
+    images: string[],
+    actor?: AuthUser,
+  ) {
+    const expense = await this.findById(id, actor);
 
     if (expense.status !== ExpenseStatus.PENDING_PHOTO) {
       throw new BadRequestException(
-        "Faqat 'PENDING_PHOTO' statusdagi expense yakunlanishi mumkin",
+        "Faqat 'PENDING_PHOTO' statusdagi expense uchun foto yuklash mumkin",
       );
     }
 
     expense.images = images;
+    expense.status = ExpenseStatus.PENDING_CONFIRMATION;
+
+    const result = await this.expenseRepository.save(expense);
+    await this.invalidateDashboardCache();
+    return result;
+  }
+
+  async confirmExpense(id: string, adminUserId?: string) {
+    const expense = await this.findById(id);
+
+    if (expense.status !== ExpenseStatus.PENDING_CONFIRMATION) {
+      throw new BadRequestException(
+        "Faqat 'PENDING_CONFIRMATION' statusdagi expense tasdiqlanishi mumkin",
+      );
+    }
+
     expense.status = ExpenseStatus.COMPLETED;
+    expense.confirmed_by_id = adminUserId ?? null;
+    expense.confirmed_at = new Date();
 
     const result = await this.expenseRepository.save(expense);
     await this.invalidateDashboardCache();

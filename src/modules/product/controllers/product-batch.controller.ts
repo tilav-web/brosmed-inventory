@@ -6,6 +6,7 @@ import {
   ParseUUIDPipe,
   Patch,
   Query,
+  Req,
   UseGuards,
 } from '@nestjs/common';
 import {
@@ -21,6 +22,7 @@ import {
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { UpdateProductBatchDto } from '../dto/update-product-batch.dto';
 import { ProductBatchService } from '../services/product-batch.service';
@@ -39,8 +41,11 @@ export class ProductBatchController {
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse/hisobchi kirishi mumkin' })
   @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
-  async findAll(@Query() query: ListProductBatchsQueryDto) {
-    return await this.productBatchService.findAll(query);
+  async findAll(
+    @Req() req: { user: AuthUser },
+    @Query() query: ListProductBatchsQueryDto,
+  ) {
+    return await this.productBatchService.findAll(query, req.user);
   }
 
   @Get('alerts')
@@ -54,8 +59,11 @@ export class ProductBatchController {
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse/hisobchi kirishi mumkin' })
   @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
-  async findAlerts(@Query() query: ListProductBatchsQueryDto) {
-    return await this.productBatchService.findAlerts(query);
+  async findAlerts(
+    @Req() req: { user: AuthUser },
+    @Query() query: ListProductBatchsQueryDto,
+  ) {
+    return await this.productBatchService.findAlerts(query, req.user);
   }
 
   @Patch(':id')
@@ -67,9 +75,10 @@ export class ProductBatchController {
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse/hisobchi kirishi mumkin' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
     @Body() dto: UpdateProductBatchDto,
   ) {
-    return this.productBatchService.update(id, dto);
+    return this.productBatchService.update(id, dto, req.user);
   }
 
   @Get(':id')
@@ -78,7 +87,10 @@ export class ProductBatchController {
   @ApiOkResponse({ description: 'Product batch topildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/warehouse/hisobchi kirishi mumkin' })
-  findOne(@Param('id', ParseUUIDPipe) id: string) {
-    return this.productBatchService.findById(id);
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.productBatchService.findById(id, req.user);
   }
 }

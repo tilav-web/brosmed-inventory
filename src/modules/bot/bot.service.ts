@@ -236,8 +236,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     buffer: Buffer,
     filename: string,
     caption?: string,
+    role: Role = Role.ADMIN,
   ): Promise<number> {
-    const users = await this.botUserService.getApprovedUsers();
+    const users = await this.botUserService.getApprovedUsers(role);
     let sent = 0;
 
     for (const user of users) {

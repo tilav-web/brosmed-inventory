@@ -675,6 +675,7 @@ export class BotContentService {
     const counts = {
       [ExpenseStatus.PENDING_ISSUE]: 0,
       [ExpenseStatus.PENDING_PHOTO]: 0,
+      [ExpenseStatus.PENDING_CONFIRMATION]: 0,
       [ExpenseStatus.COMPLETED]: 0,
     };
 
@@ -685,6 +686,7 @@ export class BotContentService {
     let text = '📋 <b>Chiqimlar</b>\n\n';
     text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
     text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
+    text += `🟠 Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
     text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
 
     if (!recentExpenses.length) {
@@ -767,6 +769,7 @@ export class BotContentService {
     const counts = {
       [ExpenseStatus.PENDING_ISSUE]: 0,
       [ExpenseStatus.PENDING_PHOTO]: 0,
+      [ExpenseStatus.PENDING_CONFIRMATION]: 0,
       [ExpenseStatus.COMPLETED]: 0,
     };
 
@@ -777,6 +780,7 @@ export class BotContentService {
     let text = '📋 <b>Mening chiqimlarim</b>\n\n';
     text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
     text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
+    text += `🟠 Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
     text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
 
     if (!recentExpenses.length) {
@@ -996,8 +1000,10 @@ export class BotContentService {
         return '🟡 Berish kutilmoqda';
       case ExpenseStatus.PENDING_PHOTO:
         return '📷 Foto kutilmoqda';
+      case ExpenseStatus.PENDING_CONFIRMATION:
+        return '🟠 Tasdiq kutilmoqda';
       case ExpenseStatus.COMPLETED:
-        return '✅ Yakunlangan';
+        return '✅ Tasdiqlangan';
       default:
         return this.escapeHtml(status);
     }

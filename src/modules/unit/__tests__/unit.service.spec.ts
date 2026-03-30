@@ -4,6 +4,7 @@ import { ILike, Repository } from 'typeorm';
 import { ConflictException, NotFoundException } from '@nestjs/common';
 import { UnitService } from '../services/unit.service';
 import { Unit } from '../entities/unit.entity';
+import { Product } from 'src/modules/product/entities/product.entity';
 import { CreateUnitDto } from '../dto/create-unit.dto';
 import { UpdateUnitDto } from '../dto/update-unit.dto';
 import { ListUnitsQueryDto } from '../dto/list-units-query.dto';
@@ -35,6 +36,11 @@ describe('UnitService (Unit Tests)', () => {
     keys: jest.fn(),
   };
 
+  const mockProductRepository = {
+    count: jest.fn(),
+    update: jest.fn(),
+  };
+
   beforeEach(async () => {
     // Testing Module yaratamiz
     const module: TestingModule = await Test.createTestingModule({
@@ -43,6 +49,10 @@ describe('UnitService (Unit Tests)', () => {
         {
           provide: getRepositoryToken(Unit),
           useValue: mockRepository,
+        },
+        {
+          provide: getRepositoryToken(Product),
+          useValue: mockProductRepository,
         },
         {
           provide: 'REDIS_CLIENT',
@@ -60,6 +70,8 @@ describe('UnitService (Unit Tests)', () => {
     mockRedis.set.mockResolvedValue('OK');
     mockRedis.del.mockResolvedValue(1);
     mockRedis.keys.mockResolvedValue([]);
+    mockProductRepository.count.mockResolvedValue(0);
+    mockProductRepository.update.mockResolvedValue({ affected: 1 });
   });
 
   describe('findAll', () => {
