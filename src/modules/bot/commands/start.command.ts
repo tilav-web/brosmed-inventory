@@ -24,27 +24,11 @@ export class StartCommand {
         telegramUser.first_name || telegramUser.username || 'Foydalanuvchi';
 
       if (user.is_approved) {
-        if (!user.role) {
+        if (!user.linked_user_id || !user.role) {
           await ctx.reply(
             `Salom, <b>${name}</b>! 👋\n\n` +
               `Akkauntingiz tasdiqlangan, lekin bot hali tizimdagi foydalanuvchiga bog'lanmagan.\n` +
               `Admin sizni kerakli userga biriktirgach, rolingiz avtomatik aniqlanadi.`,
-            {
-              parse_mode: 'HTML',
-              reply_markup: { remove_keyboard: true },
-            },
-          );
-          return;
-        }
-
-        if (
-          (user.role === Role.WAREHOUSE || user.role === Role.ACCOUNTANT) &&
-          !user.linked_user_id
-        ) {
-          await ctx.reply(
-            `Salom, <b>${name}</b>! 👋\n\n` +
-              `Siz uchun <b>${user.role}</b> user tanlangan, lekin bog'lash hali yakunlanmagan.\n` +
-              `Admin tizimdagi userni biriktirgach, profilingiz to'liq faollashadi.`,
             {
               parse_mode: 'HTML',
               reply_markup: { remove_keyboard: true },

@@ -53,30 +53,12 @@ export class HelpCommand {
       );
     }
 
-    if (!role) {
+    if (!state.hasLinkedUser || !role) {
       return (
         `📖 <b>Yordam</b>\n\n` +
         `/start - Holatni tekshirish\n` +
         `/help - Yordam\n\n` +
         `Admin sizni tizimdagi userga biriktirishi kerak. Role avtomatik aniqlanadi.`
-      );
-    }
-
-    if (role === Role.WAREHOUSE && !state.hasLinkedUser) {
-      return (
-        `📖 <b>Yordam</b>\n\n` +
-        `/start - Holatni tekshirish\n` +
-        `/help - Yordam\n\n` +
-        `Warehouse roli berilgan, lekin tizimdagi warehouse user hali bog'lanmagan.`
-      );
-    }
-
-    if (role === Role.ACCOUNTANT && !state.hasLinkedUser) {
-      return (
-        `📖 <b>Yordam</b>\n\n` +
-        `/start - Holatni tekshirish\n` +
-        `/help - Yordam\n\n` +
-        `Hisobchi roli berilgan, lekin tizimdagi accountant user hali bog'lanmagan.`
       );
     }
 

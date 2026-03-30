@@ -220,7 +220,7 @@ export class BotContentService {
         text += `🔐 Tizim user ID: <b>${this.escapeHtml(user.linked_user_id)}</b>\n`;
       }
     } else {
-      text += `🔐 Tizim user: <b>${user.role === Role.ADMIN ? 'ixtiyoriy' : "bog'lanmagan"}</b>\n`;
+      text += `🔐 Tizim user: <b>bog'lanmagan</b>\n`;
     }
 
     text += `🕒 So‘nggi faollik: <b>${this.formatDate(user.last_active_at)}</b>\n`;
@@ -944,25 +944,12 @@ export class BotContentService {
       };
     }
 
-    if (!botUser.role) {
+    if (!botUser.linked_user_id || !botUser.role) {
       return {
         ok: false,
         botUser,
         message:
-          "⏳ Akkauntingiz tasdiqlangan, lekin bot roli hali biriktirilmagan.\nAdmin bilan bog'laning.",
-      };
-    }
-
-    if (
-      (botUser.role === Role.WAREHOUSE ||
-        botUser.role === Role.ACCOUNTANT) &&
-      !botUser.linked_user_id
-    ) {
-      return {
-        ok: false,
-        botUser,
-        message:
-          `⏳ ${botUser.role} roli berilgan, lekin tizimdagi user hali bog'lanmagan.\nAdmin bilan bog'laning.`,
+          "⏳ Akkauntingiz hali tizimdagi foydalanuvchiga bog'lanmagan.\nAdmin bilan bog'laning.",
       };
     }
 
@@ -974,20 +961,15 @@ export class BotContentService {
     };
   }
 
-  private getConfigurationMessage(user: BotUser) {
+  private getConfigurationMessage(
+    user: BotUser & { role?: Role | null },
+  ) {
     if (!user.is_approved) {
       return "tasdiq kutilmoqda.";
     }
 
-    if (!user.role) {
-      return "bot roli hali biriktirilmagan.";
-    }
-
-    if (
-      (user.role === Role.WAREHOUSE || user.role === Role.ACCOUNTANT) &&
-      !user.linked_user_id
-    ) {
-      return `${user.role} roli uchun tizimdagi user hali bog'lanmagan.`;
+    if (!user.linked_user_id || !user.role) {
+      return "bot user hali tizimdagi foydalanuvchiga bog'lanmagan.";
     }
 
     return null;

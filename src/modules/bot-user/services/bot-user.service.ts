@@ -19,6 +19,7 @@ type SafeLinkedUser = Pick<
 >;
 
 type BotUserWithLinkedUser = BotUser & {
+  role: Role | null;
   linked_user?: SafeLinkedUser | null;
 };
 
@@ -36,7 +37,7 @@ export class BotUserService {
     first_name?: string;
     last_name?: string;
     username?: string;
-  }): Promise<BotUser> {
+  }): Promise<BotUserWithLinkedUser> {
     let user = await this.botUserRepository.findOne({
       where: { telegram_id: data.telegram_id },
     });
@@ -61,7 +62,6 @@ export class BotUserService {
       last_name: data.last_name ?? null,
       username: data.username ?? null,
       status: BotUserStatus.PENDING,
-      role: null,
       linked_user_id: null,
       last_active_at: new Date(),
     });
@@ -70,7 +70,9 @@ export class BotUserService {
     return this.normalizeSingleBotUser(saved);
   }
 
-  async findByTelegramId(telegramId: number): Promise<BotUser | null> {
+  async findByTelegramId(
+    telegramId: number,
+  ): Promise<BotUserWithLinkedUser | null> {
     const user = await this.botUserRepository.findOne({
       where: { telegram_id: telegramId },
     });
@@ -80,7 +82,7 @@ export class BotUserService {
     return this.normalizeSingleBotUser(user);
   }
 
-  async save(user: BotUser): Promise<BotUser> {
+  async save(user: BotUser): Promise<BotUserWithLinkedUser> {
     const saved = await this.botUserRepository.save(user);
     return this.normalizeSingleBotUser(saved);
   }
@@ -99,7 +101,7 @@ export class BotUserService {
     );
   }
 
-  async approve(id: string): Promise<BotUser> {
+  async approve(id: string): Promise<BotUserWithLinkedUser> {
     const user = await this.botUserRepository.findOne({ where: { id } });
     if (!user) {
       throw new Error('Bot user topilmadi');
@@ -107,21 +109,19 @@ export class BotUserService {
 
     const resolvedState = await this.validateResolvedState({
       currentUserId: user.id,
-      role: user.role,
       linkedUserId: user.linked_user_id,
       isApproved: true,
     });
 
     user.is_approved = true;
     user.status = BotUserStatus.ACTIVE;
-    user.role = resolvedState.role;
     user.linked_user_id = resolvedState.linkedUserId;
 
     const saved = await this.botUserRepository.save(user);
     return this.normalizeSingleBotUser(saved);
   }
 
-  async revokeApproval(id: string): Promise<BotUser> {
+  async revokeApproval(id: string): Promise<BotUserWithLinkedUser> {
     const user = await this.botUserRepository.findOne({ where: { id } });
     if (!user) {
       throw new Error('Bot user topilmadi');
@@ -170,7 +170,7 @@ export class BotUserService {
     };
   }
 
-  async getApprovedUsers(role?: Role): Promise<BotUser[]> {
+  async getApprovedUsers(role?: Role): Promise<BotUserWithLinkedUser[]> {
     const users = await this.botUserRepository.find({
       where: {
         is_approved: true,
@@ -179,7 +179,12 @@ export class BotUserService {
     });
 
     const linkedUsers = await this.loadLinkedUsersMap(users);
-    const normalized = users.map((user) => this.mapBotUser(user, linkedUsers));
+    const normalized = users
+      .map((user) => this.mapBotUser(user, linkedUsers))
+      .filter(
+        (user): user is BotUserWithLinkedUser =>
+          Boolean(user.linked_user_id && user.role),
+      );
 
     if (!role) {
       return normalized;
@@ -204,8 +209,6 @@ export class BotUserService {
       throw new NotFoundException('Bot user topilmadi');
     }
 
-    const nextRole =
-      dto.role !== undefined ? dto.role : (user.role ?? null);
     const nextLinkedUserId =
       dto.linked_user_id !== undefined
         ? dto.linked_user_id
@@ -214,7 +217,6 @@ export class BotUserService {
       dto.is_approved !== undefined ? dto.is_approved : user.is_approved;
     const resolvedState = await this.validateResolvedState({
       currentUserId: user.id,
-      role: nextRole,
       linkedUserId: nextLinkedUserId,
       isApproved: nextIsApproved,
     });
@@ -225,8 +227,7 @@ export class BotUserService {
     if (dto.is_approved !== undefined) {
       user.is_approved = dto.is_approved;
     }
-    if (dto.role !== undefined || dto.linked_user_id !== undefined) {
-      user.role = resolvedState.role;
+    if (dto.linked_user_id !== undefined || dto.is_approved !== undefined) {
       user.linked_user_id = resolvedState.linkedUserId;
     }
 
@@ -237,7 +238,6 @@ export class BotUserService {
 
   private async validateResolvedState(input: {
     currentUserId?: string;
-    role: Role | null;
     linkedUserId: string | null;
     isApproved: boolean;
   }): Promise<{ role: Role | null; linkedUserId: string | null }> {
@@ -251,7 +251,10 @@ export class BotUserService {
       }
 
       if (linkedUser.role === Role.ADMIN) {
-        await this.ensureSingleAdminBotUser(input.currentUserId);
+        await this.ensureSingleAdminBotUser(
+          linkedUser.id,
+          input.currentUserId,
+        );
       }
 
       return {
@@ -260,50 +263,38 @@ export class BotUserService {
       };
     }
 
-    if (!input.role) {
-      if (input.isApproved) {
-        throw new BadRequestException(
-          "Tasdiqlangan bot foydalanuvchi uchun role yoki linked_user_id majburiy",
-        );
-      }
-
-      return { role: null, linkedUserId: null };
-    }
-
-    if (input.role === Role.ADMIN) {
-      await this.ensureSingleAdminBotUser(input.currentUserId);
-    }
-
-    if (
-      input.isApproved &&
-      (input.role === Role.WAREHOUSE || input.role === Role.ACCOUNTANT)
-    ) {
+    if (input.isApproved) {
       throw new BadRequestException(
-        `${input.role} role uchun linked_user_id majburiy`,
+        "Tasdiqlangan bot foydalanuvchi uchun linked_user_id majburiy",
       );
     }
 
     return {
-      role: input.role,
+      role: null,
       linkedUserId: null,
     };
   }
 
-  private async ensureSingleAdminBotUser(currentUserId?: string) {
+  private async ensureSingleAdminBotUser(
+    adminUserId: string,
+    currentBotUserId?: string,
+  ) {
     const qb = this.botUserRepository
       .createQueryBuilder('bot_user')
-      .where('bot_user.role = :role', { role: Role.ADMIN });
+      .where('bot_user.linked_user_id = :adminUserId', {
+        adminUserId,
+      });
 
-    if (currentUserId) {
-      qb.andWhere('bot_user.id != :currentUserId', {
-        currentUserId,
+    if (currentBotUserId) {
+      qb.andWhere('bot_user.id != :currentBotUserId', {
+        currentBotUserId,
       });
     }
 
-    const existingAdminCount = await qb.getCount();
-    if (existingAdminCount > 0) {
+    const existingAdminLinkCount = await qb.getCount();
+    if (existingAdminLinkCount > 0) {
       throw new ConflictException(
-        "Bot userlar orasida faqat bitta admin bo'lishi mumkin",
+        "Admin userga faqat bitta bot user biriktirilishi mumkin",
       );
     }
   }
@@ -356,7 +347,7 @@ export class BotUserService {
 
     return {
       ...user,
-      role: linkedUser?.role ?? user.role,
+      role: linkedUser?.role ?? null,
       linked_user: linkedUser,
     };
   }
