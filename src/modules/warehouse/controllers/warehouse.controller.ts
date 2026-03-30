@@ -29,6 +29,7 @@ import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { GetWarehouseDashboardQueryDto } from '../dto/get-warehouse-dashboard-query.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
 import { ListCategoryStatsQueryDto } from '../dto/list-category-stats-query.dto';
+import { ListWarehouseRecentExpensesQueryDto } from '../dto/list-warehouse-recent-expenses-query.dto';
 import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { WarehouseService } from '../services/warehouse.service';
@@ -85,7 +86,7 @@ export class WarehouseController {
   @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
   getMyRecentExpenses(
     @Req() req: { user: AuthUser },
-    @Query() query: GetWarehouseDashboardQueryDto,
+    @Query() query: ListWarehouseRecentExpensesQueryDto,
   ) {
     return this.warehouseService.getMyRecentExpenses(req.user.id, query);
   }

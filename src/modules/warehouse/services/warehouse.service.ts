@@ -18,6 +18,7 @@ import { Category } from 'src/modules/category/entities/category.entity';
 import { CreateWarehouseDto } from '../dto/create-warehouse.dto';
 import { GetWarehouseDashboardQueryDto } from '../dto/get-warehouse-dashboard-query.dto';
 import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
+import { ListWarehouseRecentExpensesQueryDto } from '../dto/list-warehouse-recent-expenses-query.dto';
 import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { Warehouse } from '../entities/warehouse.entity';
@@ -61,6 +62,18 @@ type WarehouseRecentExpenseView = {
   purpose: string | null;
   status: ExpenseStatus;
   total_price: number;
+  issued_at: Date | null;
+  confirmed_at: Date | null;
+};
+
+type WarehouseRecentExpenseRow = {
+  id: string;
+  expense_number: string;
+  created_at: Date;
+  staff_name: string;
+  purpose: string | null;
+  status: ExpenseStatus;
+  total_price: string;
   issued_at: Date | null;
   confirmed_at: Date | null;
 };
@@ -238,6 +251,16 @@ export class WarehouseService {
     return Math.min(limit ?? 5, 20);
   }
 
+  private normalizeRecentExpensesPagination(
+    query: ListWarehouseRecentExpensesQueryDto,
+  ) {
+    const page = Math.max(query.page ?? 1, 1);
+    const requestedLimit = query.limit ?? query.recent_limit ?? 5;
+    const limit = Math.min(Math.max(requestedLimit, 1), 100);
+
+    return { page, limit };
+  }
+
   private async getWarehouseOrThrow(id: string) {
     const warehouse = await this.warehouseRepository.findOne({
       where: { id },
@@ -336,14 +359,7 @@ export class WarehouseService {
     warehouseId: string,
     recentLimit: number,
   ): Promise<WarehouseRecentExpenseView[]> {
-    const rows = await this.expenseRepository
-      .createQueryBuilder('expense')
-      .innerJoin(
-        'expense.items',
-        'item',
-        'item.warehouse_id = :warehouseId',
-        { warehouseId },
-      )
+    const rows = await this.createRecentExpensesQuery(warehouseId)
       .select('expense.id', 'id')
       .addSelect('expense.expense_number', 'expense_number')
       .addSelect('expense.createdAt', 'created_at')
@@ -364,18 +380,25 @@ export class WarehouseService {
       .addGroupBy('expense.confirmed_at')
       .orderBy('expense.createdAt', 'DESC')
       .limit(recentLimit)
-      .getRawMany<{
-        id: string;
-        expense_number: string;
-        created_at: Date;
-        staff_name: string;
-        purpose: string | null;
-        status: ExpenseStatus;
-        total_price: string;
-        issued_at: Date | null;
-        confirmed_at: Date | null;
-      }>();
+      .getRawMany<WarehouseRecentExpenseRow>();
 
+    return this.mapRecentExpenses(rows);
+  }
+
+  private createRecentExpensesQuery(warehouseId: string) {
+    return this.expenseRepository
+      .createQueryBuilder('expense')
+      .innerJoin(
+        'expense.items',
+        'item',
+        'item.warehouse_id = :warehouseId',
+        { warehouseId },
+      );
+  }
+
+  private mapRecentExpenses(
+    rows: WarehouseRecentExpenseRow[],
+  ): WarehouseRecentExpenseView[] {
     return rows.map((expense) => ({
       id: expense.id,
       expense_number: expense.expense_number,
@@ -387,6 +410,56 @@ export class WarehouseService {
       issued_at: expense.issued_at,
       confirmed_at: expense.confirmed_at,
     }));
+  }
+
+  private async getRecentExpensesPaginated(
+    warehouseId: string,
+    query: ListWarehouseRecentExpensesQueryDto,
+  ) {
+    const { page, limit } = this.normalizeRecentExpensesPagination(query);
+    const qb = this.createRecentExpensesQuery(warehouseId);
+
+    const totalRaw = await qb
+      .clone()
+      .select('COUNT(DISTINCT expense.id)', 'count')
+      .getRawOne<{ count: string | null }>();
+
+    const rows = await qb
+      .clone()
+      .select('expense.id', 'id')
+      .addSelect('expense.expense_number', 'expense_number')
+      .addSelect('expense.createdAt', 'created_at')
+      .addSelect('expense.staff_name', 'staff_name')
+      .addSelect('expense.purpose', 'purpose')
+      .addSelect('expense.status', 'status')
+      .addSelect('expense.total_price', 'total_price')
+      .addSelect('expense.issued_at', 'issued_at')
+      .addSelect('expense.confirmed_at', 'confirmed_at')
+      .groupBy('expense.id')
+      .addGroupBy('expense.expense_number')
+      .addGroupBy('expense.createdAt')
+      .addGroupBy('expense.staff_name')
+      .addGroupBy('expense.purpose')
+      .addGroupBy('expense.status')
+      .addGroupBy('expense.total_price')
+      .addGroupBy('expense.issued_at')
+      .addGroupBy('expense.confirmed_at')
+      .orderBy('expense.createdAt', 'DESC')
+      .offset((page - 1) * limit)
+      .limit(limit)
+      .getRawMany<WarehouseRecentExpenseRow>();
+
+    const total = Number(totalRaw?.count ?? 0);
+
+    return {
+      data: this.mapRecentExpenses(rows),
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
+    };
   }
 
   async getDashboard(id: string, query: GetWarehouseDashboardQueryDto) {
@@ -423,15 +496,12 @@ export class WarehouseService {
 
   async getMyRecentExpenses(
     userId: string,
-    query: GetWarehouseDashboardQueryDto,
+    query: ListWarehouseRecentExpensesQueryDto,
   ) {
     const warehouse = await this.getManagedWarehouseByUser(userId);
     return {
       warehouse: this.mapDashboardWarehouse(warehouse),
-      data: await this.getRecentExpenses(
-        warehouse.id,
-        this.normalizeRecentLimit(query.recent_limit),
-      ),
+      ...(await this.getRecentExpensesPaginated(warehouse.id, query)),
     };
   }
 
