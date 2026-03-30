@@ -389,27 +389,6 @@ export class WarehouseService {
     }));
   }
 
-  async getDashboardByUser(
-    userId: string,
-    query: GetWarehouseDashboardQueryDto,
-  ) {
-    const warehouse = await this.getManagedWarehouseByUser(userId);
-    const recentLimit = this.normalizeRecentLimit(query.recent_limit);
-    const [summary, recentExpenses] = await Promise.all([
-      this.buildDashboardSummary(warehouse.id),
-      this.getRecentExpenses(warehouse.id, recentLimit),
-    ]);
-
-    return {
-      warehouses: [this.mapDashboardWarehouse(warehouse)],
-      summary: {
-        ...summary,
-        warehouses_count: 1,
-      },
-      recent_expenses: recentExpenses,
-    };
-  }
-
   async getDashboard(id: string, query: GetWarehouseDashboardQueryDto) {
     const warehouse = await this.getWarehouseOrThrow(id);
     const recentLimit = this.normalizeRecentLimit(query.recent_limit);
@@ -430,18 +409,15 @@ export class WarehouseService {
     return this.findById(warehouse.id);
   }
 
-  async getMyDashboard(userId: string) {
-    const warehouse = await this.getManagedWarehouseByUser(userId);
-    return {
-      warehouse: this.mapDashboardWarehouse(warehouse),
-    };
-  }
-
   async getMyDashboardStats(userId: string) {
     const warehouse = await this.getManagedWarehouseByUser(userId);
+    const summary = await this.buildDashboardSummary(warehouse.id);
     return {
       warehouse: this.mapDashboardWarehouse(warehouse),
-      summary: await this.buildDashboardSummary(warehouse.id),
+      summary: {
+        ...summary,
+        warehouses_count: 1,
+      },
     };
   }
 

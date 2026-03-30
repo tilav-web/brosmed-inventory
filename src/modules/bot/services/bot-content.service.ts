@@ -499,31 +499,38 @@ export class BotContentService {
       return "📊 <b>Mening statistikam</b>\n\nSizga hali ombor biriktirilmagan.";
     }
 
-    const dashboard = (await this.warehouseService.getDashboardByUser(
-      linkedUserId,
-      { recent_limit: 5 },
-    )) as {
-      warehouses: WarehouseRow[];
-      summary: {
-        warehouses_count: number;
-        total_products: number;
-        pending_issue: number;
-        low_stock: number;
-        expiring_soon: number;
-      };
-      recent_expenses: RecentExpenseRow[];
-    };
+    const [statsResponse, recentExpensesResponse] = await Promise.all([
+      this.warehouseService.getMyDashboardStats(linkedUserId),
+      this.warehouseService.getMyRecentExpenses(linkedUserId, {
+        recent_limit: 5,
+      }),
+    ]);
+
+    const summary = (
+      statsResponse as {
+        summary: {
+          warehouses_count: number;
+          total_products: number;
+          pending_issue: number;
+          low_stock: number;
+          expiring_soon: number;
+        };
+      }
+    ).summary;
+    const recentExpenses = (
+      recentExpensesResponse as { data: RecentExpenseRow[] }
+    ).data;
 
     let text = '📊 <b>Mening statistikam</b>\n\n';
-    text += `📦 Omborlar: <b>${dashboard.summary.warehouses_count}</b> ta\n`;
-    text += `💊 Mahsulotlar: <b>${dashboard.summary.total_products}</b> ta\n`;
-    text += `🟡 Berish kutilmoqda: <b>${dashboard.summary.pending_issue}</b> ta\n`;
-    text += `⚠️ Kam qoldiq: <b>${dashboard.summary.low_stock}</b> ta\n`;
-    text += `⏰ Tugash arafasida: <b>${dashboard.summary.expiring_soon}</b> ta\n`;
+    text += `📦 Omborlar: <b>${summary.warehouses_count}</b> ta\n`;
+    text += `💊 Mahsulotlar: <b>${summary.total_products}</b> ta\n`;
+    text += `🟡 Berish kutilmoqda: <b>${summary.pending_issue}</b> ta\n`;
+    text += `⚠️ Kam qoldiq: <b>${summary.low_stock}</b> ta\n`;
+    text += `⏰ Tugash arafasida: <b>${summary.expiring_soon}</b> ta\n`;
 
-    if (dashboard.recent_expenses.length) {
+    if (recentExpenses.length) {
       text += '\n🕒 <b>So‘nggi chiqimlar</b>\n';
-      for (const expense of dashboard.recent_expenses) {
+      for (const expense of recentExpenses) {
         text += `• ${this.escapeHtml(expense.expense_number)} | ${this.mapExpenseStatus(expense.status)} | ${this.formatCurrency(Number(expense.total_price))}\n`;
       }
     }

@@ -51,19 +51,6 @@ export class WarehouseController {
     return this.warehouseService.findAll(query);
   }
 
-  @Get('my/dashboard')
-  @Roles(Role.WAREHOUSE)
-  @ApiOperation({
-    summary:
-      'Joriy warehouse userga biriktirilgan warehouse bo`yicha umumiy ma`lumot',
-  })
-  @ApiOkResponse({ description: 'Joriy warehouse user dashboard ma`lumotlari' })
-  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
-  getMyDashboard(@Req() req: { user: AuthUser }) {
-    return this.warehouseService.getMyDashboard(req.user.id);
-  }
-
   @Get('my')
   @Roles(Role.WAREHOUSE)
   @ApiOperation({
@@ -76,7 +63,7 @@ export class WarehouseController {
     return this.warehouseService.getMyWarehouse(req.user.id);
   }
 
-  @Get('my/dashboard/stats')
+  @Get('my/stats')
   @Roles(Role.WAREHOUSE)
   @ApiOperation({
     summary: 'Joriy warehouse user uchun dashboard statistikasi',
@@ -88,7 +75,7 @@ export class WarehouseController {
     return this.warehouseService.getMyDashboardStats(req.user.id);
   }
 
-  @Get('my/dashboard/recent-expenses')
+  @Get('my/recent-expenses')
   @Roles(Role.WAREHOUSE)
   @ApiOperation({
     summary: 'Joriy warehouse user uchun so`nggi chiqimlar',
