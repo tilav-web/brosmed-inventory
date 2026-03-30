@@ -276,6 +276,8 @@ export class ExpenseService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
+    const accountantUserId =
+      user?.role === Role.ACCOUNTANT ? user.id : undefined;
     const assignedWarehouseId =
       user?.role === Role.WAREHOUSE
         ? (await this.getAssignedWarehouseForUser(user.id)).id
@@ -300,6 +302,12 @@ export class ExpenseService {
 
     if (query.type) {
       qb.andWhere('expense.type = :type', { type: query.type });
+    }
+
+    if (accountantUserId) {
+      qb.andWhere('expense.manager_id = :managerId', {
+        managerId: accountantUserId,
+      });
     }
 
     if (assignedWarehouseId) {

@@ -139,15 +139,20 @@ export class ExpenseController {
   }
 
   @Get('items')
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
   @ApiOperation({
     summary: 'Expense itemlar ro`yxati (pagination + filter)',
   })
   @ApiOkResponse({ description: 'Expense itemlar ro`yxati' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  findAllItems(@Query() query: ListExpenseItemsQueryDto) {
-    return this.expenseService.findAllItems(query);
+  @ApiForbiddenResponse({
+    description: 'Faqat admin/hisobchi kirishi mumkin',
+  })
+  findAllItems(
+    @Query() query: ListExpenseItemsQueryDto,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.expenseService.findAllItems(query, req.user);
   }
 
   @Get('warehouse-stats')
