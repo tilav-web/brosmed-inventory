@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ImageModule } from '../image/image.module';
 import { Product } from '../product/entities/product.entity';
@@ -17,7 +17,7 @@ import { ExpenseService } from './services/expense.service';
 @Module({
   imports: [
     ImageModule,
-    BotModule,
+    forwardRef(() => BotModule),
     BotUserModule,
     TypeOrmModule.forFeature([
       Expense,

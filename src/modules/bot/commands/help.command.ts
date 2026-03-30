@@ -94,6 +94,7 @@ export class HelpCommand {
           ? {
               stats: 'Xarid statistikasi',
               orders: 'Mening xaridlarim ro`yxati',
+              expenses: "Mening chiqimlarim ro'yxati",
             }
         : {
             stats: "Menga biriktirilgan omborlar statistikasi",
@@ -109,9 +110,10 @@ export class HelpCommand {
         `/start - Botni ishga tushirish\n` +
         `/help - Yordam\n` +
         `/orders - ${descriptions.orders}\n` +
+        `/expenses - ${descriptions.expenses}\n` +
         `/stats - ${descriptions.stats}\n` +
         `/settings - Profil va sozlamalar\n\n` +
-        `💡 Tugmalar: ${ACCOUNTANT_MAIN_BUTTONS.orders}, ${ACCOUNTANT_MAIN_BUTTONS.stats}, ${ACCOUNTANT_MAIN_BUTTONS.settings}`
+        `💡 Tugmalar: ${ACCOUNTANT_MAIN_BUTTONS.orders}, ${ACCOUNTANT_MAIN_BUTTONS.expenses}, ${ACCOUNTANT_MAIN_BUTTONS.stats}, ${ACCOUNTANT_MAIN_BUTTONS.settings}`
       );
     }
 

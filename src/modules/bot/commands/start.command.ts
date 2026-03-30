@@ -59,7 +59,7 @@ export class StartCommand {
               `Tizim bo'yicha umumiy ombor nazorati shu yerda mavjud.`
             : user.role === Role.ACCOUNTANT
               ? `Brosmed Inventory botiga xush kelibsiz.\n` +
-                `Xaridlarni yaratish va ularning holatini shu yerda kuzatishingiz mumkin.`
+                `Xarid va chiqim hujjatlarini kuzatishingiz mumkin.`
             : `Brosmed Inventory botiga xush kelibsiz.\n` +
               `Sizga biriktirilgan omborlar bo'yicha ma'lumotlarni shu yerda ko'rishingiz mumkin.`;
 
@@ -67,7 +67,7 @@ export class StartCommand {
           user.role === Role.ADMIN
             ? `Asosiy buyruqlar: /stats, /products, /expenses, /warehouses, /alerts`
             : user.role === Role.ACCOUNTANT
-              ? `Asosiy buyruqlar: /orders, /stats, /settings`
+              ? `Asosiy buyruqlar: /orders, /expenses, /stats, /settings`
             : `Asosiy buyruqlar: /stats, /products, /expenses, /warehouses, /alerts`;
 
         await ctx.reply(

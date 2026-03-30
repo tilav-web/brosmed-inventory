@@ -162,10 +162,7 @@ export class BotContentService {
     }
 
     if (viewer.role === Role.ACCOUNTANT) {
-      return this.buildUnavailableSectionMessage(
-        '📋 Chiqimlar',
-        "Hisobchi uchun chiqimlar bo'limi mavjud emas.",
-      );
+      return this.buildAccountantExpensesMessage(viewer.linkedUserId!);
     }
 
     return this.buildWarehouseExpensesMessage(viewer.linkedUserId!);
@@ -665,6 +662,17 @@ export class BotContentService {
     return text.trim();
   }
 
+  private createExpenseStatusCounts(): Record<ExpenseStatus, number> {
+    return {
+      [ExpenseStatus.PENDING_APPROVAL]: 0,
+      [ExpenseStatus.PENDING_ISSUE]: 0,
+      [ExpenseStatus.PENDING_PHOTO]: 0,
+      [ExpenseStatus.PENDING_CONFIRMATION]: 0,
+      [ExpenseStatus.COMPLETED]: 0,
+      [ExpenseStatus.CANCELLED]: 0,
+    };
+  }
+
   private async buildAdminExpensesMessage(): Promise<string> {
     const [recentExpenses, statusRows] = await Promise.all([
       this.expenseRepository.find({
@@ -679,25 +687,72 @@ export class BotContentService {
         .getRawMany<{ status: ExpenseStatus; count: string }>(),
     ]);
 
-    const counts = {
-      [ExpenseStatus.PENDING_ISSUE]: 0,
-      [ExpenseStatus.PENDING_PHOTO]: 0,
-      [ExpenseStatus.PENDING_CONFIRMATION]: 0,
-      [ExpenseStatus.COMPLETED]: 0,
-    };
+    const counts = this.createExpenseStatusCounts();
 
     for (const row of statusRows) {
       counts[row.status] = Number(row.count ?? 0);
     }
 
     let text = '📋 <b>Chiqimlar</b>\n\n';
+    text += `🆕 Admin tasdig'i kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
     text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
     text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
     text += `🟠 Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
     text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
+    text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
     if (!recentExpenses.length) {
       text += '\nHozircha chiqimlar mavjud emas.';
+      return text;
+    }
+
+    text += '\n🕒 <b>So‘nggi hujjatlar</b>\n';
+    for (const expense of recentExpenses) {
+      text += `• <b>${this.escapeHtml(expense.expense_number)}</b>\n`;
+      text += `   ${this.mapExpenseStatus(expense.status)} | ${this.mapExpenseType(expense.type)}\n`;
+      text += `   ${this.escapeHtml(expense.staff_name)} | ${this.formatCurrency(
+        Number(expense.total_price),
+      )}\n`;
+      text += `   ${this.formatDate(expense.createdAt)}\n`;
+    }
+
+    return text.trim();
+  }
+
+  private async buildAccountantExpensesMessage(
+    linkedUserId: string,
+  ): Promise<string> {
+    const [recentExpenses, statusRows] = await Promise.all([
+      this.expenseRepository.find({
+        where: { manager_id: linkedUserId },
+        order: { createdAt: 'DESC' },
+        take: 10,
+      }),
+      this.expenseRepository
+        .createQueryBuilder('expense')
+        .select('expense.status', 'status')
+        .addSelect('COUNT(expense.id)', 'count')
+        .where('expense.manager_id = :managerId', { managerId: linkedUserId })
+        .groupBy('expense.status')
+        .getRawMany<{ status: ExpenseStatus; count: string }>(),
+    ]);
+
+    const counts = this.createExpenseStatusCounts();
+
+    for (const row of statusRows) {
+      counts[row.status] = Number(row.count ?? 0);
+    }
+
+    let text = '📋 <b>Mening chiqimlarim</b>\n\n';
+    text += `🆕 Admin tasdig'i kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
+    text += `🟡 Berish kutilmoqda: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
+    text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
+    text += `🟠 Yakuniy tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
+    text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
+    text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
+
+    if (!recentExpenses.length) {
+      text += '\nHozircha siz yaratgan chiqimlar mavjud emas.';
       return text;
     }
 
@@ -773,22 +828,19 @@ export class BotContentService {
         .getRawMany<{ status: ExpenseStatus; count: string }>(),
     ]);
 
-    const counts = {
-      [ExpenseStatus.PENDING_ISSUE]: 0,
-      [ExpenseStatus.PENDING_PHOTO]: 0,
-      [ExpenseStatus.PENDING_CONFIRMATION]: 0,
-      [ExpenseStatus.COMPLETED]: 0,
-    };
+    const counts = this.createExpenseStatusCounts();
 
     for (const row of statusRows) {
       counts[row.status] = Number(row.count ?? 0);
     }
 
     let text = '📋 <b>Mening chiqimlarim</b>\n\n';
+    text += `🆕 Admin tasdig'i kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
     text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
     text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
     text += `🟠 Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
     text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
+    text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
     if (!recentExpenses.length) {
       text += '\nHozircha sizning omborlaringiz bo‘yicha chiqimlar mavjud emas.';
@@ -1003,6 +1055,8 @@ export class BotContentService {
 
   private mapExpenseStatus(status: ExpenseStatus) {
     switch (status) {
+      case ExpenseStatus.PENDING_APPROVAL:
+        return "🆕 Admin tasdig'i kutilmoqda";
       case ExpenseStatus.PENDING_ISSUE:
         return '🟡 Berish kutilmoqda';
       case ExpenseStatus.PENDING_PHOTO:
@@ -1011,6 +1065,8 @@ export class BotContentService {
         return '🟠 Tasdiq kutilmoqda';
       case ExpenseStatus.COMPLETED:
         return '✅ Tasdiqlangan';
+      case ExpenseStatus.CANCELLED:
+        return '❌ Bekor qilingan';
       default:
         return this.escapeHtml(status);
     }
@@ -1044,6 +1100,8 @@ export class BotContentService {
     switch (role) {
       case Role.ADMIN:
         return 'admin';
+      case Role.ACCOUNTANT:
+        return 'accountant';
       case Role.WAREHOUSE:
         return 'warehouse';
       default:

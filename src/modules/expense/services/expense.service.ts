@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ForbiddenException,
+  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
@@ -13,6 +14,8 @@ import {
   SelectQueryBuilder,
 } from 'typeorm';
 import Redis from 'ioredis';
+import { InlineKeyboard } from 'grammy';
+import { BotService } from 'src/modules/bot/bot.service';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
@@ -124,6 +127,8 @@ export class ExpenseService {
     private readonly warehouseRepository: Repository<Warehouse>,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
+    @Inject(forwardRef(() => BotService))
+    private readonly botService: BotService,
   ) {}
 
   private async getAssignedWarehouseForUser(userId: string): Promise<Warehouse> {
@@ -147,11 +152,24 @@ export class ExpenseService {
     return warehouses[0];
   }
 
-  private async ensureWarehouseExpenseAccess(
+  private async ensureExpenseAccess(
     expense: Expense,
     user?: AuthUser,
   ): Promise<void> {
-    if (!user || user.role !== Role.WAREHOUSE) {
+    if (!user) {
+      return;
+    }
+
+    if (user.role === Role.ACCOUNTANT) {
+      if (expense.manager_id !== user.id) {
+        throw new ForbiddenException(
+          "Siz faqat o'zingiz yaratgan chiqimlar bilan ishlay olasiz",
+        );
+      }
+      return;
+    }
+
+    if (user.role !== Role.WAREHOUSE) {
       return;
     }
 
@@ -180,6 +198,8 @@ export class ExpenseService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
+    const accountantUserId =
+      user.role === Role.ACCOUNTANT ? user.id : undefined;
     const assignedWarehouse =
       user.role === Role.WAREHOUSE
         ? await this.getAssignedWarehouseForUser(user.id)
@@ -188,6 +208,12 @@ export class ExpenseService {
     const qb = this.expenseRepository
       .createQueryBuilder('expense')
       .leftJoinAndSelect('expense.manager', 'manager');
+
+    if (accountantUserId) {
+      qb.andWhere('expense.manager_id = :managerId', {
+        managerId: accountantUserId,
+      });
+    }
 
     if (assignedWarehouse) {
       qb.leftJoinAndSelect(
@@ -404,7 +430,7 @@ export class ExpenseService {
     }
 
     if (user) {
-      await this.ensureWarehouseExpenseAccess(expense, user);
+      await this.ensureExpenseAccess(expense, user);
     }
 
     return expense;
@@ -497,15 +523,18 @@ export class ExpenseService {
       .leftJoin('item.expense', 'expense')
       .select('COALESCE(SUM(item.quantity), 0)', 'reserved')
       .where('item.product_batch_id = :batchId', { batchId })
-      .andWhere('expense.status = :status', {
-        status: ExpenseStatus.PENDING_ISSUE,
+      .andWhere('expense.status IN (:...statuses)', {
+        statuses: [
+          ExpenseStatus.PENDING_APPROVAL,
+          ExpenseStatus.PENDING_ISSUE,
+        ],
       })
       .getRawOne<{ reserved: string | null }>();
 
     return Number(Number(reservedRaw?.reserved ?? 0).toFixed(2));
   }
 
-  async createAndGetReceipt(dto: CreateExpenseDto, managerId?: string) {
+  async createAndGetReceipt(dto: CreateExpenseDto, actor?: AuthUser) {
     const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
       const expenseItemRepo = manager.getRepository(ExpenseItem);
@@ -513,23 +542,30 @@ export class ExpenseService {
       const warehouseRepo = manager.getRepository(Warehouse);
       const userRepo = manager.getRepository(User);
 
-      const managerUser = managerId
-        ? await userRepo.findOne({ where: { id: managerId } })
+      const managerUser = actor?.id
+        ? await userRepo.findOne({ where: { id: actor.id } })
         : null;
 
       const expenseNumber = await this.generateExpenseNumber(manager);
       const expenseType = dto.type ?? ExpenseType.USAGE;
+      const requiresAdminApproval = actor?.role === Role.ACCOUNTANT;
 
       const createdExpense = await expenseRepo.save(
         expenseRepo.create({
           expense_number: expenseNumber,
-          status: ExpenseStatus.PENDING_ISSUE,
+          status: requiresAdminApproval
+            ? ExpenseStatus.PENDING_APPROVAL
+            : ExpenseStatus.PENDING_ISSUE,
           type: expenseType,
           images: [],
           total_price: 0,
           staff_name: dto.staff_name,
           purpose: dto.purpose ?? null,
           manager_id: managerUser?.id ?? null,
+          approved_by_id:
+            requiresAdminApproval || !actor?.id ? null : actor.id,
+          approved_at:
+            requiresAdminApproval || !actor?.id ? null : new Date(),
         }),
       );
 
@@ -652,7 +688,9 @@ export class ExpenseService {
       }
 
       return {
-        message: 'Sarf muvaffaqiyatli saqlandi',
+        message: requiresAdminApproval
+          ? "Chiqim so'rovi yaratildi va admin tasdig'i kutilmoqda"
+          : 'Sarf muvaffaqiyatli saqlandi',
         expense: savedExpense,
         receipt: {
           expense_id: savedExpense.id,
@@ -668,6 +706,13 @@ export class ExpenseService {
     });
 
     await this.invalidateDashboardCache();
+
+    if (result.expense.status === ExpenseStatus.PENDING_APPROVAL) {
+      await this.notifyAdminsAboutNewExpenseRequest(result.expense).catch(
+        () => undefined,
+      );
+    }
+
     return result;
   }
 
@@ -690,7 +735,7 @@ export class ExpenseService {
         throw new NotFoundException('Expense topilmadi');
       }
 
-      await this.ensureWarehouseExpenseAccess(expense, actor);
+      await this.ensureExpenseAccess(expense, actor);
 
       if (expense.status !== ExpenseStatus.PENDING_ISSUE) {
         throw new BadRequestException(
@@ -766,6 +811,49 @@ export class ExpenseService {
     return result;
   }
 
+  async approveExpense(id: string, adminUserId?: string) {
+    const expense = await this.findById(id);
+
+    if (expense.status !== ExpenseStatus.PENDING_APPROVAL) {
+      throw new BadRequestException(
+        "Faqat 'PENDING_APPROVAL' statusdagi expense tasdiqlanishi mumkin",
+      );
+    }
+
+    expense.status = ExpenseStatus.PENDING_ISSUE;
+    expense.approved_by_id = adminUserId ?? null;
+    expense.approved_at = new Date();
+    expense.cancelled_by_id = null;
+    expense.cancelled_at = null;
+
+    const result = await this.expenseRepository.save(expense);
+    await this.invalidateDashboardCache();
+    return result;
+  }
+
+  async cancelExpense(id: string, adminUserId?: string) {
+    const expense = await this.findById(id);
+
+    if (
+      ![
+        ExpenseStatus.PENDING_APPROVAL,
+        ExpenseStatus.PENDING_ISSUE,
+      ].includes(expense.status)
+    ) {
+      throw new BadRequestException(
+        "Faqat 'PENDING_APPROVAL' yoki 'PENDING_ISSUE' statusdagi expense bekor qilinishi mumkin",
+      );
+    }
+
+    expense.status = ExpenseStatus.CANCELLED;
+    expense.cancelled_by_id = adminUserId ?? null;
+    expense.cancelled_at = new Date();
+
+    const result = await this.expenseRepository.save(expense);
+    await this.invalidateDashboardCache();
+    return result;
+  }
+
   async attachImagesAndMarkPendingConfirmation(
     id: string,
     images: string[],
@@ -784,6 +872,13 @@ export class ExpenseService {
 
     const result = await this.expenseRepository.save(expense);
     await this.invalidateDashboardCache();
+
+    if (actor?.id) {
+      await this.notifyAdminsAboutExpenseReadyForConfirmation(result).catch(
+        () => undefined,
+      );
+    }
+
     return result;
   }
 
@@ -803,6 +898,25 @@ export class ExpenseService {
     const result = await this.expenseRepository.save(expense);
     await this.invalidateDashboardCache();
     return result;
+  }
+
+  async handleAdminRequestDecisionFromBot(
+    expenseId: string,
+    action: 'approve' | 'cancel',
+    adminUserId?: string | null,
+  ) {
+    if (action === 'approve') {
+      return this.approveExpense(expenseId, adminUserId ?? undefined);
+    }
+
+    return this.cancelExpense(expenseId, adminUserId ?? undefined);
+  }
+
+  async handleFinalConfirmationFromBot(
+    expenseId: string,
+    adminUserId?: string | null,
+  ) {
+    return this.confirmExpense(expenseId, adminUserId ?? undefined);
   }
 
   async getDashboardSummary(): Promise<{
@@ -1210,6 +1324,63 @@ export class ExpenseService {
     return result;
   }
 
+  private getExpenseWarehouse(expense: Expense): Warehouse | null {
+    return expense.items.find((item) => item.warehouse)?.warehouse ?? null;
+  }
+
+  private getExpenseCreatorName(expense: Expense) {
+    if (expense.manager) {
+      return (
+        [expense.manager.first_name, expense.manager.last_name]
+          .filter(Boolean)
+          .join(' ') || expense.manager.username
+      );
+    }
+
+    return expense.manager_id ?? "Noma'lum";
+  }
+
+  private async notifyAdminsAboutNewExpenseRequest(expense: Expense) {
+    const warehouse = this.getExpenseWarehouse(expense);
+    const text =
+      `📋 <b>Yangi chiqim so'rovi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `👤 Hisobchi: <b>${this.escapeHtml(this.getExpenseCreatorName(expense))}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
+      `🙍 Xodim: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>`;
+
+    const keyboard = new InlineKeyboard()
+      .text('✅ Tasdiqlash', `expense_request:approve:${expense.id}`)
+      .text('❌ Bekor qilish', `expense_request:cancel:${expense.id}`);
+
+    await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
+      reply_markup: keyboard,
+    });
+  }
+
+  private async notifyAdminsAboutExpenseReadyForConfirmation(expense: Expense) {
+    const warehouse = this.getExpenseWarehouse(expense);
+    const text =
+      `📷 <b>Chiqim uchun foto yuklandi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
+      `🙍 Xodim: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n` +
+      `🖼 Rasm soni: <b>${expense.images.length}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>`;
+
+    const keyboard = new InlineKeyboard().text(
+      '✅ Yakuniy tasdiqlash',
+      `expense_final:confirm:${expense.id}`,
+    );
+
+    await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
+      reply_markup: keyboard,
+    });
+  }
+
   private getLocalDateString(date: Date = new Date()): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, '0');
@@ -1237,6 +1408,22 @@ export class ExpenseService {
 
   private getSeverityScore(severity: DashboardSeverity) {
     return severity === 'high' ? 2 : 1;
+  }
+
+  private formatCurrency(value: number) {
+    return `${new Intl.NumberFormat('uz-UZ', {
+      minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(Number(value.toFixed(2)))} sum`;
+  }
+
+  private escapeHtml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 
   private async invalidateDashboardCache() {

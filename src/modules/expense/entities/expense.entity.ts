@@ -65,6 +65,14 @@ export class Expense {
   @Column({ type: 'timestamp', nullable: true })
   issued_at: Date | null;
 
+  // Chiqim so`rovini issue bosqichiga tasdiqlagan admin ID.
+  @Column({ type: 'uuid', nullable: true })
+  approved_by_id: string | null;
+
+  // Chiqim so`rovi issue bosqichiga tasdiqlangan vaqt.
+  @Column({ type: 'timestamp', nullable: true })
+  approved_at: Date | null;
+
   // Foto yuklangach hujjatni tasdiqlagan admin ID.
   @Column({ type: 'uuid', nullable: true })
   confirmed_by_id: string | null;
@@ -72,6 +80,14 @@ export class Expense {
   // Chiqim yakuniy tasdiqlangan vaqt.
   @Column({ type: 'timestamp', nullable: true })
   confirmed_at: Date | null;
+
+  // Chiqimni bekor qilgan admin ID.
+  @Column({ type: 'uuid', nullable: true })
+  cancelled_by_id: string | null;
+
+  // Chiqim bekor qilingan vaqt.
+  @Column({ type: 'timestamp', nullable: true })
+  cancelled_at: Date | null;
 
   // Chiqimni rasmiylashtirgan xodim ismi.
   @Column({ type: 'varchar' })

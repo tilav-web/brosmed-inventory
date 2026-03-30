@@ -80,11 +80,13 @@ export class ExpenseController {
   }
 
   @Get()
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
   @ApiOperation({ summary: 'Expense lar ro`yxati (pagination + filter)' })
   @ApiOkResponse({ description: 'Expense lar ro`yxati' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  @ApiForbiddenResponse({
+    description: 'Faqat admin/warehouse/hisobchi kirishi mumkin',
+  })
   findAll(@Req() req: { user: AuthUser }, @Query() query: ListExpensesQueryDto) {
     return this.expenseService.findAll(query, req.user);
   }
@@ -160,27 +162,60 @@ export class ExpenseController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
   @ApiOperation({ summary: 'Bitta expense ni id bo`yicha olish' })
   @ApiOkResponse({ description: 'Expense topildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  @ApiForbiddenResponse({
+    description: 'Faqat admin/warehouse/hisobchi kirishi mumkin',
+  })
   findOne(@Param('id', ParseUUIDPipe) id: string, @Req() req: { user: AuthUser }) {
     return this.expenseService.findById(id, req.user);
   }
 
   @Post('save-and-receipt')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Sarfni saqlash va chek ma`lumotini qaytarish' })
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
+  @ApiOperation({
+    summary:
+      'Chiqimni yaratish: hisobchi uchun tasdiq kutiladi, admin uchun esa darhol issue bosqichiga tayyor bo`ladi',
+  })
   @ApiBody({ type: CreateExpenseDto })
   @ApiOkResponse({ description: 'Expense saqlandi va receipt qaytarildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  @ApiForbiddenResponse({
+    description: 'Faqat admin/hisobchi kirishi mumkin',
+  })
   createAndGetReceipt(
     @Body() dto: CreateExpenseDto,
     @Req() req: { user: AuthUser },
   ) {
-    return this.expenseService.createAndGetReceipt(dto, req.user.id);
+    return this.expenseService.createAndGetReceipt(dto, req.user);
+  }
+
+  @Post(':id/approve')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Hisobchi yaratgan chiqim so`rovini tasdiqlash' })
+  @ApiOkResponse({ description: 'Expense issue bosqichiga tasdiqlandi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  approveExpense(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.expenseService.approveExpense(id, req.user.id);
+  }
+
+  @Post(':id/cancel')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Chiqim so`rovini bekor qilish' })
+  @ApiOkResponse({ description: 'Expense bekor qilindi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  cancelExpense(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.expenseService.cancelExpense(id, req.user.id);
   }
 
   @Post(':id/issue')

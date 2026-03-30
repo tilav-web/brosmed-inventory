@@ -30,6 +30,7 @@ export const WAREHOUSE_MAIN_BUTTONS = {
 
 export const ACCOUNTANT_MAIN_BUTTONS = {
   orders: '🛒 Xaridlar',
+  expenses: '📋 Chiqimlar',
   stats: '📊 Xarid statistikasi',
   settings: '⚙️ Sozlamalar',
 } as const;
@@ -103,8 +104,9 @@ export function mainKeyboard(role: Role) {
       const buttons = ACCOUNTANT_MAIN_BUTTONS;
       return keyboard
         .text(buttons.orders)
-        .text(buttons.stats)
+        .text(buttons.expenses)
         .row()
+        .text(buttons.stats)
         .text(buttons.settings)
         .resized()
         .persistent();

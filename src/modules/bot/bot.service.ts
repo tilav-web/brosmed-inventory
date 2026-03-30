@@ -25,6 +25,7 @@ import { SettingsCommand } from './commands/settings.command';
 import { OrdersCommand } from './commands/orders.command';
 import { MessageEvent } from './events/message.event';
 import { ChatMemberEvent } from './events/chat-member.event';
+import { ExpenseCallbackEvent } from './events/expense-callback.event';
 import { PurchaseOrderCallbackEvent } from './events/purchase-order-callback.event';
 import { AuthMiddleware } from './middleware/auth.middleware';
 import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
@@ -49,6 +50,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private readonly ordersCommand: OrdersCommand,
     private readonly messageEvent: MessageEvent,
     private readonly chatMemberEvent: ChatMemberEvent,
+    private readonly expenseCallbackEvent: ExpenseCallbackEvent,
     private readonly purchaseOrderCallbackEvent: PurchaseOrderCallbackEvent,
     private readonly authMiddleware: AuthMiddleware,
     private readonly botUserService: BotUserService,
@@ -128,6 +130,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.settingsCommand.register(this.bot);
     this.ordersCommand.register(this.bot);
     this.messageEvent.register(this.bot);
+    this.expenseCallbackEvent.register(this.bot);
     this.purchaseOrderCallbackEvent.register(this.bot);
 
     this.bot.catch(async (err) => {
