@@ -210,17 +210,7 @@ export class BotUserService {
         .map((botUser) => [botUser.linked_user_id!, botUser.id]),
     );
 
-    const filtered = users.filter((user) => {
-      const linkedBotUserId = linkedBotUserByUserId.get(user.id);
-
-      if (!linkedBotUserId) {
-        return true;
-      }
-
-      return linkedBotUserId === query.current_bot_user_id;
-    });
-
-    const paginated = filtered.slice((page - 1) * limit, page * limit);
+    const paginated = users.slice((page - 1) * limit, page * limit);
 
     return {
       data: paginated.map((user) => ({
@@ -237,8 +227,8 @@ export class BotUserService {
       meta: {
         page,
         limit,
-        total: filtered.length,
-        total_pages: Math.ceil(filtered.length / limit) || 1,
+        total: users.length,
+        total_pages: Math.ceil(users.length / limit) || 1,
       },
     };
   }
@@ -296,6 +286,13 @@ export class BotUserService {
 
     if (dto.status !== undefined) {
       user.status = dto.status;
+    } else if (dto.is_approved === true) {
+      user.status = BotUserStatus.ACTIVE;
+    } else if (
+      dto.is_approved === false &&
+      user.status !== BotUserStatus.BLOCKED
+    ) {
+      user.status = BotUserStatus.PENDING;
     }
     if (dto.is_approved !== undefined) {
       user.is_approved = dto.is_approved;

@@ -31,7 +31,7 @@ import { ExpenseModule } from '../expense/expense.module';
 @Module({
   imports: [
     WarehouseModule,
-    BotUserModule,
+    forwardRef(() => BotUserModule),
     UserModule,
     forwardRef(() => ExpenseModule),
     forwardRef(() => PurchaseOrderModule),

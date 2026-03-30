@@ -1,6 +1,8 @@
 import {
   Body,
   Controller,
+  Inject,
+  forwardRef,
   Get,
   Param,
   ParseUUIDPipe,
@@ -24,6 +26,9 @@ import { BotUserService } from '../services/bot-user.service';
 import { ListBotUsersQueryDto } from '../dto/list-bot-users-query.dto';
 import { ListLinkableUsersQueryDto } from '../dto/list-linkable-users-query.dto';
 import { UpdateBotUserDto } from '../dto/update-bot-user.dto';
+import { BotService } from 'src/modules/bot/bot.service';
+
+type BotUserView = Awaited<ReturnType<BotUserService['findById']>>;
 
 @Controller('bot-users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -31,7 +36,11 @@ import { UpdateBotUserDto } from '../dto/update-bot-user.dto';
 @ApiTags('bot-users')
 @ApiBearerAuth('bearer')
 export class BotUserController {
-  constructor(private readonly botUserService: BotUserService) {}
+  constructor(
+    private readonly botUserService: BotUserService,
+    @Inject(forwardRef(() => BotService))
+    private readonly botService: BotService,
+  ) {}
 
   @Get()
   @ApiOperation({ summary: 'Bot foydalanuvchilar ro`yxati (pagination)' })
@@ -45,7 +54,7 @@ export class BotUserController {
   @Get('linkable-users')
   @ApiOperation({
     summary:
-      "Bot userga biriktirish mumkin bo'lgan tizim userlari (admin ham chiqadi)",
+      "Bot userga biriktirish uchun tizim userlari ro'yxati (admin ham chiqadi, linklanganlari ham flag bilan keladi)",
   })
   @ApiOkResponse({ description: "Biriktirish uchun tizim userlar ro'yxati" })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
@@ -71,10 +80,61 @@ export class BotUserController {
   @ApiOkResponse({ description: 'Bot user yangilandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
-  update(
+  async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateBotUserDto,
   ) {
-    return this.botUserService.update(id, dto);
+    const before = await this.botUserService.findById(id);
+    const updated = await this.botUserService.update(id, dto);
+    await this.notifyUserIfAccessGranted(before, updated);
+    return updated;
+  }
+
+  private async notifyUserIfAccessGranted(
+    before: BotUserView,
+    after: Exclude<BotUserView, null>,
+  ) {
+    if (!after.is_approved || !after.linked_user_id || !after.role) {
+      return;
+    }
+
+    const becameApproved = !before?.is_approved && after.is_approved;
+    const linkedUserChanged = before?.linked_user_id !== after.linked_user_id;
+
+    if (!becameApproved && !linkedUserChanged) {
+      return;
+    }
+
+    const roleLabel = this.getRoleLabel(after.role);
+    const linkedName = [
+      after.linked_user?.first_name,
+      after.linked_user?.last_name,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    const message =
+      becameApproved && linkedUserChanged
+        ? `✅ Akkauntingiz tasdiqlandi va tizimga biriktirildi.\n\nSiz <b>${roleLabel}</b> roliga ega foydalanuvchi${
+            linkedName ? ` <b>${linkedName}</b>` : ''
+          } bilan bog'landingiz.\nBotdan foydalanishni boshlash uchun /start ni bosing.`
+        : `🔄 Bot akkauntingiz yangilandi.\n\nSiz <b>${roleLabel}</b> roliga ega foydalanuvchi${
+            linkedName ? ` <b>${linkedName}</b>` : ''
+          } bilan bog'landingiz.\nYangilangan menyuni ko'rish uchun /start ni bosing.`;
+
+    await this.botService.sendMessage(after.telegram_id, message);
+  }
+
+  private getRoleLabel(role: Role): string {
+    if (role === Role.ADMIN) {
+      return 'admin';
+    }
+
+    if (role === Role.ACCOUNTANT) {
+      return 'hisobchi';
+    }
+
+    return 'warehouse';
   }
 }
