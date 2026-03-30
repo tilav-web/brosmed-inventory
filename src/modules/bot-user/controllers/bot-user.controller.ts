@@ -22,6 +22,7 @@ import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { BotUserService } from '../services/bot-user.service';
 import { ListBotUsersQueryDto } from '../dto/list-bot-users-query.dto';
+import { ListLinkableUsersQueryDto } from '../dto/list-linkable-users-query.dto';
 import { UpdateBotUserDto } from '../dto/update-bot-user.dto';
 
 @Controller('bot-users')
@@ -39,6 +40,18 @@ export class BotUserController {
   @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
   findAll(@Query() query: ListBotUsersQueryDto) {
     return this.botUserService.findAll(query);
+  }
+
+  @Get('linkable-users')
+  @ApiOperation({
+    summary:
+      "Bot userga biriktirish mumkin bo'lgan tizim userlari (admin ham chiqadi)",
+  })
+  @ApiOkResponse({ description: "Biriktirish uchun tizim userlar ro'yxati" })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  listLinkableUsers(@Query() query: ListLinkableUsersQueryDto) {
+    return this.botUserService.listLinkableUsers(query);
   }
 
   @Get(':id')

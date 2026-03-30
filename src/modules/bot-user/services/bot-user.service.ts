@@ -11,6 +11,7 @@ import { Role } from 'src/modules/user/enums/role.enum';
 import { BotUser } from '../entities/bot-user.entity';
 import { BotUserStatus } from '../enums/bot-user-status.enum';
 import { ListBotUsersQueryDto } from '../dto/list-bot-users-query.dto';
+import { ListLinkableUsersQueryDto } from '../dto/list-linkable-users-query.dto';
 import { UpdateBotUserDto } from '../dto/update-bot-user.dto';
 
 type SafeLinkedUser = Pick<
@@ -170,6 +171,78 @@ export class BotUserService {
     };
   }
 
+  async listLinkableUsers(query: ListLinkableUsersQueryDto) {
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+    const search = query.search?.trim();
+
+    const qb = this.userRepository
+      .createQueryBuilder('user')
+      .select([
+        'user.id',
+        'user.first_name',
+        'user.last_name',
+        'user.username',
+        'user.role',
+        'user.createdAt',
+        'user.updatedAt',
+      ]);
+
+    if (search) {
+      qb.andWhere(
+        "(user.first_name ILIKE :search OR user.last_name ILIKE :search OR user.username ILIKE :search OR CONCAT_WS(' ', user.first_name, user.last_name) ILIKE :search OR CONCAT_WS(' ', user.last_name, user.first_name) ILIKE :search)",
+        { search: `%${search}%` },
+      );
+    }
+
+    qb.orderBy('user.createdAt', 'DESC');
+
+    const users = await qb.getMany();
+    const linkedBotUsers = await this.botUserRepository.find({
+      where: {
+        linked_user_id: In(users.map((user) => user.id)),
+      },
+    });
+
+    const linkedBotUserByUserId = new Map(
+      linkedBotUsers
+        .filter((botUser) => Boolean(botUser.linked_user_id))
+        .map((botUser) => [botUser.linked_user_id!, botUser.id]),
+    );
+
+    const filtered = users.filter((user) => {
+      const linkedBotUserId = linkedBotUserByUserId.get(user.id);
+
+      if (!linkedBotUserId) {
+        return true;
+      }
+
+      return linkedBotUserId === query.current_bot_user_id;
+    });
+
+    const paginated = filtered.slice((page - 1) * limit, page * limit);
+
+    return {
+      data: paginated.map((user) => ({
+        id: user.id,
+        first_name: user.first_name,
+        last_name: user.last_name,
+        username: user.username,
+        role: user.role,
+        createdAt: user.createdAt,
+        updatedAt: user.updatedAt,
+        linked_bot_user_id: linkedBotUserByUserId.get(user.id) ?? null,
+        is_linked: linkedBotUserByUserId.has(user.id),
+      })),
+      meta: {
+        page,
+        limit,
+        total: filtered.length,
+        total_pages: Math.ceil(filtered.length / limit) || 1,
+      },
+    };
+  }
+
   async getApprovedUsers(role?: Role): Promise<BotUserWithLinkedUser[]> {
     const users = await this.botUserRepository.find({
       where: {
@@ -250,12 +323,7 @@ export class BotUserService {
         throw new NotFoundException("Bog'langan tizim foydalanuvchisi topilmadi");
       }
 
-      if (linkedUser.role === Role.ADMIN) {
-        await this.ensureSingleAdminBotUser(
-          linkedUser.id,
-          input.currentUserId,
-        );
-      }
+      await this.ensureLinkedUserIsUnique(linkedUser.id, input.currentUserId);
 
       return {
         role: linkedUser.role,
@@ -275,14 +343,14 @@ export class BotUserService {
     };
   }
 
-  private async ensureSingleAdminBotUser(
-    adminUserId: string,
+  private async ensureLinkedUserIsUnique(
+    linkedUserId: string,
     currentBotUserId?: string,
   ) {
     const qb = this.botUserRepository
       .createQueryBuilder('bot_user')
-      .where('bot_user.linked_user_id = :adminUserId', {
-        adminUserId,
+      .where('bot_user.linked_user_id = :linkedUserId', {
+        linkedUserId,
       });
 
     if (currentBotUserId) {
@@ -294,7 +362,7 @@ export class BotUserService {
     const existingAdminLinkCount = await qb.getCount();
     if (existingAdminLinkCount > 0) {
       throw new ConflictException(
-        "Admin userga faqat bitta bot user biriktirilishi mumkin",
+        "Bu tizim useri allaqachon boshqa bot userga biriktirilgan",
       );
     }
   }
