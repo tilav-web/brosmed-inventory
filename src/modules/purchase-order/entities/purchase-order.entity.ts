@@ -32,6 +32,21 @@ export class PurchaseOrder {
   @Column({ type: 'boolean', default: false })
   is_received: boolean;
 
+  @Column({ type: 'uuid' })
+  created_by_id: string;
+
+  @Column({ type: 'uuid', nullable: true })
+  decided_by_id: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  decided_at: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  received_by_id: string | null;
+
+  @Column({ type: 'timestamp', nullable: true })
+  received_at: Date | null;
+
   // Buyurtma berilgan sana/vaqt.
   @Column({ type: 'timestamp' })
   order_date: Date;

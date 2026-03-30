@@ -1,15 +1,18 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { BotUser } from 'src/modules/bot-user/entities/bot-user.entity';
 import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 import { BotUserStatus } from 'src/modules/bot-user/enums/bot-user-status.enum';
+import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ExpenseStatus } from 'src/modules/expense/enums/expense-status.enum';
 import { ExpenseType } from 'src/modules/expense/enums/expense-type.enum';
-import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { Product } from 'src/modules/product/entities/product.entity';
-import { OrderStatus } from 'src/modules/purchase-order/enums/order-status.enum';
 import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
+import { OrderStatus } from 'src/modules/purchase-order/enums/order-status.enum';
+import { Role } from 'src/modules/user/enums/role.enum';
+import { UserService } from 'src/modules/user/services/user.service';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { WarehouseService } from 'src/modules/warehouse/services/warehouse.service';
 
@@ -30,6 +33,29 @@ interface ProductRow {
   warehouse_name: string;
 }
 
+interface RecentExpenseRow {
+  id: string;
+  expense_number: string;
+  created_at: Date;
+  staff_name: string;
+  purpose: string | null;
+  status: ExpenseStatus;
+  total_price: number;
+}
+
+type ViewerContext =
+  | {
+      ok: true;
+      role: Role;
+      botUser: BotUser;
+      linkedUserId: string | null;
+    }
+  | {
+      ok: false;
+      message: string;
+      botUser?: BotUser;
+    };
+
 @Injectable()
 export class BotContentService {
   constructor(
@@ -45,9 +71,175 @@ export class BotContentService {
     private readonly warehouseRepository: Repository<Warehouse>,
     private readonly warehouseService: WarehouseService,
     private readonly botUserService: BotUserService,
+    private readonly userService: UserService,
   ) {}
 
-  async buildWarehousesMessage(): Promise<string> {
+  async buildWarehousesMessage(telegramId: number): Promise<string> {
+    const viewer = await this.getViewerContext(telegramId);
+    if (!viewer.ok) {
+      return viewer.message;
+    }
+
+    if (viewer.role === Role.ADMIN) {
+      return this.buildAdminWarehousesMessage();
+    }
+
+    if (viewer.role === Role.ACCOUNTANT) {
+      return this.buildUnavailableSectionMessage(
+        '📦 Omborlar',
+        "Hisobchi uchun asosiy bo'lim xaridlar hisoblanadi. /orders buyrug'idan foydalaning.",
+      );
+    }
+
+    return this.buildWarehouseWarehousesMessage(viewer.linkedUserId!);
+  }
+
+  async buildAlertsMessage(telegramId: number): Promise<string> {
+    const viewer = await this.getViewerContext(telegramId);
+    if (!viewer.ok) {
+      return viewer.message;
+    }
+
+    if (viewer.role === Role.ADMIN) {
+      return this.buildAdminAlertsMessage();
+    }
+
+    if (viewer.role === Role.ACCOUNTANT) {
+      return this.buildUnavailableSectionMessage(
+        '🔔 Ogohlantirishlar',
+        "Hisobchi uchun bu bo'lim mavjud emas.",
+      );
+    }
+
+    return this.buildWarehouseAlertsMessage(viewer.linkedUserId!);
+  }
+
+  async buildStatsMessage(telegramId: number): Promise<string> {
+    const viewer = await this.getViewerContext(telegramId);
+    if (!viewer.ok) {
+      return viewer.message;
+    }
+
+    if (viewer.role === Role.ADMIN) {
+      return this.buildAdminStatsMessage();
+    }
+
+    if (viewer.role === Role.ACCOUNTANT) {
+      return this.buildAccountantStatsMessage(viewer.linkedUserId!);
+    }
+
+    return this.buildWarehouseStatsMessage(viewer.linkedUserId!);
+  }
+
+  async buildProductsMessage(telegramId: number): Promise<string> {
+    const viewer = await this.getViewerContext(telegramId);
+    if (!viewer.ok) {
+      return viewer.message;
+    }
+
+    if (viewer.role === Role.ADMIN) {
+      return this.buildAdminProductsMessage();
+    }
+
+    if (viewer.role === Role.ACCOUNTANT) {
+      return this.buildUnavailableSectionMessage(
+        '💊 Mahsulotlar',
+        "Hisobchi uchun mahsulot bo'limi mavjud emas.",
+      );
+    }
+
+    return this.buildWarehouseProductsMessage(viewer.linkedUserId!);
+  }
+
+  async buildExpensesMessage(telegramId: number): Promise<string> {
+    const viewer = await this.getViewerContext(telegramId);
+    if (!viewer.ok) {
+      return viewer.message;
+    }
+
+    if (viewer.role === Role.ADMIN) {
+      return this.buildAdminExpensesMessage();
+    }
+
+    if (viewer.role === Role.ACCOUNTANT) {
+      return this.buildUnavailableSectionMessage(
+        '📋 Chiqimlar',
+        "Hisobchi uchun chiqimlar bo'limi mavjud emas.",
+      );
+    }
+
+    return this.buildWarehouseExpensesMessage(viewer.linkedUserId!);
+  }
+
+  async buildOrdersMessage(telegramId: number): Promise<string> {
+    const viewer = await this.getViewerContext(telegramId);
+    if (!viewer.ok) {
+      return viewer.message;
+    }
+
+    if (viewer.role === Role.WAREHOUSE) {
+      return this.buildUnavailableSectionMessage(
+        '🛒 Xaridlar',
+        "Warehouse roli uchun xaridlar bo'limi mavjud emas.",
+      );
+    }
+
+    if (viewer.role === Role.ADMIN) {
+      return this.buildAdminOrdersMessage();
+    }
+
+    return this.buildAccountantOrdersMessage(viewer.linkedUserId!);
+  }
+
+  async buildSettingsMessage(telegramId: number): Promise<string> {
+    const user = await this.botUserService.findByTelegramId(telegramId);
+
+    if (!user) {
+      return "⚙️ <b>Sozlamalar</b>\n\nBotdan foydalanish uchun avval /start buyrug'ini bosing.";
+    }
+
+    let text = '⚙️ <b>Sozlamalar va profil</b>\n\n';
+    text += `🆔 Telegram ID: <b>${user.telegram_id}</b>\n`;
+    text += `👤 Ism: <b>${this.escapeHtml(
+      [user.first_name, user.last_name].filter(Boolean).join(' ') ||
+        'Kiritilmagan',
+    )}</b>\n`;
+    text += `🔗 Username: <b>${this.escapeHtml(
+      user.username ? `@${user.username}` : 'yoʻq',
+    )}</b>\n`;
+    text += `📌 Holat: <b>${this.mapBotUserStatus(user.status)}</b>\n`;
+    text += `✅ Tasdiq: <b>${user.is_approved ? 'tasdiqlangan' : 'tasdiqlanmagan'}</b>\n`;
+    text += `👔 Bot roli: <b>${this.mapRole(user.role)}</b>\n`;
+
+    if (user.linked_user_id) {
+      const linkedUser = await this.userService.findById(user.linked_user_id);
+      if (linkedUser) {
+        text += `🔐 Tizim user: <b>${this.escapeHtml(
+          `${linkedUser.first_name} ${linkedUser.last_name}`.trim() ||
+            linkedUser.username,
+        )}</b>\n`;
+        text += `🪪 Login: <b>${this.escapeHtml(linkedUser.username)}</b>\n`;
+      } else {
+        text += `🔐 Tizim user ID: <b>${this.escapeHtml(user.linked_user_id)}</b>\n`;
+      }
+    } else {
+      text += `🔐 Tizim user: <b>${user.role === Role.ADMIN ? 'ixtiyoriy' : "bog'lanmagan"}</b>\n`;
+    }
+
+    text += `🕒 So‘nggi faollik: <b>${this.formatDate(user.last_active_at)}</b>\n`;
+
+    const configMessage = this.getConfigurationMessage(user);
+    if (configMessage) {
+      text += `\n⚠️ ${configMessage}`;
+    } else {
+      text +=
+        '\n💡 Buyruqlar: /help /stats /products /expenses /warehouses /alerts';
+    }
+
+    return text;
+  }
+
+  private async buildAdminWarehousesMessage(): Promise<string> {
     const result = (await this.warehouseService.findAll({
       page: 1,
       limit: 20,
@@ -77,7 +269,54 @@ export class BotContentService {
     return text.trim();
   }
 
-  async buildAlertsMessage(): Promise<string> {
+  private async buildWarehouseWarehousesMessage(
+    linkedUserId: string,
+  ): Promise<string> {
+    const warehouses = await this.getManagedWarehouses(linkedUserId);
+
+    if (!warehouses.length) {
+      return "📦 <b>Mening omborlarim</b>\n\nSizga hali ombor biriktirilmagan.";
+    }
+
+    const totalsRaw = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .select('batch.warehouse_id', 'warehouse_id')
+      .addSelect(
+        'COALESCE(SUM(batch.quantity * batch.price_at_purchase), 0)',
+        'total_inventory_value',
+      )
+      .where('batch.warehouse_id IN (:...warehouseIds)', {
+        warehouseIds: warehouses.map((warehouse) => warehouse.id),
+      })
+      .groupBy('batch.warehouse_id')
+      .getRawMany<{
+        warehouse_id: string;
+        total_inventory_value: string;
+      }>();
+
+    const totals = new Map<string, number>(
+      totalsRaw.map((row) => [
+        row.warehouse_id,
+        Number(Number(row.total_inventory_value ?? 0).toFixed(2)),
+      ]),
+    );
+
+    let text = `📦 <b>Mening omborlarim</b>\n`;
+    text += `Jami: <b>${warehouses.length}</b> ta\n\n`;
+
+    for (const warehouse of warehouses) {
+      text += `🔹 <b>${this.escapeHtml(warehouse.name)}</b>\n`;
+      text += `📍 ${this.escapeHtml(warehouse.location || 'Nomaʼlum')}\n`;
+      text += `🏷️ Turi: ${this.escapeHtml(warehouse.type)}\n`;
+      text += `💰 Qiymati: ${this.formatCurrency(
+        totals.get(warehouse.id) ?? 0,
+      )}\n\n`;
+    }
+
+    return text.trim();
+  }
+
+  private async buildAdminAlertsMessage(): Promise<string> {
     const result = (await this.warehouseService.findAll({
       page: 1,
       limit: 100,
@@ -120,7 +359,51 @@ export class BotContentService {
     return `🔔 <b>Ogohlantirishlar</b>\nJami: <b>${totalAlerts}</b> ta\n\n${sections.join('\n\n')}`;
   }
 
-  async buildStatsMessage(): Promise<string> {
+  private async buildWarehouseAlertsMessage(
+    linkedUserId: string,
+  ): Promise<string> {
+    const warehouses = await this.getManagedWarehouses(linkedUserId);
+
+    if (!warehouses.length) {
+      return "🔔 <b>Mening ogohlantirishlarim</b>\n\nSizga hali ombor biriktirilmagan.";
+    }
+
+    const sections: string[] = [];
+    let totalAlerts = 0;
+
+    for (const warehouse of warehouses) {
+      const details = (await this.warehouseService.findByIdWithDetails(
+        warehouse.id,
+      )) as {
+        alerts: {
+          count: number;
+          items: Array<{ type: string; message: string }>;
+        };
+      };
+
+      if (!details.alerts.count) {
+        continue;
+      }
+
+      totalAlerts += details.alerts.count;
+      const warehouseLines = details.alerts.items.slice(0, 5).map((alert) => {
+        const icon = alert.type === 'low_stock' ? '⚠️' : '⏰';
+        return `${icon} ${this.escapeHtml(alert.message)}`;
+      });
+
+      sections.push(
+        `📦 <b>${this.escapeHtml(warehouse.name)}</b>\n${warehouseLines.join('\n')}`,
+      );
+    }
+
+    if (!sections.length) {
+      return "🔔 <b>Mening ogohlantirishlarim</b>\n\n✅ Hozircha sizning omborlaringizda ogohlantirish yo'q.";
+    }
+
+    return `🔔 <b>Mening ogohlantirishlarim</b>\nJami: <b>${totalAlerts}</b> ta\n\n${sections.join('\n\n')}`;
+  }
+
+  private async buildAdminStatsMessage(): Promise<string> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -208,7 +491,69 @@ export class BotContentService {
     return text.trim();
   }
 
-  async buildProductsMessage(): Promise<string> {
+  private async buildWarehouseStatsMessage(
+    linkedUserId: string,
+  ): Promise<string> {
+    const warehouses = await this.getManagedWarehouses(linkedUserId);
+    if (!warehouses.length) {
+      return "📊 <b>Mening statistikam</b>\n\nSizga hali ombor biriktirilmagan.";
+    }
+
+    const dashboard = (await this.warehouseService.getDashboardByUser(
+      linkedUserId,
+      { recent_limit: 5 },
+    )) as {
+      warehouses: WarehouseRow[];
+      summary: {
+        warehouses_count: number;
+        total_products: number;
+        pending_issue: number;
+        low_stock: number;
+        expiring_soon: number;
+      };
+      recent_expenses: RecentExpenseRow[];
+    };
+
+    let text = '📊 <b>Mening statistikam</b>\n\n';
+    text += `📦 Omborlar: <b>${dashboard.summary.warehouses_count}</b> ta\n`;
+    text += `💊 Mahsulotlar: <b>${dashboard.summary.total_products}</b> ta\n`;
+    text += `🟡 Berish kutilmoqda: <b>${dashboard.summary.pending_issue}</b> ta\n`;
+    text += `⚠️ Kam qoldiq: <b>${dashboard.summary.low_stock}</b> ta\n`;
+    text += `⏰ Tugash arafasida: <b>${dashboard.summary.expiring_soon}</b> ta\n`;
+
+    if (dashboard.recent_expenses.length) {
+      text += '\n🕒 <b>So‘nggi chiqimlar</b>\n';
+      for (const expense of dashboard.recent_expenses) {
+        text += `• ${this.escapeHtml(expense.expense_number)} | ${this.mapExpenseStatus(expense.status)} | ${this.formatCurrency(Number(expense.total_price))}\n`;
+      }
+    }
+
+    return text.trim();
+  }
+
+  private async buildAccountantStatsMessage(
+    linkedUserId: string,
+  ): Promise<string> {
+    const overview = await this.loadOrderOverview(linkedUserId);
+
+    let text = '📊 <b>Xarid statistikasi</b>\n\n';
+    text += `🟡 Kutilayotgan: <b>${overview.counts[OrderStatus.PENDING]}</b>\n`;
+    text += `✅ Tasdiqlangan: <b>${overview.counts[OrderStatus.CONFIRMED]}</b>\n`;
+    text += `🚚 Delivered: <b>${overview.counts[OrderStatus.DELIVERED]}</b>\n`;
+    text += `❌ Bekor qilingan: <b>${overview.counts[OrderStatus.CANCELLED]}</b>\n`;
+    text += `📚 Jami: <b>${overview.total}</b>\n`;
+
+    if (overview.recentOrders.length) {
+      text += '\n🕒 <b>So‘nggi xaridlar</b>\n';
+      for (const order of overview.recentOrders) {
+        text += `• ${this.escapeHtml(order.order_number)} | ${order.status} | ${this.formatCurrency(order.total_amount)}\n`;
+      }
+    }
+
+    return text.trim();
+  }
+
+  private async buildAdminProductsMessage(): Promise<string> {
     const [totalProducts, lowStockProducts, featuredProducts] =
       await Promise.all([
         this.productRepository.count(),
@@ -256,7 +601,64 @@ export class BotContentService {
     return text.trim();
   }
 
-  async buildExpensesMessage(): Promise<string> {
+  private async buildWarehouseProductsMessage(
+    linkedUserId: string,
+  ): Promise<string> {
+    const [totalProducts, lowStockProducts, featuredProducts] =
+      await Promise.all([
+        this.productRepository
+          .createQueryBuilder('product')
+          .innerJoin('product.warehouse', 'warehouse')
+          .where('warehouse.manager_id = :linkedUserId', { linkedUserId })
+          .getCount(),
+        this.productRepository
+          .createQueryBuilder('product')
+          .innerJoin('product.warehouse', 'warehouse')
+          .where('warehouse.manager_id = :linkedUserId', { linkedUserId })
+          .andWhere('product.quantity > 0')
+          .andWhere('product.quantity <= product.min_limit')
+          .getCount(),
+        this.productRepository
+          .createQueryBuilder('product')
+          .innerJoin('product.warehouse', 'warehouse')
+          .select('product.id', 'id')
+          .addSelect('product.name', 'name')
+          .addSelect('product.quantity', 'quantity')
+          .addSelect('product.min_limit', 'min_limit')
+          .addSelect('product.unit', 'unit')
+          .addSelect('warehouse.name', 'warehouse_name')
+          .where('warehouse.manager_id = :linkedUserId', { linkedUserId })
+          .andWhere('product.quantity > 0')
+          .orderBy(
+            'CASE WHEN product.quantity <= product.min_limit THEN 0 ELSE 1 END',
+            'ASC',
+          )
+          .addOrderBy('product.quantity', 'ASC')
+          .addOrderBy('product.name', 'ASC')
+          .limit(12)
+          .getRawMany<ProductRow>(),
+      ]);
+
+    if (!featuredProducts.length) {
+      return `💊 <b>Mening mahsulotlarim</b>\n\nJami: <b>${totalProducts}</b> ta\nSizga biriktirilgan omborlarda hozircha qoldiq yo'q.`;
+    }
+
+    let text = '💊 <b>Mening mahsulotlarim</b>\n';
+    text += `Jami: <b>${totalProducts}</b> ta\n`;
+    text += `Kam qoldiq: <b>${lowStockProducts}</b> ta\n\n`;
+
+    for (const product of featuredProducts) {
+      const quantity = Number(Number(product.quantity ?? 0).toFixed(2));
+      const isLowStock = quantity <= Number(product.min_limit);
+      text += `${isLowStock ? '⚠️' : '•'} <b>${this.escapeHtml(product.name)}</b>\n`;
+      text += `   ${this.formatNumber(quantity)} ${this.escapeHtml(product.unit)} | min ${product.min_limit}\n`;
+      text += `   📦 ${this.escapeHtml(product.warehouse_name)}\n`;
+    }
+
+    return text.trim();
+  }
+
+  private async buildAdminExpensesMessage(): Promise<string> {
     const [recentExpenses, statusRows] = await Promise.all([
       this.expenseRepository.find({
         order: { createdAt: 'DESC' },
@@ -303,29 +705,289 @@ export class BotContentService {
     return text.trim();
   }
 
-  async buildSettingsMessage(telegramId: number): Promise<string> {
-    const user = await this.botUserService.findByTelegramId(telegramId);
+  private async buildWarehouseExpensesMessage(
+    linkedUserId: string,
+  ): Promise<string> {
+    const warehouses = await this.getManagedWarehouses(linkedUserId);
 
-    if (!user) {
-      return "⚙️ <b>Sozlamalar</b>\n\nBotdan foydalanish uchun avval /start buyrug'ini bosing.";
+    if (!warehouses.length) {
+      return "📋 <b>Mening chiqimlarim</b>\n\nSizga hali ombor biriktirilmagan.";
     }
 
-    let text = '⚙️ <b>Sozlamalar va profil</b>\n\n';
-    text += `🆔 Telegram ID: <b>${user.telegram_id}</b>\n`;
-    text += `👤 Ism: <b>${this.escapeHtml(
-      [user.first_name, user.last_name].filter(Boolean).join(' ') ||
-        'Kiritilmagan',
-    )}</b>\n`;
-    text += `🔗 Username: <b>${this.escapeHtml(
-      user.username ? `@${user.username}` : 'yoʻq',
-    )}</b>\n`;
-    text += `📌 Holat: <b>${this.mapBotUserStatus(user.status)}</b>\n`;
-    text += `✅ Tasdiq: <b>${user.is_approved ? 'tasdiqlangan' : 'tasdiqlanmagan'}</b>\n`;
-    text += `🕒 So‘nggi faollik: <b>${this.formatDate(user.last_active_at)}</b>\n`;
-    text +=
-      '\n💡 Buyruqlar: /help /stats /products /expenses /warehouses /alerts';
+    const warehouseIds = warehouses.map((warehouse) => warehouse.id);
 
-    return text;
+    const [recentExpenses, statusRows] = await Promise.all([
+      this.expenseRepository
+        .createQueryBuilder('expense')
+        .innerJoin(
+          'expense.items',
+          'item',
+          'item.warehouse_id IN (:...warehouseIds)',
+          { warehouseIds },
+        )
+        .select('expense.id', 'id')
+        .addSelect('expense.expense_number', 'expense_number')
+        .addSelect('expense.createdAt', 'created_at')
+        .addSelect('expense.staff_name', 'staff_name')
+        .addSelect('expense.purpose', 'purpose')
+        .addSelect('expense.status', 'status')
+        .addSelect('expense.total_price', 'total_price')
+        .groupBy('expense.id')
+        .addGroupBy('expense.expense_number')
+        .addGroupBy('expense.createdAt')
+        .addGroupBy('expense.staff_name')
+        .addGroupBy('expense.purpose')
+        .addGroupBy('expense.status')
+        .addGroupBy('expense.total_price')
+        .orderBy('expense.createdAt', 'DESC')
+        .limit(10)
+        .getRawMany<{
+          id: string;
+          expense_number: string;
+          created_at: Date;
+          staff_name: string;
+          purpose: string | null;
+          status: ExpenseStatus;
+          total_price: string;
+        }>(),
+      this.expenseRepository
+        .createQueryBuilder('expense')
+        .innerJoin(
+          'expense.items',
+          'item',
+          'item.warehouse_id IN (:...warehouseIds)',
+          { warehouseIds },
+        )
+        .select('expense.status', 'status')
+        .addSelect('COUNT(DISTINCT expense.id)', 'count')
+        .groupBy('expense.status')
+        .getRawMany<{ status: ExpenseStatus; count: string }>(),
+    ]);
+
+    const counts = {
+      [ExpenseStatus.PENDING_ISSUE]: 0,
+      [ExpenseStatus.PENDING_PHOTO]: 0,
+      [ExpenseStatus.COMPLETED]: 0,
+    };
+
+    for (const row of statusRows) {
+      counts[row.status] = Number(row.count ?? 0);
+    }
+
+    let text = '📋 <b>Mening chiqimlarim</b>\n\n';
+    text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
+    text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
+    text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
+
+    if (!recentExpenses.length) {
+      text += '\nHozircha sizning omborlaringiz bo‘yicha chiqimlar mavjud emas.';
+      return text;
+    }
+
+    text += '\n🕒 <b>So‘nggi hujjatlar</b>\n';
+    for (const expense of recentExpenses) {
+      text += `• <b>${this.escapeHtml(expense.expense_number)}</b>\n`;
+      text += `   ${this.mapExpenseStatus(expense.status)}\n`;
+      text += `   ${this.escapeHtml(expense.staff_name)} | ${this.formatCurrency(
+        Number(expense.total_price),
+      )}\n`;
+      text += `   ${this.formatDate(expense.created_at)}\n`;
+    }
+
+    return text.trim();
+  }
+
+  private async buildAdminOrdersMessage(): Promise<string> {
+    const overview = await this.loadOrderOverview();
+
+    let text = '🛒 <b>Xaridlar</b>\n\n';
+    text += `🟡 Kutilayotgan: <b>${overview.counts[OrderStatus.PENDING]}</b>\n`;
+    text += `✅ Tasdiqlangan: <b>${overview.counts[OrderStatus.CONFIRMED]}</b>\n`;
+    text += `🚚 Delivered: <b>${overview.counts[OrderStatus.DELIVERED]}</b>\n`;
+    text += `❌ Bekor qilingan: <b>${overview.counts[OrderStatus.CANCELLED]}</b>\n`;
+    text += `📚 Jami: <b>${overview.total}</b>\n`;
+
+    if (!overview.recentOrders.length) {
+      text += '\nHozircha xaridlar mavjud emas.';
+      return text;
+    }
+
+    text += '\n🕒 <b>So‘nggi xaridlar</b>\n';
+    for (const order of overview.recentOrders) {
+      text += `• <b>${this.escapeHtml(order.order_number)}</b>\n`;
+      text += `   ${order.status} | ${this.formatCurrency(order.total_amount)}\n`;
+      text += `   ${this.escapeHtml(order.supplier_name)}\n`;
+    }
+
+    return text.trim();
+  }
+
+  private async buildAccountantOrdersMessage(
+    linkedUserId: string,
+  ): Promise<string> {
+    const overview = await this.loadOrderOverview(linkedUserId);
+
+    let text = '🛒 <b>Mening xaridlarim</b>\n\n';
+    text += `🟡 Kutilayotgan: <b>${overview.counts[OrderStatus.PENDING]}</b>\n`;
+    text += `✅ Tasdiqlangan: <b>${overview.counts[OrderStatus.CONFIRMED]}</b>\n`;
+    text += `🚚 Delivered: <b>${overview.counts[OrderStatus.DELIVERED]}</b>\n`;
+    text += `❌ Bekor qilingan: <b>${overview.counts[OrderStatus.CANCELLED]}</b>\n`;
+    text += `📚 Jami: <b>${overview.total}</b>\n`;
+
+    if (!overview.recentOrders.length) {
+      text += '\nHozircha xaridlar mavjud emas.';
+      return text;
+    }
+
+    text += '\n🕒 <b>So‘nggi xaridlar</b>\n';
+    for (const order of overview.recentOrders) {
+      text += `• <b>${this.escapeHtml(order.order_number)}</b>\n`;
+      text += `   ${order.status} | ${this.formatCurrency(order.total_amount)}\n`;
+      text += `   ${this.escapeHtml(order.supplier_name)}\n`;
+    }
+
+    return text.trim();
+  }
+
+  private async getViewerContext(telegramId: number): Promise<ViewerContext> {
+    const botUser = await this.botUserService.findByTelegramId(telegramId);
+
+    if (!botUser) {
+      return {
+        ok: false,
+        message:
+          "❗ Botdan foydalanish uchun avval /start buyrug'ini bosing.",
+      };
+    }
+
+    if (botUser.status === BotUserStatus.BLOCKED) {
+      return {
+        ok: false,
+        botUser,
+        message: "🚫 Siz bloklangansiz. Admin bilan bog'laning.",
+      };
+    }
+
+    if (!botUser.is_approved) {
+      return {
+        ok: false,
+        botUser,
+        message:
+          "⏳ Siz hali tasdiqlanmagansiz.\nAdmin sizni tasdiqlashini kuting.",
+      };
+    }
+
+    if (!botUser.role) {
+      return {
+        ok: false,
+        botUser,
+        message:
+          "⏳ Akkauntingiz tasdiqlangan, lekin bot roli hali biriktirilmagan.\nAdmin bilan bog'laning.",
+      };
+    }
+
+    if (
+      (botUser.role === Role.WAREHOUSE ||
+        botUser.role === Role.ACCOUNTANT) &&
+      !botUser.linked_user_id
+    ) {
+      return {
+        ok: false,
+        botUser,
+        message:
+          `⏳ ${botUser.role} roli berilgan, lekin tizimdagi user hali bog'lanmagan.\nAdmin bilan bog'laning.`,
+      };
+    }
+
+    return {
+      ok: true,
+      role: botUser.role,
+      botUser,
+      linkedUserId: botUser.linked_user_id,
+    };
+  }
+
+  private getConfigurationMessage(user: BotUser) {
+    if (!user.is_approved) {
+      return "tasdiq kutilmoqda.";
+    }
+
+    if (!user.role) {
+      return "bot roli hali biriktirilmagan.";
+    }
+
+    if (
+      (user.role === Role.WAREHOUSE || user.role === Role.ACCOUNTANT) &&
+      !user.linked_user_id
+    ) {
+      return `${user.role} roli uchun tizimdagi user hali bog'lanmagan.`;
+    }
+
+    return null;
+  }
+
+  private async loadOrderOverview(createdById?: string) {
+    const baseQb = this.purchaseOrderRepository.createQueryBuilder('po');
+
+    if (createdById) {
+      baseQb.where('po.created_by_id = :createdById', { createdById });
+    }
+
+    const [statusRows, recentOrders] = await Promise.all([
+      baseQb
+        .clone()
+        .select('po.status', 'status')
+        .addSelect('COUNT(po.id)', 'count')
+        .groupBy('po.status')
+        .getRawMany<{ status: OrderStatus; count: string }>(),
+      baseQb
+        .clone()
+        .leftJoin('po.supplier', 'supplier')
+        .select('po.order_number', 'order_number')
+        .addSelect('po.status', 'status')
+        .addSelect('po.total_amount', 'total_amount')
+        .addSelect('supplier.company_name', 'supplier_name')
+        .orderBy('po.createdAt', 'DESC')
+        .limit(5)
+        .getRawMany<{
+          order_number: string;
+          status: OrderStatus;
+          total_amount: string;
+          supplier_name: string;
+        }>(),
+    ]);
+
+    const counts = {
+      [OrderStatus.PENDING]: 0,
+      [OrderStatus.CONFIRMED]: 0,
+      [OrderStatus.DELIVERED]: 0,
+      [OrderStatus.CANCELLED]: 0,
+    };
+
+    for (const row of statusRows) {
+      counts[row.status] = Number(row.count ?? 0);
+    }
+
+    return {
+      counts,
+      total: Object.values(counts).reduce((sum, count) => sum + count, 0),
+      recentOrders: recentOrders.map((order) => ({
+        ...order,
+        total_amount: Number(Number(order.total_amount ?? 0).toFixed(2)),
+        supplier_name: order.supplier_name ?? 'Nomaʼlum supplier',
+      })),
+    };
+  }
+
+  private buildUnavailableSectionMessage(title: string, message: string) {
+    return `${title}\n\n${message}`;
+  }
+
+  private async getManagedWarehouses(linkedUserId: string) {
+    return this.warehouseRepository.find({
+      where: { manager_id: linkedUserId },
+      order: { name: 'ASC' },
+    });
   }
 
   private mapExpenseStatus(status: ExpenseStatus) {
@@ -362,6 +1024,17 @@ export class BotContentService {
         return 'bloklangan';
       default:
         return this.escapeHtml(status);
+    }
+  }
+
+  private mapRole(role: Role | null) {
+    switch (role) {
+      case Role.ADMIN:
+        return 'admin';
+      case Role.WAREHOUSE:
+        return 'warehouse';
+      default:
+        return 'biriktirilmagan';
     }
   }
 

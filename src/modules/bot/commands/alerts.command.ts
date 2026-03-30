@@ -9,7 +9,13 @@ export class AlertsCommand {
   register(bot: Bot) {
     bot.command('alerts', async (ctx: Context) => {
       try {
-        const text = await this.botContentService.buildAlertsMessage();
+        if (!ctx.from) {
+          return;
+        }
+
+        const text = await this.botContentService.buildAlertsMessage(
+          ctx.from.id,
+        );
         await ctx.reply(text, { parse_mode: 'HTML' });
       } catch {
         await ctx.reply('❌ Ogohlantirishlarni yuklashda xatolik yuz berdi.');

@@ -8,7 +8,13 @@ export class ExpensesCommand {
 
   register(bot: Bot) {
     bot.command('expenses', async (ctx: Context) => {
-      const text = await this.botContentService.buildExpensesMessage();
+      if (!ctx.from) {
+        return;
+      }
+
+      const text = await this.botContentService.buildExpensesMessage(
+        ctx.from.id,
+      );
       await ctx.reply(text, { parse_mode: 'HTML' });
     });
   }

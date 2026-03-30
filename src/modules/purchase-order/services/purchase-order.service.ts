@@ -1,21 +1,29 @@
 import {
   BadRequestException,
+  ForbiddenException,
+  forwardRef,
   Inject,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, EntityManager, Repository } from 'typeorm';
 import Redis from 'ioredis';
+import { InlineKeyboard } from 'grammy';
+import { BotService } from 'src/modules/bot/bot.service';
+import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
 import { Supplier } from 'src/modules/supplier/entities/supplier.entity';
+import { User } from 'src/modules/user/entities/user.entity';
+import { Role } from 'src/modules/user/enums/role.enum';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { CreatePurchaseOrderDto } from '../dto/create-purchase-order.dto';
 import { ListPurchaseOrdersQueryDto } from '../dto/list-purchase-orders-query.dto';
 import {
-  ReceivePurchaseOrderDto,
   ReceiveOrderItemDto,
+  ReceivePurchaseOrderDto,
 } from '../dto/update-purchase-order-status.dto';
 import { UpdatePurchaseOrderDto } from '../dto/update-purchase-order.dto';
 import { OrderStatus } from '../enums/order-status.enum';
@@ -24,20 +32,25 @@ import { PurchaseOrder } from '../entities/purchase-order.entity';
 
 @Injectable()
 export class PurchaseOrderService {
+  private readonly logger = new Logger(PurchaseOrderService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(PurchaseOrder)
     private readonly purchaseOrderRepository: Repository<PurchaseOrder>,
     @InjectRepository(Product)
     private readonly productRepository: Repository<Product>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
+    @Inject(forwardRef(() => BotService))
+    private readonly botService: BotService,
   ) {}
 
   private async generateOrderNumber(manager: EntityManager): Promise<string> {
     const year = new Date().getFullYear();
 
-    // Serialize order number generation per year to avoid duplicates
     await manager.query('SELECT pg_advisory_xact_lock(hashtext($1))', [
       `purchase_order:${year}`,
     ]);
@@ -90,7 +103,40 @@ export class PurchaseOrderService {
     return `BATCH-${orderNumber}-${String(itemIndex + 1).padStart(3, '0')}`;
   }
 
-  async findAll(query: ListPurchaseOrdersQueryDto) {
+  private ensureOrderVisibleToUser(order: PurchaseOrder, user: AuthUser) {
+    if (user.role === Role.ACCOUNTANT && order.created_by_id !== user.id) {
+      throw new ForbiddenException("Siz faqat o'zingiz yaratgan xaridlarni ko'ra olasiz");
+    }
+  }
+
+  private ensureAccountantOwnsOrder(order: PurchaseOrder, userId: string) {
+    if (order.created_by_id !== userId) {
+      throw new ForbiddenException("Siz faqat o'zingiz yaratgan xaridni boshqara olasiz");
+    }
+  }
+
+  private hasAnyNonStatusUpdates(dto: UpdatePurchaseOrderDto) {
+    return (
+      dto.supplier_id !== undefined ||
+      dto.warehouse_id !== undefined ||
+      dto.order_date !== undefined ||
+      dto.delivery_date !== undefined ||
+      (dto.items_to_add?.length ?? 0) > 0 ||
+      (dto.items_to_remove?.length ?? 0) > 0
+    );
+  }
+
+  private hasStructuralUpdates(dto: UpdatePurchaseOrderDto) {
+    return (
+      dto.supplier_id !== undefined ||
+      dto.warehouse_id !== undefined ||
+      dto.order_date !== undefined ||
+      (dto.items_to_add?.length ?? 0) > 0 ||
+      (dto.items_to_remove?.length ?? 0) > 0
+    );
+  }
+
+  async findAll(query: ListPurchaseOrdersQueryDto, user: AuthUser) {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
@@ -99,6 +145,12 @@ export class PurchaseOrderService {
       .createQueryBuilder('po')
       .leftJoinAndSelect('po.supplier', 'supplier')
       .leftJoinAndSelect('po.warehouse', 'warehouse');
+
+    if (user.role === Role.ACCOUNTANT) {
+      qb.andWhere('po.created_by_id = :createdById', {
+        createdById: user.id,
+      });
+    }
 
     if (search) {
       qb.andWhere(
@@ -130,7 +182,7 @@ export class PurchaseOrderService {
     };
   }
 
-  async findById(id: string, manager?: EntityManager) {
+  async findById(id: string, user?: AuthUser, manager?: EntityManager) {
     const repo = manager
       ? manager.getRepository(PurchaseOrder)
       : this.purchaseOrderRepository;
@@ -150,16 +202,28 @@ export class PurchaseOrderService {
       throw new NotFoundException('Purchase order topilmadi');
     }
 
+    if (user) {
+      this.ensureOrderVisibleToUser(order, user);
+    }
+
     return order;
   }
 
-  async getStatistics(): Promise<Record<string, number>> {
-    const cacheKey = 'purchase-orders:statistics';
+  async getStatistics(user: AuthUser): Promise<Record<string, number>> {
+    const cacheKey =
+      user.role === Role.ADMIN
+        ? 'purchase-orders:statistics'
+        : `purchase-orders:statistics:${user.id}`;
     const cached = await this.redis.get(cacheKey);
     if (cached) return JSON.parse(cached) as Record<string, number>;
 
-    const stats = await this.purchaseOrderRepository
-      .createQueryBuilder('po')
+    const qb = this.purchaseOrderRepository.createQueryBuilder('po');
+
+    if (user.role === Role.ACCOUNTANT) {
+      qb.where('po.created_by_id = :createdById', { createdById: user.id });
+    }
+
+    const stats = await qb
       .select('po.status', 'status')
       .addSelect('COUNT(po.id)', 'count')
       .groupBy('po.status')
@@ -186,7 +250,11 @@ export class PurchaseOrderService {
     return result;
   }
 
-  async create(dto: CreatePurchaseOrderDto) {
+  async create(dto: CreatePurchaseOrderDto, actor: AuthUser) {
+    if (actor.role !== Role.ACCOUNTANT) {
+      throw new ForbiddenException('Faqat hisobchi purchase order yarata oladi');
+    }
+
     const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const orderItemRepo = manager.getRepository(OrderItem);
@@ -213,6 +281,12 @@ export class PurchaseOrderService {
         orderRepo.create({
           order_number: orderNumber,
           status: OrderStatus.PENDING,
+          is_received: false,
+          created_by_id: actor.id,
+          decided_by_id: null,
+          decided_at: null,
+          received_by_id: null,
+          received_at: null,
           order_date: dto.order_date ? new Date(dto.order_date) : new Date(),
           delivery_date: dto.delivery_date ? new Date(dto.delivery_date) : null,
           total_amount: 0,
@@ -240,7 +314,6 @@ export class PurchaseOrderService {
         }
 
         const priceAtPurchase = Number(item.price_at_purchase);
-
         const lineTotal = priceAtPurchase * item.quantity;
         totalAmount += lineTotal;
 
@@ -257,14 +330,105 @@ export class PurchaseOrderService {
       order.total_amount = Number(totalAmount.toFixed(2));
       await orderRepo.save(order);
 
-      return this.findById(order.id, manager);
+      return this.findById(order.id, undefined, manager);
+    });
+
+    await this.invalidateRelatedCaches();
+    await this.notifyAdminsAboutNewOrder(result).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Admin bot notification yuborilmadi: ${message}`);
+    });
+    return result;
+  }
+
+  async updateOrder(id: string, dto: UpdatePurchaseOrderDto, actor: AuthUser) {
+    if (actor.role === Role.ADMIN) {
+      return this.decideOrder(id, dto, actor.id);
+    }
+
+    if (actor.role === Role.ACCOUNTANT) {
+      return this.updateOrderAsAccountant(id, dto, actor.id);
+    }
+
+    throw new ForbiddenException('Bu amal siz uchun ruxsat etilmagan');
+  }
+
+  private async decideOrder(
+    id: string,
+    dto: UpdatePurchaseOrderDto,
+    adminUserId: string | null,
+  ) {
+    const nextStatus = dto.status;
+
+    if (
+      !nextStatus ||
+      ![OrderStatus.CONFIRMED, OrderStatus.CANCELLED].includes(nextStatus)
+    ) {
+      throw new BadRequestException(
+        'Admin faqat purchase orderni tasdiqlashi yoki bekor qilishi mumkin',
+      );
+    }
+
+    if (this.hasAnyNonStatusUpdates(dto)) {
+      throw new BadRequestException(
+        'Admin faqat statusni yangilashi mumkin',
+      );
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const orderRepo = manager.getRepository(PurchaseOrder);
+      const order = await orderRepo.findOne({ where: { id } });
+
+      if (!order) {
+        throw new NotFoundException('Purchase order topilmadi');
+      }
+
+      if (order.is_received) {
+        throw new BadRequestException(
+          'Qabul qilingan buyurtmani bekor qilish yoki tasdiqlash mumkin emas',
+        );
+      }
+
+      if (order.status !== OrderStatus.PENDING) {
+        throw new BadRequestException(
+          'Faqat PENDING statusdagi buyurtma tasdiqlanishi yoki bekor qilinishi mumkin',
+        );
+      }
+
+      order.status = nextStatus;
+      order.decided_by_id = adminUserId;
+      order.decided_at = new Date();
+      await orderRepo.save(order);
+
+      return this.findById(order.id, undefined, manager);
     });
 
     await this.invalidateRelatedCaches();
     return result;
   }
 
-  async updateOrder(id: string, dto: UpdatePurchaseOrderDto) {
+  async handleAdminDecisionFromBot(
+    orderId: string,
+    action: 'approve' | 'cancel',
+    adminUserId: string | null,
+  ) {
+    return this.decideOrder(
+      orderId,
+      {
+        status:
+          action === 'approve'
+            ? OrderStatus.CONFIRMED
+            : OrderStatus.CANCELLED,
+      },
+      adminUserId,
+    );
+  }
+
+  private async updateOrderAsAccountant(
+    id: string,
+    dto: UpdatePurchaseOrderDto,
+    accountantUserId: string,
+  ) {
     const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const orderItemRepo = manager.getRepository(OrderItem);
@@ -289,7 +453,7 @@ export class PurchaseOrderService {
         throw new NotFoundException('Purchase order topilmadi');
       }
 
-      const originalStatus = order.status;
+      this.ensureAccountantOwnsOrder(order, accountantUserId);
 
       if (order.is_received) {
         throw new BadRequestException(
@@ -297,43 +461,40 @@ export class PurchaseOrderService {
         );
       }
 
-      if (dto.status) {
-        if (originalStatus === OrderStatus.CANCELLED) {
+      if (dto.status !== undefined) {
+        if (dto.status !== OrderStatus.DELIVERED) {
           throw new BadRequestException(
-            'Bekor qilingan buyurtma statusini o`zgartirib bo`lmaydi',
+            'Hisobchi faqat delivered holatiga o`tkaza oladi',
           );
         }
 
-        if (
-          originalStatus === OrderStatus.DELIVERED &&
-          dto.status !== OrderStatus.DELIVERED
-        ) {
+        if (this.hasStructuralUpdates(dto)) {
           throw new BadRequestException(
-            'Delivered bo`lgan buyurtmani boshqa statusga qaytarib bo`lmaydi',
+            'Delivered qilishda supplier, warehouse, sana yoki itemlarni o`zgartirib bo`lmaydi',
           );
         }
-        order.status = dto.status;
+
+        if (order.status !== OrderStatus.CONFIRMED) {
+          throw new BadRequestException(
+            'Faqat CONFIRMED statusdagi buyurtmani delivered qilish mumkin',
+          );
+        }
+
+        order.status = OrderStatus.DELIVERED;
+        order.delivery_date =
+          dto.delivery_date !== undefined
+            ? dto.delivery_date
+              ? new Date(String(dto.delivery_date))
+              : null
+            : order.delivery_date ?? new Date();
+
+        await orderRepo.save(order);
+        return this.findById(order.id, undefined, manager);
       }
 
-      const hasOtherChanges =
-        dto.supplier_id !== undefined ||
-        dto.warehouse_id !== undefined ||
-        dto.order_date !== undefined ||
-        dto.delivery_date !== undefined ||
-        (dto.items_to_add?.length ?? 0) > 0 ||
-        (dto.items_to_remove?.length ?? 0) > 0;
-
-      // Delivered bo'lganda (original), statusdan tashqari o'zgarishlar taqiqlanadi
-      if (originalStatus === OrderStatus.DELIVERED && hasOtherChanges) {
+      if (order.status !== OrderStatus.PENDING) {
         throw new BadRequestException(
-          'Delivered buyurtmani o`zgartirib bo`lmaydi',
-        );
-      }
-
-      // Cancelled bo'lganda (original) hech narsa o'zgartirilmasin
-      if (originalStatus === OrderStatus.CANCELLED && hasOtherChanges) {
-        throw new BadRequestException(
-          'Bekor qilingan buyurtmani o`zgartirib bo`lmaydi',
+          'Faqat PENDING statusdagi buyurtmani tahrirlash mumkin',
         );
       }
 
@@ -403,11 +564,9 @@ export class PurchaseOrderService {
           }
         }
 
-        const itemIdsToDelete = itemsToRemove;
-        await orderItemRepo.delete(itemIdsToDelete);
-
+        await orderItemRepo.delete(itemsToRemove);
         order.items = (order.items ?? []).filter(
-          (i) => !itemIdsToDelete.includes(i.id),
+          (item) => !itemsToRemove.includes(item.id),
         );
       }
 
@@ -448,18 +607,17 @@ export class PurchaseOrderService {
         where: { purchase_order: { id: order.id } },
       });
 
-      // order.items ni real holatga tenglab, cascade detach muammosini oldini olamiz
       order.items = updatedItems;
 
-      const totalAmount = updatedItems.reduce((sum, i) => {
-        const price = Number(i.price_at_purchase);
-        return sum + price * Number(i.quantity);
+      const totalAmount = updatedItems.reduce((sum, item) => {
+        const price = Number(item.price_at_purchase);
+        return sum + price * Number(item.quantity);
       }, 0);
 
       order.total_amount = Number(totalAmount.toFixed(2));
       await orderRepo.save(order);
 
-      return this.findById(order.id, manager);
+      return this.findById(order.id, undefined, manager);
     });
 
     await this.invalidateRelatedCaches();
@@ -503,7 +661,11 @@ export class PurchaseOrderService {
     return result;
   }
 
-  async receiveOrder(id: string, dto: ReceivePurchaseOrderDto) {
+  async receiveOrder(id: string, dto: ReceivePurchaseOrderDto, actor: AuthUser) {
+    if (actor.role !== Role.ACCOUNTANT) {
+      throw new ForbiddenException('Faqat hisobchi kirimni qabul qila oladi');
+    }
+
     const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const productBatchRepo = manager.getRepository(ProductBatch);
@@ -522,6 +684,8 @@ export class PurchaseOrderService {
         throw new NotFoundException('Purchase order topilmadi');
       }
 
+      this.ensureAccountantOwnsOrder(order, actor.id);
+
       if (order.status !== OrderStatus.DELIVERED) {
         throw new BadRequestException(
           'Faqat DELIVERED statusidagi buyurtmalarni omborga qabul qilish mumkin',
@@ -535,7 +699,7 @@ export class PurchaseOrderService {
       }
 
       const itemUpdates = new Map<string, ReceiveOrderItemDto>();
-      const orderItemIds = new Set(order.items.map((i) => i.id));
+      const orderItemIds = new Set(order.items.map((item) => item.id));
 
       for (const update of dto.items) {
         if (itemUpdates.has(update.order_item_id)) {
@@ -553,7 +717,7 @@ export class PurchaseOrderService {
 
       const lockedProducts = new Map<string, Product>();
       const productIds = Array.from(
-        new Set(order.items.map((i) => i.product.id)),
+        new Set(order.items.map((item) => item.product.id)),
       ).sort((left, right) => left.localeCompare(right));
 
       for (const productId of productIds) {
@@ -628,20 +792,71 @@ export class PurchaseOrderService {
       }
 
       order.is_received = true;
+      order.received_by_id = actor.id;
+      order.received_at = new Date();
       await orderRepo.save(order);
 
-      return this.findById(order.id, manager);
+      return this.findById(order.id, undefined, manager);
     });
 
     await this.invalidateRelatedCaches();
     return result;
   }
 
+  private async notifyAdminsAboutNewOrder(order: PurchaseOrder) {
+    const creator = await this.userRepository.findOne({
+      where: { id: order.created_by_id },
+    });
+
+    const creatorName = creator
+      ? [creator.first_name, creator.last_name].filter(Boolean).join(' ') ||
+        creator.username
+      : order.created_by_id;
+
+    const text =
+      `🛒 <b>Yangi xarid so'rovi</b>\n\n` +
+      `📄 Buyurtma: <b>${order.order_number}</b>\n` +
+      `👤 Hisobchi: <b>${this.escapeHtml(creatorName)}</b>\n` +
+      `🏢 Supplier: <b>${this.escapeHtml(order.supplier?.company_name ?? order.supplier_id)}</b>\n` +
+      `📦 Warehouse: <b>${this.escapeHtml(order.warehouse?.name ?? order.warehouse_id)}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(order.total_amount))}</b>\n` +
+      `📌 Status: <b>${order.status}</b>`;
+
+    const keyboard = new InlineKeyboard()
+      .text('✅ Tasdiqlash', `purchase_order:approve:${order.id}`)
+      .text('❌ Bekor qilish', `purchase_order:cancel:${order.id}`);
+
+    await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
+      reply_markup: keyboard,
+    });
+  }
+
+  private formatCurrency(value: number) {
+    return `${new Intl.NumberFormat('uz-UZ', {
+      minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(Number(value.toFixed(2)))} sum`;
+  }
+
+  private escapeHtml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
   private async invalidateRelatedCaches() {
-    await this.redis.del(
-      'purchase-orders:statistics',
+    const statisticKeys = await this.redis.keys('purchase-orders:statistics*');
+    const keys = [
+      ...statisticKeys,
       'expenses:dashboard:overview',
       'expenses:dashboard:summary',
-    );
+    ];
+
+    if (keys.length > 0) {
+      await this.redis.del(...keys);
+    }
   }
 }

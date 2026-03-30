@@ -9,6 +9,7 @@ import {
   Min,
 } from 'class-validator';
 import { BotUserStatus } from '../enums/bot-user-status.enum';
+import { Role } from 'src/modules/user/enums/role.enum';
 
 export class ListBotUsersQueryDto {
   @ApiPropertyOptional({ example: 'ali' })
@@ -27,6 +28,14 @@ export class ListBotUsersQueryDto {
     value === '' ? undefined : value,
   )
   status?: BotUserStatus;
+
+  @ApiPropertyOptional({ enum: Role })
+  @IsOptional()
+  @IsEnum(Role)
+  @Transform(({ value }: { value: Role | '' }) =>
+    value === '' ? undefined : value,
+  )
+  role?: Role;
 
   @ApiPropertyOptional({ example: 1, default: 1 })
   @IsOptional()

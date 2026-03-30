@@ -2,11 +2,12 @@ import {
   Column,
   CreateDateColumn,
   Entity,
+  Index,
   PrimaryGeneratedColumn,
   UpdateDateColumn,
-  Index,
 } from 'typeorm';
 import { BotUserStatus } from '../enums/bot-user-status.enum';
+import { Role } from 'src/modules/user/enums/role.enum';
 
 @Entity('bot_users')
 export class BotUser {
@@ -36,6 +37,16 @@ export class BotUser {
 
   @Column({ type: 'boolean', default: false })
   is_approved: boolean;
+
+  @Column({
+    type: 'enum',
+    enum: Role,
+    nullable: true,
+  })
+  role: Role | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  linked_user_id: string | null;
 
   @Column({ type: 'timestamp', nullable: true })
   last_active_at: Date | null;

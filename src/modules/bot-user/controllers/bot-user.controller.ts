@@ -52,7 +52,8 @@ export class BotUserController {
 
   @Patch(':id')
   @ApiOperation({
-    summary: 'Bot foydalanuvchini yangilash (status va is_approved)',
+    summary:
+      'Bot foydalanuvchini yangilash (status, is_approved, role, linked_user_id)',
   })
   @ApiOkResponse({ description: 'Bot user yangilandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })

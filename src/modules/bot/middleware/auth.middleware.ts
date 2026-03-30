@@ -2,6 +2,7 @@ import { Bot, Context } from 'grammy';
 import { Injectable } from '@nestjs/common';
 import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 import { BotUserStatus } from 'src/modules/bot-user/enums/bot-user-status.enum';
+import { Role } from 'src/modules/user/enums/role.enum';
 
 @Injectable()
 export class AuthMiddleware {
@@ -30,6 +31,23 @@ export class AuthMiddleware {
         await ctx.reply(
           '⏳ Siz hali tasdiqlanmagansiz.\n' +
             'Admin sizni tasdiqlashini kuting.',
+        );
+        return;
+      }
+
+      if (!user.role) {
+        await ctx.reply(
+          "⏳ Akkauntingiz tasdiqlangan, lekin bot roli hali biriktirilmagan.\nAdmin bilan bog'laning.",
+        );
+        return;
+      }
+
+      if (
+        (user.role === Role.WAREHOUSE || user.role === Role.ACCOUNTANT) &&
+        !user.linked_user_id
+      ) {
+        await ctx.reply(
+          `⏳ ${user.role} roli berilgan, lekin tizimdagi user hali bog'lanmagan.\nAdmin bilan bog'laning.`,
         );
         return;
       }

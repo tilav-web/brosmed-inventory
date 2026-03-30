@@ -1,5 +1,12 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsOptional, IsString, MaxLength, MinLength } from 'class-validator';
+import {
+  IsEnum,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator';
+import { Role } from '../enums/role.enum';
 
 export class AdminCreateUserDto {
   @ApiProperty({ example: 'warehouse.user1' })
@@ -7,6 +14,14 @@ export class AdminCreateUserDto {
   @MinLength(3)
   @MaxLength(64)
   username: string;
+
+  @ApiProperty({
+    enum: Role,
+    example: Role.ACCOUNTANT,
+    description: "Admin faqat admin'dan boshqa role yaratishi mumkin",
+  })
+  @IsEnum(Role)
+  role: Role;
 
   @ApiProperty({ example: 'warehouse12345' })
   @IsString()

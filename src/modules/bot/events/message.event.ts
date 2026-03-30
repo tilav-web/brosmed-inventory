@@ -1,6 +1,7 @@
 import { Bot, Context } from 'grammy';
 import { Injectable, Logger } from '@nestjs/common';
 import { BotContentService } from '../services/bot-content.service';
+import { resolveMainAction } from '../keyboards/main.keyboard';
 
 @Injectable()
 export class MessageEvent {
@@ -14,29 +15,33 @@ export class MessageEvent {
       if (!text) return;
       if (text.startsWith('/')) return;
 
-      switch (text) {
-        case '📦 Omborlar':
+      switch (resolveMainAction(text)) {
+        case 'warehouses':
           await this.handleWarehouses(ctx);
           break;
 
-        case '📊 Statistika':
+        case 'stats':
           await this.handleStats(ctx);
           break;
 
-        case '💊 Mahsulotlar':
+        case 'products':
           await this.handleProducts(ctx);
           break;
 
-        case '📋 Chiqimlar':
+        case 'expenses':
           await this.handleExpenses(ctx);
           break;
 
-        case '🔔 Ogohlantirishlar':
+        case 'alerts':
           await this.handleAlerts(ctx);
           break;
 
-        case '⚙️ Sozlamalar':
+        case 'settings':
           await this.handleSettings(ctx);
+          break;
+
+        case 'orders':
+          await this.handleOrders(ctx);
           break;
 
         default:
@@ -50,7 +55,13 @@ export class MessageEvent {
 
   private async handleWarehouses(ctx: Context) {
     try {
-      const text = await this.botContentService.buildWarehousesMessage();
+      if (!ctx.from) {
+        return;
+      }
+
+      const text = await this.botContentService.buildWarehousesMessage(
+        ctx.from.id,
+      );
       await ctx.reply(text, { parse_mode: 'HTML' });
     } catch (error) {
       this.logger.error('Omborlarni yuklashda xatolik:', error);
@@ -60,7 +71,11 @@ export class MessageEvent {
 
   private async handleAlerts(ctx: Context) {
     try {
-      const text = await this.botContentService.buildAlertsMessage();
+      if (!ctx.from) {
+        return;
+      }
+
+      const text = await this.botContentService.buildAlertsMessage(ctx.from.id);
       await ctx.reply(text, { parse_mode: 'HTML' });
     } catch (error) {
       this.logger.error('Ogohlantirishlarni yuklashda xatolik:', error);
@@ -70,7 +85,11 @@ export class MessageEvent {
 
   private async handleStats(ctx: Context) {
     try {
-      const text = await this.botContentService.buildStatsMessage();
+      if (!ctx.from) {
+        return;
+      }
+
+      const text = await this.botContentService.buildStatsMessage(ctx.from.id);
       await ctx.reply(text, { parse_mode: 'HTML' });
     } catch (error) {
       this.logger.error('Statistikani yuklashda xatolik:', error);
@@ -80,7 +99,13 @@ export class MessageEvent {
 
   private async handleProducts(ctx: Context) {
     try {
-      const text = await this.botContentService.buildProductsMessage();
+      if (!ctx.from) {
+        return;
+      }
+
+      const text = await this.botContentService.buildProductsMessage(
+        ctx.from.id,
+      );
       await ctx.reply(text, { parse_mode: 'HTML' });
     } catch (error) {
       this.logger.error('Mahsulotlarni yuklashda xatolik:', error);
@@ -90,7 +115,13 @@ export class MessageEvent {
 
   private async handleExpenses(ctx: Context) {
     try {
-      const text = await this.botContentService.buildExpensesMessage();
+      if (!ctx.from) {
+        return;
+      }
+
+      const text = await this.botContentService.buildExpensesMessage(
+        ctx.from.id,
+      );
       await ctx.reply(text, { parse_mode: 'HTML' });
     } catch (error) {
       this.logger.error('Chiqimlarni yuklashda xatolik:', error);
@@ -112,6 +143,20 @@ export class MessageEvent {
     } catch (error) {
       this.logger.error('Sozlamalarni yuklashda xatolik:', error);
       await ctx.reply('❌ Sozlamalarni yuklashda xatolik yuz berdi.');
+    }
+  }
+
+  private async handleOrders(ctx: Context) {
+    try {
+      if (!ctx.from) {
+        return;
+      }
+
+      const text = await this.botContentService.buildOrdersMessage(ctx.from.id);
+      await ctx.reply(text, { parse_mode: 'HTML' });
+    } catch (error) {
+      this.logger.error('Xaridlarni yuklashda xatolik:', error);
+      await ctx.reply('❌ Xaridlarni yuklashda xatolik yuz berdi.');
     }
   }
 }

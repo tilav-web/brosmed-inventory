@@ -9,6 +9,7 @@ import {
   Bot,
   GrammyError,
   HttpError,
+  InlineKeyboard,
   InputFile,
   webhookCallback,
 } from 'grammy';
@@ -21,10 +22,13 @@ import { StatsCommand } from './commands/stats.command';
 import { ProductsCommand } from './commands/products.command';
 import { ExpensesCommand } from './commands/expenses.command';
 import { SettingsCommand } from './commands/settings.command';
+import { OrdersCommand } from './commands/orders.command';
 import { MessageEvent } from './events/message.event';
 import { ChatMemberEvent } from './events/chat-member.event';
+import { PurchaseOrderCallbackEvent } from './events/purchase-order-callback.event';
 import { AuthMiddleware } from './middleware/auth.middleware';
 import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
+import { Role } from 'src/modules/user/enums/role.enum';
 
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
@@ -42,8 +46,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     private readonly productsCommand: ProductsCommand,
     private readonly expensesCommand: ExpensesCommand,
     private readonly settingsCommand: SettingsCommand,
+    private readonly ordersCommand: OrdersCommand,
     private readonly messageEvent: MessageEvent,
     private readonly chatMemberEvent: ChatMemberEvent,
+    private readonly purchaseOrderCallbackEvent: PurchaseOrderCallbackEvent,
     private readonly authMiddleware: AuthMiddleware,
     private readonly botUserService: BotUserService,
   ) {
@@ -120,7 +126,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     this.productsCommand.register(this.bot);
     this.expensesCommand.register(this.bot);
     this.settingsCommand.register(this.bot);
+    this.ordersCommand.register(this.bot);
     this.messageEvent.register(this.bot);
+    this.purchaseOrderCallbackEvent.register(this.bot);
 
     this.bot.catch(async (err) => {
       const ctx = err.ctx;
@@ -165,10 +173,15 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     return req.header('x-telegram-bot-api-secret-token') === webhookSecret;
   }
 
-  async sendMessage(telegramId: number, text: string): Promise<boolean> {
+  async sendMessage(
+    telegramId: number,
+    text: string,
+    options?: { reply_markup?: InlineKeyboard },
+  ): Promise<boolean> {
     try {
       await this.bot.api.sendMessage(telegramId, text, {
         parse_mode: 'HTML',
+        ...options,
       });
       return true;
     } catch (error) {
@@ -179,12 +192,16 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     }
   }
 
-  async sendToApprovedUsers(text: string): Promise<number> {
-    const users = await this.botUserService.getApprovedUsers();
+  async sendToApprovedUsers(
+    text: string,
+    role?: Role,
+    options?: { reply_markup?: InlineKeyboard },
+  ): Promise<number> {
+    const users = await this.botUserService.getApprovedUsers(role);
     let sent = 0;
 
     for (const user of users) {
-      const success = await this.sendMessage(user.telegram_id, text);
+      const success = await this.sendMessage(user.telegram_id, text, options);
       if (success) sent++;
     }
 

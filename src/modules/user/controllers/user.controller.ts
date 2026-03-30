@@ -65,17 +65,32 @@ export class UserController {
   @Post('admin/users')
   @Roles(Role.ADMIN)
   @ApiOperation({
-    summary: "Admin tomonidan warehouse role'li user yaratish",
+    summary: "Admin tomonidan admin'dan boshqa role'li user yaratish",
   })
   @ApiBody({ type: AdminCreateUserDto })
-  @ApiOkResponse({ description: 'Warehouse user muvaffaqiyatli yaratildi' })
+  @ApiOkResponse({ description: 'User muvaffaqiyatli yaratildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({
     description:
       "Faqat admin kirishi mumkin yoki admin role'li user yaratish taqiqlangan",
   })
-  async adminCreateWarehouseUser(@Body() dto: AdminCreateUserDto) {
-    return this.userService.createWarehouseUserByAdmin(dto);
+  async adminCreateUser(@Body() dto: AdminCreateUserDto) {
+    return this.userService.createUserByAdmin(dto);
+  }
+
+  @Get('admin/users/:id')
+  @Roles(Role.ADMIN)
+  @ApiOperation({
+    summary: "Admin tomonidan userni id bo'yicha olish (admin'dan tashqari)",
+  })
+  @ApiOkResponse({ description: 'User topildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({
+    description: "Faqat admin kirishi mumkin yoki admin userni ko'rish taqiqlangan",
+  })
+  @ApiNotFoundResponse({ description: 'Foydalanuvchi topilmadi' })
+  async adminGetUserById(@Param('id', ParseUUIDPipe) id: string) {
+    return this.userService.findUserForAdmin(id);
   }
 
   @Get('admin/users')
@@ -100,34 +115,35 @@ export class UserController {
   @Patch('admin/users/:id')
   @Roles(Role.ADMIN)
   @ApiOperation({
-    summary: 'Admin tomonidan warehouse userni yangilash (role dan tashqari)',
+    summary:
+      "Admin tomonidan userni yangilash (role ham yangilanishi mumkin, lekin admin role emas)",
   })
   @ApiBody({ type: AdminUpdateUserDto })
-  @ApiOkResponse({ description: 'Warehouse user yangilandi' })
+  @ApiOkResponse({ description: 'User yangilandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({
     description:
       "Faqat admin kirishi mumkin yoki admin role'li userni o'zgartirish taqiqlangan",
   })
   @ApiNotFoundResponse({ description: 'Foydalanuvchi topilmadi' })
-  async adminUpdateWarehouseUser(
+  async adminUpdateUser(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: AdminUpdateUserDto,
   ) {
-    return this.userService.updateWarehouseUserByAdmin(id, dto);
+    return this.userService.updateUserByAdmin(id, dto);
   }
 
   @Delete('admin/users/:id')
   @Roles(Role.ADMIN)
-  @ApiOperation({ summary: "Admin tomonidan warehouse userni o'chirish" })
-  @ApiOkResponse({ description: "Warehouse user o'chirildi" })
+  @ApiOperation({ summary: "Admin tomonidan userni o'chirish" })
+  @ApiOkResponse({ description: "User o'chirildi" })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({
     description:
       "Faqat admin kirishi mumkin yoki admin role'li userni o'chirish taqiqlangan",
   })
   @ApiNotFoundResponse({ description: 'Foydalanuvchi topilmadi' })
-  async adminDeleteWarehouseUser(@Param('id', ParseUUIDPipe) id: string) {
-    return this.userService.deleteWarehouseUserByAdmin(id);
+  async adminDeleteUser(@Param('id', ParseUUIDPipe) id: string) {
+    return this.userService.deleteUserByAdmin(id);
   }
 }

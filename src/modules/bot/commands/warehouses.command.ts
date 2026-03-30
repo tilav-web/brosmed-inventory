@@ -9,7 +9,13 @@ export class WarehousesCommand {
   register(bot: Bot) {
     bot.command('warehouses', async (ctx: Context) => {
       try {
-        const text = await this.botContentService.buildWarehousesMessage();
+        if (!ctx.from) {
+          return;
+        }
+
+        const text = await this.botContentService.buildWarehousesMessage(
+          ctx.from.id,
+        );
         await ctx.reply(text, { parse_mode: 'HTML' });
       } catch {
         await ctx.reply('❌ Omborlarni yuklashda xatolik yuz berdi.');

@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BotService } from './bot.service';
 import { BotController } from './bot.controller';
@@ -10,15 +10,19 @@ import { StatsCommand } from './commands/stats.command';
 import { ProductsCommand } from './commands/products.command';
 import { ExpensesCommand } from './commands/expenses.command';
 import { SettingsCommand } from './commands/settings.command';
+import { OrdersCommand } from './commands/orders.command';
 import { MessageEvent } from './events/message.event';
 import { ChatMemberEvent } from './events/chat-member.event';
+import { PurchaseOrderCallbackEvent } from './events/purchase-order-callback.event';
 import { AuthMiddleware } from './middleware/auth.middleware';
 import { WarehouseModule } from '../warehouse/warehouse.module';
 import { BotUserModule } from '../bot-user/bot-user.module';
+import { UserModule } from '../user/user.module';
 import { Product } from '../product/entities/product.entity';
 import { ProductBatch } from '../product/entities/product-batch.entity';
 import { Expense } from '../expense/entities/expense.entity';
 import { PurchaseOrder } from '../purchase-order/entities/purchase-order.entity';
+import { PurchaseOrderModule } from '../purchase-order/purchase-order.module';
 import { Warehouse } from '../warehouse/entities/warehouse.entity';
 import { BotContentService } from './services/bot-content.service';
 
@@ -26,6 +30,8 @@ import { BotContentService } from './services/bot-content.service';
   imports: [
     WarehouseModule,
     BotUserModule,
+    UserModule,
+    forwardRef(() => PurchaseOrderModule),
     TypeOrmModule.forFeature([
       Product,
       ProductBatch,
@@ -46,8 +52,10 @@ import { BotContentService } from './services/bot-content.service';
     ProductsCommand,
     ExpensesCommand,
     SettingsCommand,
+    OrdersCommand,
     MessageEvent,
     ChatMemberEvent,
+    PurchaseOrderCallbackEvent,
     AuthMiddleware,
   ],
   exports: [BotService],

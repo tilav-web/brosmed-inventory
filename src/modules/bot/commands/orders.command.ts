@@ -3,16 +3,16 @@ import { Injectable } from '@nestjs/common';
 import { BotContentService } from '../services/bot-content.service';
 
 @Injectable()
-export class StatsCommand {
+export class OrdersCommand {
   constructor(private readonly botContentService: BotContentService) {}
 
   register(bot: Bot) {
-    bot.command('stats', async (ctx: Context) => {
+    bot.command('orders', async (ctx: Context) => {
       if (!ctx.from) {
         return;
       }
 
-      const text = await this.botContentService.buildStatsMessage(ctx.from.id);
+      const text = await this.botContentService.buildOrdersMessage(ctx.from.id);
       await ctx.reply(text, { parse_mode: 'HTML' });
     });
   }

@@ -42,10 +42,11 @@ export class WarehouseController {
   constructor(private readonly warehouseService: WarehouseService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Barcha warehouse larni olish (faqat admin)' })
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
+  @ApiOperation({ summary: 'Barcha warehouse larni olish (admin/hisobchi)' })
   @ApiOkResponse({ description: 'Warehouse lar ro`yxati' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  @ApiForbiddenResponse({ description: 'Faqat admin/hisobchi kirishi mumkin' })
   findAll(@Query() query: ListWarehousesQueryDto) {
     return this.warehouseService.findAll(query);
   }
@@ -67,12 +68,13 @@ export class WarehouseController {
   }
 
   @Get(':id')
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
   @ApiOperation({
-    summary: 'Bitta warehouse ni id bo`yicha olish (faqat admin)',
+    summary: 'Bitta warehouse ni id bo`yicha olish (admin/hisobchi)',
   })
   @ApiOkResponse({ description: 'Warehouse topildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  @ApiForbiddenResponse({ description: 'Faqat admin/hisobchi kirishi mumkin' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.warehouseService.findById(id);
   }

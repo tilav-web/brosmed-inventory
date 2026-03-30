@@ -37,19 +37,21 @@ export class SupplierController {
   constructor(private readonly supplierService: SupplierService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Barcha supplierlarni olish (faqat admin)' })
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
+  @ApiOperation({ summary: 'Barcha supplierlarni olish (admin/hisobchi)' })
   @ApiOkResponse({ description: 'Supplierlar ro`yxati' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  @ApiForbiddenResponse({ description: 'Faqat admin/hisobchi kirishi mumkin' })
   findAll(@Query() query: ListSuppliersQueryDto) {
     return this.supplierService.findAll(query);
   }
 
   @Get(':id')
-  @ApiOperation({ summary: 'Bitta supplierni id bo`yicha olish (faqat admin)' })
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
+  @ApiOperation({ summary: 'Bitta supplierni id bo`yicha olish (admin/hisobchi)' })
   @ApiOkResponse({ description: 'Supplier topildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  @ApiForbiddenResponse({ description: 'Faqat admin/hisobchi kirishi mumkin' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.supplierService.findById(id);
   }

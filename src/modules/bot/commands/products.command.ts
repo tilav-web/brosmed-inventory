@@ -8,7 +8,13 @@ export class ProductsCommand {
 
   register(bot: Bot) {
     bot.command('products', async (ctx: Context) => {
-      const text = await this.botContentService.buildProductsMessage();
+      if (!ctx.from) {
+        return;
+      }
+
+      const text = await this.botContentService.buildProductsMessage(
+        ctx.from.id,
+      );
       await ctx.reply(text, { parse_mode: 'HTML' });
     });
   }

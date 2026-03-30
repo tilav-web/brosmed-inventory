@@ -37,8 +37,8 @@ export class ProductBatchController {
   @ApiOperation({ summary: 'Barcha partiyalarni pagination bilan olish' })
   @ApiResponse({ status: 200, description: 'Muvaffaqiyatli qaytarildi.' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse/hisobchi kirishi mumkin' })
+  @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
   async findAll(@Query() query: ListProductBatchsQueryDto) {
     return await this.productBatchService.findAll(query);
   }
@@ -52,19 +52,19 @@ export class ProductBatchController {
     description: 'Sroki yaqinlashgan partiyalar muvaffaqiyatli qaytarildi.',
   })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse/hisobchi kirishi mumkin' })
+  @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
   async findAlerts(@Query() query: ListProductBatchsQueryDto) {
     return await this.productBatchService.findAlerts(query);
   }
 
   @Patch(':id')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
   @ApiOperation({ summary: 'Product batch ma`lumotlarini yangilash' })
   @ApiBody({ type: UpdateProductBatchDto })
   @ApiOkResponse({ description: 'Product batch yangilandi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse/hisobchi kirishi mumkin' })
   update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateProductBatchDto,
@@ -73,11 +73,11 @@ export class ProductBatchController {
   }
 
   @Get(':id')
-  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
   @ApiOperation({ summary: 'Bitta product batchni id bo`yicha olish' })
   @ApiOkResponse({ description: 'Product batch topildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse kirishi mumkin' })
+  @ApiForbiddenResponse({ description: 'Faqat admin/warehouse/hisobchi kirishi mumkin' })
   findOne(@Param('id', ParseUUIDPipe) id: string) {
     return this.productBatchService.findById(id);
   }

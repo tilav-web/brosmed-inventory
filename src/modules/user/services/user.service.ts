@@ -9,6 +9,7 @@ import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
 import { hash } from 'bcrypt';
 import { Brackets, QueryFailedError, Repository } from 'typeorm';
+import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { Role } from '../enums/role.enum';
 import { User } from '../entities/user.entity';
 import { AdminCreateUserDto } from '../dto/admin-create-user.dto';
@@ -21,6 +22,8 @@ export class UserService implements OnModuleInit {
   constructor(
     @InjectRepository(User)
     private readonly userRepository: Repository<User>,
+    @InjectRepository(Warehouse)
+    private readonly warehouseRepository: Repository<Warehouse>,
     private readonly configService: ConfigService,
   ) {}
 
@@ -45,6 +48,16 @@ export class UserService implements OnModuleInit {
     return this.sanitizeUser(user);
   }
 
+  async findUserForAdmin(id: string): Promise<Omit<User, 'password'>> {
+    const user = await this.findById(id);
+    if (!user) {
+      throw new NotFoundException('Foydalanuvchi topilmadi');
+    }
+
+    this.assertTargetIsNotAdmin(user);
+    return this.sanitizeUser(user);
+  }
+
   private sanitizeUser(user: User): Omit<User, 'password'> {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { password, ...safeUser } = user;
@@ -62,11 +75,38 @@ export class UserService implements OnModuleInit {
       .getOne();
   }
 
-  private assertWarehouseTarget(user: User): void {
-    if (user.role !== Role.WAREHOUSE) {
+  private assertTargetIsNotAdmin(user: User): void {
+    if (user.role === Role.ADMIN) {
       throw new ForbiddenException(
-        "Admin faqat warehouse role'li userlarni o'zgartira oladi",
+        "Admin role'li userni boshqarish taqiqlangan",
       );
+    }
+  }
+
+  private assertRoleCreatableOrAssignable(role: Role): void {
+    if (role === Role.ADMIN) {
+      throw new ForbiddenException("Admin role'ni yaratish yoki biriktirish mumkin emas");
+    }
+  }
+
+  private async ensureRoleTransitionAllowed(
+    user: User,
+    nextRole: Role,
+  ): Promise<void> {
+    if (user.role === nextRole) {
+      return;
+    }
+
+    if (user.role === Role.WAREHOUSE && nextRole !== Role.WAREHOUSE) {
+      const assignedWarehouses = await this.warehouseRepository.count({
+        where: { manager_id: user.id },
+      });
+
+      if (assignedWarehouses > 0) {
+        throw new ForbiddenException(
+          "Warehousega biriktirilgan user rolini o'zgartirib bo'lmaydi. Avval warehouse managerini almashtiring",
+        );
+      }
     }
   }
 
@@ -90,7 +130,9 @@ export class UserService implements OnModuleInit {
     return this.sanitizeUser(updatedUser);
   }
 
-  async createWarehouseUserByAdmin(dto: AdminCreateUserDto) {
+  async createUserByAdmin(dto: AdminCreateUserDto) {
+    this.assertRoleCreatableOrAssignable(dto.role);
+
     const hashedPassword = await hash(dto.password, 10);
     try {
       const createdUser = await this.userRepository.save(
@@ -99,7 +141,7 @@ export class UserService implements OnModuleInit {
           password: hashedPassword,
           first_name: dto.first_name ?? '-',
           last_name: dto.last_name ?? '-',
-          role: Role.WAREHOUSE,
+          role: dto.role,
         }),
       );
       return this.sanitizeUser(createdUser);
@@ -151,16 +193,18 @@ export class UserService implements OnModuleInit {
     };
   }
 
-  async updateWarehouseUserByAdmin(userId: string, dto: AdminUpdateUserDto) {
+  async updateUserByAdmin(userId: string, dto: AdminUpdateUserDto) {
     const user = await this.findById(userId);
     if (!user) {
       throw new NotFoundException('Foydalanuvchi topilmadi');
     }
 
-    this.assertWarehouseTarget(user);
+    this.assertTargetIsNotAdmin(user);
 
     if (dto.role !== undefined) {
-      throw new ForbiddenException("Role ni o'zgartirish mumkin emas");
+      this.assertRoleCreatableOrAssignable(dto.role);
+      await this.ensureRoleTransitionAllowed(user, dto.role);
+      user.role = dto.role;
     }
 
     if (dto.username !== undefined && dto.username !== user.username) {
@@ -188,16 +232,28 @@ export class UserService implements OnModuleInit {
     return this.sanitizeUser(updatedUser);
   }
 
-  async deleteWarehouseUserByAdmin(userId: string) {
+  async deleteUserByAdmin(userId: string) {
     const user = await this.findById(userId);
     if (!user) {
       throw new NotFoundException('Foydalanuvchi topilmadi');
     }
 
-    this.assertWarehouseTarget(user);
+    this.assertTargetIsNotAdmin(user);
+
+    if (user.role === Role.WAREHOUSE) {
+      const assignedWarehouses = await this.warehouseRepository.count({
+        where: { manager_id: user.id },
+      });
+
+      if (assignedWarehouses > 0) {
+        throw new ConflictException(
+          "Bu warehouse userga ombor biriktirilgan. Avval warehouse managerini almashtiring",
+        );
+      }
+    }
 
     await this.userRepository.delete(user.id);
-    return { message: "Warehouse user o'chirildi" };
+    return { message: "User o'chirildi" };
   }
 
   private async ensureDefaultUsers(): Promise<void> {
@@ -221,6 +277,17 @@ export class UserService implements OnModuleInit {
             'warehouse12345',
           ),
           role: Role.WAREHOUSE,
+        },
+        {
+          username: this.configService.get<string>(
+            'ACCOUNTANT_USERNAME',
+            'accountant',
+          ),
+          password: this.configService.get<string>(
+            'ACCOUNTANT_PASSWORD',
+            'accountant12345',
+          ),
+          role: Role.ACCOUNTANT,
         },
       ];
 
