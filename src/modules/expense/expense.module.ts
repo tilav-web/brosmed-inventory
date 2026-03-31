@@ -1,8 +1,9 @@
-import { Module } from '@nestjs/common';
+import { forwardRef, Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { Product } from '../product/entities/product.entity';
 import { ProductBatch } from '../product/entities/product-batch.entity';
 import { Warehouse } from '../warehouse/entities/warehouse.entity';
+import { BotModule } from '../bot/bot.module';
 import { BotUserModule } from '../bot-user/bot-user.module';
 import { ExpenseController } from './controllers/expense.controller';
 import { ExpenseItem } from './entities/expense-item.entity';
@@ -13,6 +14,7 @@ import { ExpenseService } from './services/expense.service';
 
 @Module({
   imports: [
+    forwardRef(() => BotModule),
     BotUserModule,
     TypeOrmModule.forFeature([
       Expense,
