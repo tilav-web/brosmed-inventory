@@ -49,6 +49,26 @@ export class ExpenseController {
     private readonly expenseExportQueueService: ExpenseExportQueueService,
   ) {}
 
+  @Get('dashboard/summary')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Dashboard statistikasi' })
+  @ApiOkResponse({ description: 'Dashboard statistikasi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  getDashboardSummary() {
+    return this.expenseService.getDashboardSummary();
+  }
+
+  @Get('dashboard/overview')
+  @Roles(Role.ADMIN)
+  @ApiOperation({ summary: 'Dashboard overview statistikasi' })
+  @ApiOkResponse({ description: 'Dashboard overview statistikasi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  getDashboardOverview() {
+    return this.expenseService.getDashboardSummary();
+  }
+
   @Get()
   @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
   @ApiOperation({ summary: "Expense lar ro'yxati (pagination + filter)" })

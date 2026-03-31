@@ -813,6 +813,63 @@ export class ExpenseService {
     await this.invalidateDashboardCache();
   }
 
+  async getDashboardSummary(): Promise<{
+    total_products: number;
+    created: number;
+    low_stock: number;
+    expiring_soon: number;
+  }> {
+    const cacheKey = 'expenses:dashboard:summary';
+    const cached = await this.redis.get(cacheKey);
+    if (cached)
+      return JSON.parse(cached) as Awaited<
+        ReturnType<typeof this.getDashboardSummary>
+      >;
+
+    const totalProducts = await this.productRepository.count();
+
+    const createdCount = await this.expenseRepository.count({
+      where: { status: ExpenseStatus.CREATED },
+    });
+
+    const lowStockCount = await this.productRepository
+      .createQueryBuilder('product')
+      .where('product.quantity <= product.min_limit')
+      .andWhere('product.quantity > 0')
+      .getCount();
+
+    const today = this.getLocalDateString();
+
+    const in30DaysDate = new Date();
+    in30DaysDate.setDate(in30DaysDate.getDate() + 30);
+    const in30Days = this.getLocalDateString(in30DaysDate);
+
+    const expiringSoonCount = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .where('batch.expiration_date IS NOT NULL')
+      .andWhere('batch.expiration_date >= :today', { today })
+      .andWhere('batch.expiration_date <= :in30Days', { in30Days })
+      .andWhere('batch.quantity > 0')
+      .getCount();
+
+    const result = {
+      total_products: totalProducts,
+      created: createdCount,
+      low_stock: lowStockCount,
+      expiring_soon: expiringSoonCount,
+    };
+
+    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 30);
+    return result;
+  }
+
+  private getLocalDateString(date: Date = new Date()): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   private applyDateRangeFilter(
     qb: SelectQueryBuilder<any>,
     field: string,
