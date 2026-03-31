@@ -295,7 +295,7 @@ export class WarehouseService {
 
     if (warehouses.length > 1) {
       throw new ConflictException(
-        "Warehouse userga faqat bitta warehouse biriktirilishi kerak",
+        'Warehouse userga faqat bitta warehouse biriktirilishi kerak',
       );
     }
 
@@ -312,40 +312,36 @@ export class WarehouseService {
     in30Days.setDate(in30Days.getDate() + 30);
     in30Days.setHours(23, 59, 59, 999);
 
-    const [
-      totalProducts,
-      lowStockCount,
-      expiringSoonCount,
-      pendingIssueRaw,
-    ] = await Promise.all([
-      this.productRepository
-        .createQueryBuilder('product')
-        .where('product.warehouse_id = :warehouseId', { warehouseId })
-        .getCount(),
-      this.productRepository
-        .createQueryBuilder('product')
-        .where('product.warehouse_id = :warehouseId', { warehouseId })
-        .andWhere('product.quantity > 0')
-        .andWhere('product.quantity <= product.min_limit')
-        .getCount(),
-      this.productBatchRepository
-        .createQueryBuilder('batch')
-        .where('batch.warehouse_id = :warehouseId', { warehouseId })
-        .andWhere('batch.quantity > 0')
-        .andWhere('batch.expiration_date IS NOT NULL')
-        .andWhere('batch.expiration_date >= :today', { today })
-        .andWhere('batch.expiration_date <= :in30Days', { in30Days })
-        .getCount(),
-      this.expenseItemRepository
-        .createQueryBuilder('item')
-        .leftJoin('item.expense', 'expense')
-        .select('COUNT(DISTINCT expense.id)', 'count')
-        .where('item.warehouse_id = :warehouseId', { warehouseId })
-        .andWhere('expense.status = :status', {
-          status: ExpenseStatus.PENDING_ISSUE,
-        })
-        .getRawOne<{ count: string | null }>(),
-    ]);
+    const [totalProducts, lowStockCount, expiringSoonCount, pendingIssueRaw] =
+      await Promise.all([
+        this.productRepository
+          .createQueryBuilder('product')
+          .where('product.warehouse_id = :warehouseId', { warehouseId })
+          .getCount(),
+        this.productRepository
+          .createQueryBuilder('product')
+          .where('product.warehouse_id = :warehouseId', { warehouseId })
+          .andWhere('product.quantity > 0')
+          .andWhere('product.quantity <= product.min_limit')
+          .getCount(),
+        this.productBatchRepository
+          .createQueryBuilder('batch')
+          .where('batch.warehouse_id = :warehouseId', { warehouseId })
+          .andWhere('batch.quantity > 0')
+          .andWhere('batch.expiration_date IS NOT NULL')
+          .andWhere('batch.expiration_date >= :today', { today })
+          .andWhere('batch.expiration_date <= :in30Days', { in30Days })
+          .getCount(),
+        this.expenseItemRepository
+          .createQueryBuilder('item')
+          .leftJoin('item.expense', 'expense')
+          .select('COUNT(DISTINCT expense.id)', 'count')
+          .where('item.warehouse_id = :warehouseId', { warehouseId })
+          .andWhere('expense.status = :status', {
+            status: ExpenseStatus.CREATED,
+          })
+          .getRawOne<{ count: string | null }>(),
+      ]);
 
     return {
       total_products: totalProducts,
@@ -388,12 +384,9 @@ export class WarehouseService {
   private createRecentExpensesQuery(warehouseId: string) {
     return this.expenseRepository
       .createQueryBuilder('expense')
-      .innerJoin(
-        'expense.items',
-        'item',
-        'item.warehouse_id = :warehouseId',
-        { warehouseId },
-      );
+      .innerJoin('expense.items', 'item', 'item.warehouse_id = :warehouseId', {
+        warehouseId,
+      });
   }
 
   private mapRecentExpenses(
@@ -547,7 +540,10 @@ export class WarehouseService {
     query: { page?: number; limit?: number },
   ) {
     const warehouse = await this.getManagedWarehouseByUser(userId);
-    const products = await this.getLowStockProductsPaginated(warehouse.id, query);
+    const products = await this.getLowStockProductsPaginated(
+      warehouse.id,
+      query,
+    );
     return {
       warehouse: this.mapDashboardWarehouse(warehouse),
       ...products,

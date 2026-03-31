@@ -803,7 +803,44 @@ export class PurchaseOrderService {
     });
 
     await this.invalidateRelatedCaches();
+    await this.notifyAdminsAboutReceivedOrder(result).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(`Kirim bot notification yuborilmadi: ${message}`);
+    });
     return result;
+  }
+
+  private buildOrderItemsSummary(order: PurchaseOrder) {
+    return order.items
+      .map((item) => {
+        const productName = item.product?.name ?? "Noma'lum mahsulot";
+        return `• ${this.escapeHtml(productName)} - <b>${Number(item.quantity)}</b>`;
+      })
+      .join('\n');
+  }
+
+  private async notifyAdminsAboutReceivedOrder(order: PurchaseOrder) {
+    const receiver = order.received_by_id
+      ? await this.userRepository.findOne({
+          where: { id: order.received_by_id },
+        })
+      : null;
+
+    const receiverName =
+      receiver
+        ? [receiver.first_name, receiver.last_name].filter(Boolean).join(' ') ||
+          receiver.username
+        : (order.received_by_id ?? "Noma'lum");
+
+    const text =
+      `📥 <b>Kirim qabul qilindi</b>\n\n` +
+      `📄 Buyurtma: <b>${order.order_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(order.warehouse?.name ?? order.warehouse_id)}</b>\n` +
+      `👤 Qabul qilgan: <b>${this.escapeHtml(receiverName)}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(order.total_amount))}</b>\n\n` +
+      `📦 <b>Mahsulotlar:</b>\n${this.buildOrderItemsSummary(order)}`;
+
+    await this.botService.sendToApprovedUsers(text, Role.ADMIN);
   }
 
   private async notifyAdminsAboutNewOrder(order: PurchaseOrder) {

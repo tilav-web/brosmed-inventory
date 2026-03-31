@@ -13,26 +13,21 @@ import { ExpenseStatus } from '../enums/expense-status.enum';
 import { ExpenseType } from '../enums/expense-type.enum';
 import { ExpenseItem } from './expense-item.entity';
 
-// Expense: chiqimlar bo`yicha hujjat/smeta. Bir nechta itemlardan iborat.
 @Entity({ name: 'expenses' })
 export class Expense {
-  // Unikal identifikator (UUID).
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  // Chiqim raqami (unikal).
   @Column({ type: 'varchar', unique: true })
   expense_number: string;
 
-  // Chiqim statusi (tasdiqlash jarayoni).
   @Column({
     type: 'enum',
     enum: ExpenseStatus,
-    default: ExpenseStatus.PENDING_ISSUE,
+    default: ExpenseStatus.CREATED,
   })
   status: ExpenseStatus;
 
-  // Chiqim turi (ishlatilgan yoki muddati o`tgan).
   @Column({
     type: 'enum',
     enum: ExpenseType,
@@ -40,84 +35,40 @@ export class Expense {
   })
   type: ExpenseType;
 
-  // Chek/rasmlar URL lar ro'yxati.
-  @Column({ type: 'text', array: true, default: () => 'ARRAY[]::text[]' })
-  images: string[];
-
-  // Jami summa (itemlar yig`indisi).
   @Column({ type: 'decimal', precision: 15, scale: 2, default: 0 })
   total_price: number;
 
-  // Mas`ul manager ID (ixtiyoriy).
   @Column({ type: 'uuid', nullable: true })
   manager_id: string | null;
 
-  // Mas`ul manager obyekti (ixtiyoriy).
   @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'manager_id' })
   manager: User | null;
 
-  // Ombordan real chiqarishni amalga oshirgan warehouse user ID.
   @Column({ type: 'uuid', nullable: true })
   issued_by_id: string | null;
 
-  // Mahsulot ombordan chiqarilgan vaqt.
   @Column({ type: 'timestamp', nullable: true })
   issued_at: Date | null;
 
-  // Chiqim so`rovini issue bosqichiga tasdiqlagan admin ID.
-  @Column({ type: 'uuid', nullable: true })
-  approved_by_id: string | null;
-
-  // Chiqim so`rovi issue bosqichiga tasdiqlangan vaqt.
-  @Column({ type: 'timestamp', nullable: true })
-  approved_at: Date | null;
-
-  // Foto yuklangach hujjatni tasdiqlagan admin ID.
-  @Column({ type: 'uuid', nullable: true })
-  confirmed_by_id: string | null;
-
-  // Chiqim yakuniy tasdiqlangan vaqt.
-  @Column({ type: 'timestamp', nullable: true })
-  confirmed_at: Date | null;
-
-  // Yakuniy tekshiruvda qayta ko`rib chiqish so`ralgan sabab.
-  @Column({ type: 'text', nullable: true })
-  revision_reason: string | null;
-
-  // Qayta ko`rib chiqishni so`ragan admin ID.
-  @Column({ type: 'uuid', nullable: true })
-  revision_requested_by_id: string | null;
-
-  // Qayta ko`rib chiqish so`ralgan vaqt.
-  @Column({ type: 'timestamp', nullable: true })
-  revision_requested_at: Date | null;
-
-  // Chiqimni bekor qilgan admin ID.
   @Column({ type: 'uuid', nullable: true })
   cancelled_by_id: string | null;
 
-  // Chiqim bekor qilingan vaqt.
   @Column({ type: 'timestamp', nullable: true })
   cancelled_at: Date | null;
 
-  // Chiqimni rasmiylashtirgan xodim ismi.
   @Column({ type: 'varchar' })
   staff_name: string;
 
-  // Chiqim maqsadi (ixtiyoriy).
   @Column({ type: 'text', nullable: true })
   purpose: string | null;
 
-  // Chiqim itemlari ro`yxati.
   @OneToMany(() => ExpenseItem, (item) => item.expense, { cascade: true })
   items: ExpenseItem[];
 
-  // Yaratilgan vaqt.
   @CreateDateColumn({ type: 'timestamp' })
   createdAt: Date;
 
-  // Oxirgi yangilangan vaqt.
   @UpdateDateColumn({ type: 'timestamp' })
   updatedAt: Date;
 }

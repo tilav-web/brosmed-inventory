@@ -3,7 +3,6 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import ExcelJS from 'exceljs';
 import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
-import { Role } from 'src/modules/user/enums/role.enum';
 import { ExpenseItem } from '../entities/expense-item.entity';
 import { ListExpenseItemsQueryDto } from '../dto/list-expense-items-query.dto';
 
@@ -65,8 +64,6 @@ export class ExpenseExportService {
     user?: AuthUser,
   ) {
     const search = query.search?.trim();
-    const accountantUserId =
-      user?.role === Role.ACCOUNTANT ? user.id : undefined;
 
     const qb = this.expenseItemRepository
       .createQueryBuilder('item')
@@ -87,12 +84,6 @@ export class ExpenseExportService {
 
     if (query.type) {
       qb.andWhere('expense.type = :type', { type: query.type });
-    }
-
-    if (accountantUserId) {
-      qb.andWhere('expense.manager_id = :managerId', {
-        managerId: accountantUserId,
-      });
     }
 
     if (query.warehouse_id) {

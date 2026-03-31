@@ -272,7 +272,7 @@ export class BotContentService {
     const warehouses = await this.getManagedWarehouses(linkedUserId);
 
     if (!warehouses.length) {
-      return "📦 <b>Mening omborlarim</b>\n\nSizga hali ombor biriktirilmagan.";
+      return '📦 <b>Mening omborlarim</b>\n\nSizga hali ombor biriktirilmagan.';
     }
 
     const totalsRaw = await this.productBatchRepository
@@ -362,7 +362,7 @@ export class BotContentService {
     const warehouses = await this.getManagedWarehouses(linkedUserId);
 
     if (!warehouses.length) {
-      return "🔔 <b>Mening ogohlantirishlarim</b>\n\nSizga hali ombor biriktirilmagan.";
+      return '🔔 <b>Mening ogohlantirishlarim</b>\n\nSizga hali ombor biriktirilmagan.';
     }
 
     const sections: string[] = [];
@@ -493,7 +493,7 @@ export class BotContentService {
   ): Promise<string> {
     const warehouses = await this.getManagedWarehouses(linkedUserId);
     if (!warehouses.length) {
-      return "📊 <b>Mening statistikam</b>\n\nSizga hali ombor biriktirilmagan.";
+      return '📊 <b>Mening statistikam</b>\n\nSizga hali ombor biriktirilmagan.';
     }
 
     const [statsResponse, recentExpensesResponse] = await Promise.all([
@@ -664,12 +664,8 @@ export class BotContentService {
 
   private createExpenseStatusCounts(): Record<ExpenseStatus, number> {
     return {
-      [ExpenseStatus.PENDING_APPROVAL]: 0,
-      [ExpenseStatus.PENDING_ISSUE]: 0,
-      [ExpenseStatus.PENDING_PHOTO]: 0,
-      [ExpenseStatus.PENDING_CONFIRMATION]: 0,
-      [ExpenseStatus.REVISION_REQUIRED]: 0,
-      [ExpenseStatus.COMPLETED]: 0,
+      [ExpenseStatus.CREATED]: 0,
+      [ExpenseStatus.ISSUED]: 0,
       [ExpenseStatus.CANCELLED]: 0,
     };
   }
@@ -695,12 +691,8 @@ export class BotContentService {
     }
 
     let text = '📋 <b>Chiqimlar</b>\n\n';
-    text += `🆕 Admin tasdig'i kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
-    text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
-    text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
-    text += `🟠 Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
-    text += `🔁 Qayta ko'rib chiqish: <b>${counts[ExpenseStatus.REVISION_REQUIRED]}</b>\n`;
-    text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
+    text += `🆕 Yaratildi: <b>${counts[ExpenseStatus.CREATED]}</b>\n`;
+    text += `✅ Berildi: <b>${counts[ExpenseStatus.ISSUED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
     if (!recentExpenses.length) {
@@ -746,12 +738,8 @@ export class BotContentService {
     }
 
     let text = '📋 <b>Mening chiqimlarim</b>\n\n';
-    text += `🆕 Admin tasdig'i kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
-    text += `🟡 Berish kutilmoqda: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
-    text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
-    text += `🟠 Yakuniy tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
-    text += `🔁 Qayta ko'rib chiqish: <b>${counts[ExpenseStatus.REVISION_REQUIRED]}</b>\n`;
-    text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
+    text += `🆕 Yaratildi: <b>${counts[ExpenseStatus.CREATED]}</b>\n`;
+    text += `✅ Berildi: <b>${counts[ExpenseStatus.ISSUED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
     if (!recentExpenses.length) {
@@ -778,7 +766,7 @@ export class BotContentService {
     const warehouses = await this.getManagedWarehouses(linkedUserId);
 
     if (!warehouses.length) {
-      return "📋 <b>Mening chiqimlarim</b>\n\nSizga hali ombor biriktirilmagan.";
+      return '📋 <b>Mening chiqimlarim</b>\n\nSizga hali ombor biriktirilmagan.';
     }
 
     const warehouseIds = warehouses.map((warehouse) => warehouse.id);
@@ -838,16 +826,13 @@ export class BotContentService {
     }
 
     let text = '📋 <b>Mening chiqimlarim</b>\n\n';
-    text += `🆕 Admin tasdig'i kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
-    text += `🟡 Kutilayotgan berish: <b>${counts[ExpenseStatus.PENDING_ISSUE]}</b>\n`;
-    text += `📷 Foto kutilmoqda: <b>${counts[ExpenseStatus.PENDING_PHOTO]}</b>\n`;
-    text += `🟠 Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_CONFIRMATION]}</b>\n`;
-    text += `🔁 Qayta ko'rib chiqish: <b>${counts[ExpenseStatus.REVISION_REQUIRED]}</b>\n`;
-    text += `✅ Yakunlangan: <b>${counts[ExpenseStatus.COMPLETED]}</b>\n`;
+    text += `🆕 Yaratildi: <b>${counts[ExpenseStatus.CREATED]}</b>\n`;
+    text += `✅ Berildi: <b>${counts[ExpenseStatus.ISSUED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
     if (!recentExpenses.length) {
-      text += '\nHozircha sizning omborlaringiz bo‘yicha chiqimlar mavjud emas.';
+      text +=
+        '\nHozircha sizning omborlaringiz bo\u2018yicha chiqimlar mavjud emas.';
       return text;
     }
 
@@ -922,8 +907,7 @@ export class BotContentService {
     if (!botUser) {
       return {
         ok: false,
-        message:
-          "❗ Botdan foydalanish uchun avval /start buyrug'ini bosing.",
+        message: "❗ Botdan foydalanish uchun avval /start buyrug'ini bosing.",
       };
     }
 
@@ -940,7 +924,7 @@ export class BotContentService {
         ok: false,
         botUser,
         message:
-          "⏳ Siz hali tasdiqlanmagansiz.\nAdmin sizni tasdiqlashini kuting.",
+          '⏳ Siz hali tasdiqlanmagansiz.\nAdmin sizni tasdiqlashini kuting.',
       };
     }
 
@@ -961,11 +945,9 @@ export class BotContentService {
     };
   }
 
-  private getConfigurationMessage(
-    user: BotUser & { role?: Role | null },
-  ) {
+  private getConfigurationMessage(user: BotUser & { role?: Role | null }) {
     if (!user.is_approved) {
-      return "tasdiq kutilmoqda.";
+      return 'tasdiq kutilmoqda.';
     }
 
     if (!user.linked_user_id || !user.role) {
@@ -1041,18 +1023,10 @@ export class BotContentService {
 
   private mapExpenseStatus(status: ExpenseStatus) {
     switch (status) {
-      case ExpenseStatus.PENDING_APPROVAL:
-        return "🆕 Admin tasdig'i kutilmoqda";
-      case ExpenseStatus.PENDING_ISSUE:
-        return '🟡 Berish kutilmoqda';
-      case ExpenseStatus.PENDING_PHOTO:
-        return '📷 Foto kutilmoqda';
-      case ExpenseStatus.PENDING_CONFIRMATION:
-        return '🟠 Tasdiq kutilmoqda';
-      case ExpenseStatus.REVISION_REQUIRED:
-        return "🔁 Qayta ko'rib chiqish kerak";
-      case ExpenseStatus.COMPLETED:
-        return '✅ Tasdiqlangan';
+      case ExpenseStatus.CREATED:
+        return '🆕 Yaratildi';
+      case ExpenseStatus.ISSUED:
+        return '✅ Berildi';
       case ExpenseStatus.CANCELLED:
         return '❌ Bekor qilingan';
       default:

@@ -129,7 +129,6 @@ export class SeedService implements OnApplicationBootstrap {
       "Development seed ishga tushdi: bo'sh baza uchun demo ma'lumotlar yaratiladi",
     );
 
-    const checkImageUrls = this.resetUploadsAndCreateCheckImages();
     await this.flushRedis();
 
     const users = await this.seedUsers();
@@ -151,7 +150,6 @@ export class SeedService implements OnApplicationBootstrap {
       users,
       warehouse,
       batches: inventory.batches,
-      checkImageUrls,
     });
 
     await this.flushRedis();
@@ -261,7 +259,10 @@ export class SeedService implements OnApplicationBootstrap {
       {
         role: Role.ADMIN,
         username: this.configService.get<string>('ADMIN_USERNAME', 'admin'),
-        password: this.configService.get<string>('ADMIN_PASSWORD', 'admin12345'),
+        password: this.configService.get<string>(
+          'ADMIN_PASSWORD',
+          'admin12345',
+        ),
         first_name: 'System',
         last_name: 'Admin',
       },
@@ -682,13 +683,12 @@ export class SeedService implements OnApplicationBootstrap {
     users: SeedUsers;
     warehouse: Warehouse;
     batches: SeedProducts['batches'];
-    checkImageUrls: [string, string];
   }): Promise<void> {
     const year = new Date().getFullYear();
 
     await this.createExpense({
       expenseNumber: `EXP-${year}-001`,
-      status: ExpenseStatus.PENDING_APPROVAL,
+      status: ExpenseStatus.CREATED,
       users: input.users,
       createdAt: this.addDays(new Date(), -1),
       staffName: 'Terapiya bo`limi',
@@ -702,25 +702,24 @@ export class SeedService implements OnApplicationBootstrap {
 
     await this.createExpense({
       expenseNumber: `EXP-${year}-002`,
-      status: ExpenseStatus.PENDING_ISSUE,
+      status: ExpenseStatus.ISSUED,
       users: input.users,
       createdAt: this.addDays(new Date(), -2),
-      approvedAt: this.addDays(new Date(), -1),
+      issuedAt: this.addDays(new Date(), -1),
       staffName: 'Jarrohlik bo`limi',
-      purpose: 'Tasdiqlangan, ombordan chiqarish kutilmoqda',
+      purpose: 'Tasdiqlangan, ombordan chiqarildi',
       type: ExpenseType.USAGE,
       items: [{ batch: input.batches.amoxicillin, quantity: 8 }],
     });
 
     await this.createExpense({
       expenseNumber: `EXP-${year}-003`,
-      status: ExpenseStatus.PENDING_PHOTO,
+      status: ExpenseStatus.ISSUED,
       users: input.users,
       createdAt: this.addDays(new Date(), -3),
-      approvedAt: this.addDays(new Date(), -2),
       issuedAt: this.addDays(new Date(), -1),
       staffName: 'Poliklinika',
-      purpose: 'Mahsulot berilgan, chek rasmi kutilmoqda',
+      purpose: 'Mahsulot berilgan',
       type: ExpenseType.USAGE,
       items: [
         { batch: input.batches.syringe, quantity: 20 },
@@ -730,47 +729,37 @@ export class SeedService implements OnApplicationBootstrap {
 
     await this.createExpense({
       expenseNumber: `EXP-${year}-004`,
-      status: ExpenseStatus.PENDING_CONFIRMATION,
+      status: ExpenseStatus.ISSUED,
       users: input.users,
       createdAt: this.addDays(new Date(), -4),
-      approvedAt: this.addDays(new Date(), -3),
       issuedAt: this.addDays(new Date(), -2),
       staffName: 'Kardiologiya',
-      purpose: 'Foto yuklangan, final review kutilmoqda',
+      purpose: 'Berilgan va tasdiqlangan',
       type: ExpenseType.USAGE,
-      images: [input.checkImageUrls[0], input.checkImageUrls[1]],
       items: [{ batch: input.batches.vitaminC, quantity: 3 }],
     });
 
     await this.createExpense({
       expenseNumber: `EXP-${year}-005`,
-      status: ExpenseStatus.REVISION_REQUIRED,
+      status: ExpenseStatus.CANCELLED,
       users: input.users,
       createdAt: this.addDays(new Date(), -5),
-      approvedAt: this.addDays(new Date(), -4),
-      issuedAt: this.addDays(new Date(), -3),
-      revisionRequestedAt: this.addDays(new Date(), -1),
-      revisionReason:
-        'Chek rasmi noaniq. Mahsulot nomi va miqdori aniq ko`rinadigan qilib qayta yuklang.',
+      cancelledAt: this.addDays(new Date(), -1),
       staffName: 'Reanimatsiya bo`limi',
-      purpose: 'Qayta rasm yuklash talab qilinadi',
+      purpose: 'Bekor qilingan chiqim',
       type: ExpenseType.USAGE,
-      images: [input.checkImageUrls[0]],
       items: [{ batch: input.batches.saline, quantity: 2 }],
     });
 
     await this.createExpense({
       expenseNumber: `EXP-${year}-006`,
-      status: ExpenseStatus.COMPLETED,
+      status: ExpenseStatus.ISSUED,
       users: input.users,
       createdAt: this.addDays(new Date(), -6),
-      approvedAt: this.addDays(new Date(), -5),
       issuedAt: this.addDays(new Date(), -4),
-      confirmedAt: this.addDays(new Date(), -3),
       staffName: 'Laboratoriya',
       purpose: 'Yakunlangan chiqim',
       type: ExpenseType.USAGE,
-      images: [input.checkImageUrls[0], input.checkImageUrls[1]],
       items: [
         { batch: input.batches.amoxicillin, quantity: 5 },
         { batch: input.batches.syringe, quantity: 15 },
@@ -795,21 +784,15 @@ export class SeedService implements OnApplicationBootstrap {
     status: ExpenseStatus;
     users: SeedUsers;
     createdAt: Date;
-    approvedAt?: Date;
     issuedAt?: Date;
-    confirmedAt?: Date;
     cancelledAt?: Date;
-    revisionRequestedAt?: Date;
-    revisionReason?: string;
     staffName: string;
     purpose: string;
     type: ExpenseType;
-    images?: string[];
     items: Array<{ batch: ProductBatch; quantity: number }>;
   }): Promise<void> {
     const total = input.items.reduce(
-      (sum, item) =>
-        sum + item.quantity * Number(item.batch.price_at_purchase),
+      (sum, item) => sum + item.quantity * Number(item.batch.price_at_purchase),
       0,
     );
 
@@ -827,20 +810,10 @@ export class SeedService implements OnApplicationBootstrap {
       expense_number: input.expenseNumber,
       status: input.status,
       type: input.type,
-      images: input.images ?? [],
       total_price: Number(total.toFixed(2)),
       manager_id: input.users.accountant.id,
       issued_by_id: input.issuedAt ? input.users.warehouse.id : null,
       issued_at: input.issuedAt ?? null,
-      approved_by_id: input.approvedAt ? input.users.admin.id : null,
-      approved_at: input.approvedAt ?? null,
-      confirmed_by_id: input.confirmedAt ? input.users.admin.id : null,
-      confirmed_at: input.confirmedAt ?? null,
-      revision_reason: input.revisionReason ?? null,
-      revision_requested_by_id: input.revisionRequestedAt
-        ? input.users.admin.id
-        : null,
-      revision_requested_at: input.revisionRequestedAt ?? null,
       cancelled_by_id: input.cancelledAt ? input.users.admin.id : null,
       cancelled_at: input.cancelledAt ?? null,
       staff_name: input.staffName,

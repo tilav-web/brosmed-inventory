@@ -44,7 +44,7 @@ export class ListExpenseItemsQueryDto {
 
   @ApiPropertyOptional({
     enum: ExpenseStatus,
-    example: ExpenseStatus.COMPLETED,
+    example: ExpenseStatus.CREATED,
   })
   @IsOptional()
   @IsEnum(ExpenseStatus)

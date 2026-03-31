@@ -63,7 +63,6 @@ export class ProductStatusSchedulerService {
   }
 
   private async writeOffExpiredBatches(today: string) {
-    // Muddati o'tgan partiyalarni alohida-alohida olamiz
     const expiredBatches = await this.productBatchRepository
       .createQueryBuilder('batch')
       .where('batch.quantity > 0')
@@ -73,25 +72,23 @@ export class ProductStatusSchedulerService {
 
     if (expiredBatches.length === 0) return;
 
-    const items = expiredBatches.map((batch) => ({
-      product_id: batch.product_id,
-      warehouse_id: batch.warehouse_id,
-      product_batch_id: batch.id, // Endi majburiy
-      quantity: Number(batch.quantity),
-    }));
+    for (const batch of expiredBatches) {
+      const items = [
+        {
+          product_id: batch.product_id,
+          warehouse_id: batch.warehouse_id,
+          product_batch_id: batch.id,
+          quantity: Number(batch.quantity),
+        },
+      ];
 
-    const { expense } = await this.expenseService.createAndGetReceipt({
-      staff_name: 'SYSTEM',
-      purpose: 'Auto: expired batch write-off',
-      type: ExpenseType.EXPIRED,
-      items,
-    });
-
-    await this.expenseService.issueExpense(expense.id);
-    await this.expenseService.attachImagesAndMarkPendingConfirmation(expense.id, [
-      'SYSTEM_AUTO',
-    ]);
-    await this.expenseService.confirmExpense(expense.id);
+      await this.expenseService.createSystemExpense({
+        staff_name: 'SYSTEM',
+        purpose: 'Auto: expired batch write-off',
+        type: ExpenseType.EXPIRED,
+        items,
+      });
+    }
 
     this.logger.log(
       `Auto write-off completed for ${expiredBatches.length} batches.`,

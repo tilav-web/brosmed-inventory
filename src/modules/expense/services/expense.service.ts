@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ForbiddenException,
-  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
@@ -14,13 +13,8 @@ import {
   SelectQueryBuilder,
 } from 'typeorm';
 import Redis from 'ioredis';
-import { InlineKeyboard } from 'grammy';
-import { BotService } from 'src/modules/bot/bot.service';
-import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
-import { PurchaseOrder } from 'src/modules/purchase-order/entities/purchase-order.entity';
-import { OrderStatus } from 'src/modules/purchase-order/enums/order-status.enum';
 import { User } from 'src/modules/user/entities/user.entity';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
@@ -45,71 +39,6 @@ export interface ReceiptItem {
   line_total: number;
 }
 
-type DashboardSeverity = 'high' | 'medium';
-type DashboardAlertType = 'expired' | 'expiring_soon' | 'low_stock';
-
-export interface DashboardAlertItem {
-  type: DashboardAlertType;
-  severity: DashboardSeverity;
-  message: string;
-  product_id: string;
-  product_name: string;
-  warehouse_id: string;
-  warehouse_name: string;
-  quantity?: number;
-  min_limit?: number;
-  batch_id?: string;
-  expiration_date?: string | null;
-  days_left?: number | null;
-  created_at: string;
-}
-
-export interface DashboardOverview {
-  generated_at: string;
-  headline_alerts: {
-    total: number;
-    high: number;
-    medium: number;
-    items: DashboardAlertItem[];
-  };
-  summary: {
-    total_products: number;
-    low_stock_products: number;
-    expiring_products: number;
-    total_inventory_value: number;
-    total_warehouses: number;
-    pending_orders: number;
-    expired_products: number;
-  };
-  charts: {
-    inventory_value_by_warehouse: Array<{
-      warehouse_id: string;
-      warehouse_name: string;
-      total_inventory_value: number;
-    }>;
-    stock_status_distribution: {
-      total: number;
-      items: Array<{
-        status: 'normal' | 'low_stock' | 'expired';
-        label: string;
-        count: number;
-        percentage: number;
-      }>;
-    };
-    products_by_category: Array<{
-      category_id: string | null;
-      category_name: string;
-      product_count: number;
-    }>;
-    product_count_by_warehouse: Array<{
-      warehouse_id: string;
-      warehouse_name: string;
-      product_count: number;
-    }>;
-  };
-  recent_notifications: DashboardAlertItem[];
-}
-
 @Injectable()
 export class ExpenseService {
   constructor(
@@ -122,18 +51,15 @@ export class ExpenseService {
     private readonly productRepository: Repository<Product>,
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
-    @InjectRepository(PurchaseOrder)
-    private readonly purchaseOrderRepository: Repository<PurchaseOrder>,
     @InjectRepository(Warehouse)
     private readonly warehouseRepository: Repository<Warehouse>,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
-    @Inject(forwardRef(() => BotService))
-    private readonly botService: BotService,
-    private readonly botUserService: BotUserService,
   ) {}
 
-  private async getAssignedWarehouseForUser(userId: string): Promise<Warehouse> {
+  private async getAssignedWarehouseForUser(
+    userId: string,
+  ): Promise<Warehouse> {
     const warehouses = await this.warehouseRepository.find({
       where: { manager_id: userId },
       order: { createdAt: 'ASC' },
@@ -141,13 +67,13 @@ export class ExpenseService {
 
     if (warehouses.length === 0) {
       throw new NotFoundException(
-        "Warehouse userga biriktirilgan warehouse topilmadi",
+        'Warehouse userga biriktirilgan warehouse topilmadi',
       );
     }
 
     if (warehouses.length > 1) {
       throw new ForbiddenException(
-        "Warehouse userga faqat bitta warehouse biriktirilishi kerak",
+        'Warehouse userga faqat bitta warehouse biriktirilishi kerak',
       );
     }
 
@@ -163,11 +89,6 @@ export class ExpenseService {
     }
 
     if (user.role === Role.ACCOUNTANT) {
-      if (expense.manager_id !== user.id) {
-        throw new ForbiddenException(
-          "Siz faqat o'zingiz yaratgan chiqimlar bilan ishlay olasiz",
-        );
-      }
       return;
     }
 
@@ -183,7 +104,7 @@ export class ExpenseService {
     );
 
     if (!expenseWarehouseIds.size) {
-      throw new ForbiddenException("Expense uchun warehouse aniqlanmadi");
+      throw new ForbiddenException('Expense uchun warehouse aniqlanmadi');
     }
 
     if (
@@ -200,8 +121,6 @@ export class ExpenseService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
-    const accountantUserId =
-      user.role === Role.ACCOUNTANT ? user.id : undefined;
     const assignedWarehouse =
       user.role === Role.WAREHOUSE
         ? await this.getAssignedWarehouseForUser(user.id)
@@ -210,12 +129,6 @@ export class ExpenseService {
     const qb = this.expenseRepository
       .createQueryBuilder('expense')
       .leftJoinAndSelect('expense.manager', 'manager');
-
-    if (accountantUserId) {
-      qb.andWhere('expense.manager_id = :managerId', {
-        managerId: accountantUserId,
-      });
-    }
 
     if (assignedWarehouse) {
       qb.leftJoinAndSelect(
@@ -276,8 +189,6 @@ export class ExpenseService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
-    const accountantUserId =
-      user?.role === Role.ACCOUNTANT ? user.id : undefined;
     const assignedWarehouseId =
       user?.role === Role.WAREHOUSE
         ? (await this.getAssignedWarehouseForUser(user.id)).id
@@ -302,12 +213,6 @@ export class ExpenseService {
 
     if (query.type) {
       qb.andWhere('expense.type = :type', { type: query.type });
-    }
-
-    if (accountantUserId) {
-      qb.andWhere('expense.manager_id = :managerId', {
-        managerId: accountantUserId,
-      });
     }
 
     if (assignedWarehouseId) {
@@ -543,28 +448,13 @@ export class ExpenseService {
     await manager.getRepository(Product).save(product);
   }
 
-  private async getReservedBatchQuantity(
-    manager: EntityManager,
-    batchId: string,
-  ): Promise<number> {
-    const reservedRaw = await manager
-      .getRepository(ExpenseItem)
-      .createQueryBuilder('item')
-      .leftJoin('item.expense', 'expense')
-      .select('COALESCE(SUM(item.quantity), 0)', 'reserved')
-      .where('item.product_batch_id = :batchId', { batchId })
-      .andWhere('expense.status IN (:...statuses)', {
-        statuses: [
-          ExpenseStatus.PENDING_APPROVAL,
-          ExpenseStatus.PENDING_ISSUE,
-        ],
-      })
-      .getRawOne<{ reserved: string | null }>();
+  async create(dto: CreateExpenseDto, actor: AuthUser) {
+    if (actor.role !== Role.WAREHOUSE) {
+      throw new ForbiddenException('Faqat warehouse user chiqim yarata oladi');
+    }
 
-    return Number(Number(reservedRaw?.reserved ?? 0).toFixed(2));
-  }
+    const assignedWarehouse = await this.getAssignedWarehouseForUser(actor.id);
 
-  async createAndGetReceipt(dto: CreateExpenseDto, actor?: AuthUser) {
     const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
       const expenseItemRepo = manager.getRepository(ExpenseItem);
@@ -572,37 +462,29 @@ export class ExpenseService {
       const warehouseRepo = manager.getRepository(Warehouse);
       const userRepo = manager.getRepository(User);
 
-      const managerUser = actor?.id
-        ? await userRepo.findOne({ where: { id: actor.id } })
-        : null;
-
+      const managerUser = await userRepo.findOne({ where: { id: actor.id } });
       const expenseNumber = await this.generateExpenseNumber(manager);
       const expenseType = dto.type ?? ExpenseType.USAGE;
-      const requiresAdminApproval = actor?.role === Role.ACCOUNTANT;
 
       const createdExpense = await expenseRepo.save(
         expenseRepo.create({
           expense_number: expenseNumber,
-          status: requiresAdminApproval
-            ? ExpenseStatus.PENDING_APPROVAL
-            : ExpenseStatus.PENDING_ISSUE,
+          status: ExpenseStatus.CREATED,
           type: expenseType,
-          images: [],
           total_price: 0,
           staff_name: dto.staff_name,
           purpose: dto.purpose ?? null,
           manager_id: managerUser?.id ?? null,
-          approved_by_id:
-            requiresAdminApproval || !actor?.id ? null : actor.id,
-          approved_at:
-            requiresAdminApproval || !actor?.id ? null : new Date(),
+          issued_by_id: null,
+          issued_at: null,
+          cancelled_by_id: null,
+          cancelled_at: null,
         }),
       );
 
       const receiptItems: ReceiptItem[] = [];
       let totalPrice = 0;
-      const requestReservedByBatch = new Map<string, number>();
-      const existingReservedByBatch = new Map<string, number>();
+      const affectedProductIds = new Set<string>();
       let expenseWarehouseId: string | null = null;
 
       for (const item of dto.items) {
@@ -610,12 +492,6 @@ export class ExpenseService {
           manager,
           item.product_batch_id,
         );
-
-        if (!batch) {
-          throw new NotFoundException(
-            `Ma'lumot topilmadi: Batch=${item.product_batch_id}`,
-          );
-        }
 
         const productId = item.product_id ?? batch.product_id;
         const warehouseId = item.warehouse_id ?? batch.warehouse_id;
@@ -625,9 +501,9 @@ export class ExpenseService {
           warehouseRepo.findOne({ where: { id: warehouseId } }),
         ]);
 
-        if (!product || !warehouse || !batch) {
+        if (!product || !warehouse) {
           throw new NotFoundException(
-            `Ma'lumot topilmadi: Product=${productId}, Warehouse=${warehouseId}, Batch=${item.product_batch_id}`,
+            `Ma'lumot topilmadi: Product=${productId}, Warehouse=${warehouseId}`,
           );
         }
 
@@ -644,33 +520,24 @@ export class ExpenseService {
           expenseWarehouseId = warehouse.id;
         } else if (expenseWarehouseId !== warehouse.id) {
           throw new BadRequestException(
-            'Bitta expense ichida faqat bitta warehouse mahsulotlari bo‘lishi mumkin',
+            "Bitta expense ichida faqat bitta warehouse mahsulotlari bo'lishi mumkin",
+          );
+        }
+
+        if (warehouse.id !== assignedWarehouse.id) {
+          throw new ForbiddenException(
+            "Siz faqat o'zingizga biriktirilgan warehouse mahsulotlarini chiqim qila olasiz",
           );
         }
 
         const requestedQty = Number(item.quantity);
         const batchQty = Number(batch.quantity);
-        const requestReservedQty = requestReservedByBatch.get(batch.id) ?? 0;
-        const existingReservedQty = existingReservedByBatch.has(batch.id)
-          ? (existingReservedByBatch.get(batch.id) ?? 0)
-          : await this.getReservedBatchQuantity(manager, batch.id);
 
-        existingReservedByBatch.set(batch.id, existingReservedQty);
-
-        const availableForReservation = Number(
-          (batchQty - existingReservedQty - requestReservedQty).toFixed(2),
-        );
-
-        if (requestedQty > availableForReservation) {
+        if (requestedQty > batchQty) {
           throw new BadRequestException(
-            `Partiyada mahsulot yetarli emas: ${product.name}. Mavjud: ${availableForReservation}, kerak: ${requestedQty}`,
+            `Partiyada mahsulot yetarli emas: ${product.name}. Mavjud: ${batchQty}, kerak: ${requestedQty}`,
           );
         }
-
-        requestReservedByBatch.set(
-          batch.id,
-          Number((requestReservedQty + requestedQty).toFixed(2)),
-        );
 
         const lineTotal = requestedQty * Number(batch.price_at_purchase);
         totalPrice += lineTotal;
@@ -696,6 +563,27 @@ export class ExpenseService {
           price: Number(batch.price_at_purchase),
           line_total: Number(lineTotal.toFixed(2)),
         });
+
+        batch.quantity = Number((batchQty - requestedQty).toFixed(2));
+        if (batch.quantity <= 0 && !batch.depleted_at) {
+          batch.depleted_at = new Date();
+        } else if (batch.quantity > 0) {
+          batch.depleted_at = null;
+        }
+        await manager.getRepository(ProductBatch).save(batch);
+        affectedProductIds.add(product.id);
+      }
+
+      const sortedProductIds = Array.from(affectedProductIds).sort((a, b) =>
+        a.localeCompare(b),
+      );
+
+      for (const productId of sortedProductIds) {
+        const lockedProduct = await this.lockProductForUpdate(
+          manager,
+          productId,
+        );
+        await this.recalculateProductQuantity(manager, lockedProduct);
       }
 
       createdExpense.total_price = Number(totalPrice.toFixed(2));
@@ -718,9 +606,7 @@ export class ExpenseService {
       }
 
       return {
-        message: requiresAdminApproval
-          ? "Chiqim so'rovi yaratildi va admin tasdig'i kutilmoqda"
-          : 'Sarf muvaffaqiyatli saqlandi',
+        message: 'Chiqim muvaffaqiyatli yaratildi',
         expense: savedExpense,
         receipt: {
           expense_id: savedExpense.id,
@@ -736,90 +622,35 @@ export class ExpenseService {
     });
 
     await this.invalidateDashboardCache();
-
-    if (result.expense.status === ExpenseStatus.PENDING_APPROVAL) {
-      await this.notifyAdminsAboutNewExpenseRequest(result.expense).catch(
-        () => undefined,
-      );
-    }
-
     return result;
   }
 
-  async issueExpense(id: string, actor?: AuthUser) {
+  async markAsIssued(id: string, actor: AuthUser) {
+    if (actor.role !== Role.WAREHOUSE) {
+      throw new ForbiddenException(
+        'Faqat warehouse user chiqimni berilgan deb belgilashi mumkin',
+      );
+    }
+
     const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
-      const productBatchRepo = manager.getRepository(ProductBatch);
 
       await this.lockExpenseForUpdate(manager, id);
       const expense = await this.findById(id, actor, manager);
 
-      if (expense.status !== ExpenseStatus.PENDING_ISSUE) {
+      if (expense.status !== ExpenseStatus.CREATED) {
         throw new BadRequestException(
-          "Faqat 'PENDING_ISSUE' statusdagi expense berilishi mumkin",
+          "Faqat 'CREATED' statusdagi expense berilgan deb belgilanishi mumkin",
         );
       }
 
-      const sortedItems = [...expense.items].sort((left, right) => {
-        const leftKey = left.product_batch_id ?? left.id;
-        const rightKey = right.product_batch_id ?? right.id;
-        return (
-          leftKey.localeCompare(rightKey) || left.id.localeCompare(right.id)
-        );
-      });
-
-      for (const item of sortedItems) {
-        const batch = item.product_batch;
-        if (!batch) {
-          throw new BadRequestException(
-            `Item ${item.id} uchun partiya bog'lanmagan`,
-          );
-        }
-
-        const currentBatch = await this.lockBatchForUpdate(manager, batch.id);
-
-        const requested = Number(item.quantity);
-        const available = Number(currentBatch.quantity);
-
-        if (requested > available) {
-          throw new BadRequestException(
-            `Partiyada mahsulot yetarli emas: Batch ID: ${batch.id}. Mavjud: ${available}, kerak: ${requested}`,
-          );
-        }
-
-        // Partiyadan chegirish
-        currentBatch.quantity = Number((available - requested).toFixed(2));
-        if (currentBatch.quantity <= 0 && !currentBatch.depleted_at) {
-          currentBatch.depleted_at = new Date();
-        } else if (currentBatch.quantity > 0) {
-          currentBatch.depleted_at = null;
-        }
-        await productBatchRepo.save(currentBatch);
-      }
-
-      const lockedProducts = new Map<string, Product>();
-      const productIds = Array.from(
-        new Set(sortedItems.map((item) => item.product.id)),
-      ).sort((left, right) => left.localeCompare(right));
-
-      for (const productId of productIds) {
-        lockedProducts.set(
-          productId,
-          await this.lockProductForUpdate(manager, productId),
-        );
-      }
-
-      for (const product of lockedProducts.values()) {
-        await this.recalculateProductQuantity(manager, product);
-      }
-
-      expense.status = ExpenseStatus.PENDING_PHOTO;
-      expense.issued_by_id = actor?.id ?? null;
+      expense.status = ExpenseStatus.ISSUED;
+      expense.issued_by_id = actor.id;
       expense.issued_at = new Date();
       await expenseRepo.save(expense);
 
       return {
-        message: 'Tovar berildi, endi foto tasdiq kutilmoqda',
+        message: 'Chiqim berildi',
         expense,
       };
     });
@@ -828,749 +659,174 @@ export class ExpenseService {
     return result;
   }
 
-  async approveExpense(id: string, adminUserId?: string) {
-    const expense = await this.findById(id);
+  async cancelExpense(id: string, actor: AuthUser) {
+    const result = await this.dataSource.transaction(async (manager) => {
+      const expenseRepo = manager.getRepository(Expense);
 
-    if (expense.status !== ExpenseStatus.PENDING_APPROVAL) {
-      throw new BadRequestException(
-        "Faqat 'PENDING_APPROVAL' statusdagi expense tasdiqlanishi mumkin",
+      await this.lockExpenseForUpdate(manager, id);
+      const expense = await this.findById(id, actor, manager);
+
+      if (expense.status !== ExpenseStatus.CREATED) {
+        throw new BadRequestException(
+          "Faqat 'CREATED' statusdagi expense bekor qilinishi mumkin",
+        );
+      }
+
+      expense.status = ExpenseStatus.CANCELLED;
+      expense.cancelled_by_id = actor.id;
+      expense.cancelled_at = new Date();
+      await expenseRepo.save(expense);
+
+      for (const item of expense.items) {
+        if (item.product_batch) {
+          const batch = await this.lockBatchForUpdate(
+            manager,
+            item.product_batch.id,
+          );
+          batch.quantity = Number(
+            (Number(batch.quantity) + Number(item.quantity)).toFixed(2),
+          );
+          if (batch.quantity > 0) {
+            batch.depleted_at = null;
+          }
+          await manager.getRepository(ProductBatch).save(batch);
+        }
+      }
+
+      const affectedProductIds = new Set<string>();
+      for (const item of expense.items) {
+        if (item.product) {
+          affectedProductIds.add(item.product.id);
+        }
+      }
+
+      const sortedProductIds = Array.from(affectedProductIds).sort((a, b) =>
+        a.localeCompare(b),
       );
-    }
 
-    expense.status = ExpenseStatus.PENDING_ISSUE;
-    expense.approved_by_id = adminUserId ?? null;
-    expense.approved_at = new Date();
-    expense.revision_reason = null;
-    expense.revision_requested_by_id = null;
-    expense.revision_requested_at = null;
-    expense.cancelled_by_id = null;
-    expense.cancelled_at = null;
-
-    const result = await this.expenseRepository.save(expense);
-    await this.invalidateDashboardCache();
-
-    await this.notifyWarehouseManagersAboutApprovedExpense(result).catch(
-      () => undefined,
-    );
-
-    return result;
-  }
-
-  async cancelExpense(id: string, adminUserId?: string) {
-    const expense = await this.findById(id);
-
-    if (
-      ![
-        ExpenseStatus.PENDING_APPROVAL,
-        ExpenseStatus.PENDING_ISSUE,
-      ].includes(expense.status)
-    ) {
-      throw new BadRequestException(
-        "Faqat 'PENDING_APPROVAL' yoki 'PENDING_ISSUE' statusdagi expense bekor qilinishi mumkin",
-      );
-    }
-
-    expense.status = ExpenseStatus.CANCELLED;
-    expense.cancelled_by_id = adminUserId ?? null;
-    expense.cancelled_at = new Date();
-
-    const result = await this.expenseRepository.save(expense);
-    await this.invalidateDashboardCache();
-    return result;
-  }
-
-  async attachImagesAndMarkPendingConfirmation(
-    id: string,
-    images: string[],
-    actor?: AuthUser,
-  ) {
-    const expense = await this.findById(id, actor);
-    const isRevisionRetry = expense.status === ExpenseStatus.REVISION_REQUIRED;
-
-    if (
-      ![ExpenseStatus.PENDING_PHOTO, ExpenseStatus.REVISION_REQUIRED].includes(
-        expense.status,
-      )
-    ) {
-      throw new BadRequestException(
-        "Faqat 'PENDING_PHOTO' yoki 'REVISION_REQUIRED' statusdagi expense uchun foto yuklash mumkin",
-      );
-    }
-
-    expense.images = isRevisionRetry ? [...expense.images, ...images] : images;
-    expense.status = ExpenseStatus.PENDING_CONFIRMATION;
-    expense.revision_reason = null;
-    expense.revision_requested_by_id = null;
-    expense.revision_requested_at = null;
-
-    const result = await this.expenseRepository.save(expense);
-    await this.invalidateDashboardCache();
-
-    if (actor?.id) {
-      await this.notifyAdminsAboutExpenseReadyForConfirmation(
-        result,
-        isRevisionRetry,
-      ).catch(() => undefined);
-    }
-
-    return result;
-  }
-
-  async confirmExpense(id: string, adminUserId?: string) {
-    const expense = await this.findById(id);
-
-    if (expense.status !== ExpenseStatus.PENDING_CONFIRMATION) {
-      throw new BadRequestException(
-        "Faqat 'PENDING_CONFIRMATION' statusdagi expense tasdiqlanishi mumkin",
-      );
-    }
-
-    expense.status = ExpenseStatus.COMPLETED;
-    expense.confirmed_by_id = adminUserId ?? null;
-    expense.confirmed_at = new Date();
-
-    const result = await this.expenseRepository.save(expense);
-    await this.invalidateDashboardCache();
-    return result;
-  }
-
-  async requestRevision(
-    id: string,
-    reason: string,
-    adminUserId?: string,
-  ) {
-    const expense = await this.findById(id);
-
-    if (expense.status !== ExpenseStatus.PENDING_CONFIRMATION) {
-      throw new BadRequestException(
-        "Faqat 'PENDING_CONFIRMATION' statusdagi expense qayta ko'rib chiqishga yuborilishi mumkin",
-      );
-    }
-
-    expense.status = ExpenseStatus.REVISION_REQUIRED;
-    expense.revision_reason = reason.trim();
-    expense.revision_requested_by_id = adminUserId ?? null;
-    expense.revision_requested_at = new Date();
-
-    const result = await this.expenseRepository.save(expense);
-    await this.invalidateDashboardCache();
-    await this.notifyWarehouseManagersAboutRevisionRequired(result).catch(
-      () => undefined,
-    );
-    return result;
-  }
-
-  async handleAdminRequestDecisionFromBot(
-    expenseId: string,
-    action: 'approve' | 'cancel',
-    adminUserId?: string | null,
-  ) {
-    if (action === 'approve') {
-      return this.approveExpense(expenseId, adminUserId ?? undefined);
-    }
-
-    return this.cancelExpense(expenseId, adminUserId ?? undefined);
-  }
-
-  async handleFinalConfirmationFromBot(
-    expenseId: string,
-    adminUserId?: string | null,
-  ) {
-    return this.confirmExpense(expenseId, adminUserId ?? undefined);
-  }
-
-  async handleRevisionRequestFromBot(
-    expenseId: string,
-    adminUserId?: string | null,
-  ) {
-    return this.requestRevision(
-      expenseId,
-      "Telegram bot orqali qayta ko'rib chiqish so'raldi",
-      adminUserId ?? undefined,
-    );
-  }
-
-  async getDashboardSummary(): Promise<{
-    total_products: number;
-    pending_issue: number;
-    low_stock: number;
-    expiring_soon: number;
-  }> {
-    const cacheKey = 'expenses:dashboard:summary';
-    const cached = await this.redis.get(cacheKey);
-    if (cached)
-      return JSON.parse(cached) as {
-        total_products: number;
-        pending_issue: number;
-        low_stock: number;
-        expiring_soon: number;
-      };
-
-    const totalProducts = await this.productRepository.count();
-
-    const pendingIssueCount = await this.expenseRepository.count({
-      where: {
-        status: ExpenseStatus.PENDING_ISSUE,
-      },
-    });
-
-    const lowStockCount = await this.productRepository
-      .createQueryBuilder('product')
-      .where('product.quantity <= product.min_limit')
-      .andWhere('product.quantity > 0')
-      .getCount();
-
-    const today = this.getLocalDateString();
-
-    const in30DaysDate = new Date();
-    in30DaysDate.setDate(in30DaysDate.getDate() + 30);
-    const in30Days = this.getLocalDateString(in30DaysDate);
-
-    const expiringSoonCount = await this.productBatchRepository
-      .createQueryBuilder('batch')
-      .where('batch.expiration_date IS NOT NULL')
-      .andWhere('batch.expiration_date >= :today', { today })
-      .andWhere('batch.expiration_date <= :in30Days', { in30Days })
-      .andWhere('batch.quantity > 0')
-      .getCount();
-
-    const result = {
-      total_products: totalProducts,
-      pending_issue: pendingIssueCount,
-      low_stock: lowStockCount,
-      expiring_soon: expiringSoonCount,
-    };
-
-    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 30);
-    return result;
-  }
-
-  async getDashboardOverview(): Promise<DashboardOverview> {
-    const cacheKey = 'expenses:dashboard:overview';
-    const cached = await this.redis.get(cacheKey);
-    if (cached) {
-      return JSON.parse(cached) as DashboardOverview;
-    }
-
-    const now = new Date();
-    const nowIso = now.toISOString();
-    const today = this.getLocalDateString(now);
-    const in30DaysDate = new Date(now);
-    in30DaysDate.setDate(in30DaysDate.getDate() + 30);
-    const in30Days = this.getLocalDateString(in30DaysDate);
-
-    const [
-      totalProducts,
-      totalWarehouses,
-      pendingOrders,
-      inventoryValueByWarehouseRaw,
-      productsByCategoryRaw,
-      productCountByWarehouseRaw,
-      lowStockProductsRaw,
-      expiredBatchesRaw,
-      expiringBatchesRaw,
-    ] = await Promise.all([
-      this.productRepository.count(),
-      this.warehouseRepository.count(),
-      this.purchaseOrderRepository
-        .createQueryBuilder('po')
-        .where('po.is_received = false')
-        .andWhere('po.status != :cancelled', {
-          cancelled: OrderStatus.CANCELLED,
-        })
-        .getCount(),
-      this.warehouseRepository
-        .createQueryBuilder('warehouse')
-        .leftJoin(
-          'product_batches',
-          'batch',
-          'batch.warehouse_id = warehouse.id AND batch.quantity > 0',
-        )
-        .select('warehouse.id', 'warehouse_id')
-        .addSelect('warehouse.name', 'warehouse_name')
-        .addSelect(
-          'COALESCE(SUM(batch.quantity * batch.price_at_purchase), 0)',
-          'total_inventory_value',
-        )
-        .groupBy('warehouse.id')
-        .addGroupBy('warehouse.name')
-        .orderBy('warehouse.name', 'ASC')
-        .getRawMany<{
-          warehouse_id: string;
-          warehouse_name: string;
-          total_inventory_value: string;
-        }>(),
-      this.productRepository
-        .createQueryBuilder('product')
-        .leftJoin('product.category', 'category')
-        .select('category.id', 'category_id')
-        .addSelect("COALESCE(category.name, 'Bez kategorii')", 'category_name')
-        .addSelect('COUNT(product.id)', 'product_count')
-        .groupBy('category.id')
-        .addGroupBy('category.name')
-        .orderBy('COUNT(product.id)', 'DESC')
-        .addOrderBy('category_name', 'ASC')
-        .getRawMany<{
-          category_id: string | null;
-          category_name: string;
-          product_count: string;
-        }>(),
-      this.productRepository
-        .createQueryBuilder('product')
-        .leftJoin('product.warehouse', 'warehouse')
-        .select('warehouse.id', 'warehouse_id')
-        .addSelect('warehouse.name', 'warehouse_name')
-        .addSelect('COUNT(product.id)', 'product_count')
-        .groupBy('warehouse.id')
-        .addGroupBy('warehouse.name')
-        .orderBy('warehouse.name', 'ASC')
-        .getRawMany<{
-          warehouse_id: string;
-          warehouse_name: string;
-          product_count: string;
-        }>(),
-      this.productRepository
-        .createQueryBuilder('product')
-        .leftJoin('product.warehouse', 'warehouse')
-        .select('product.id', 'product_id')
-        .addSelect('product.name', 'product_name')
-        .addSelect('product.quantity', 'quantity')
-        .addSelect('product.min_limit', 'min_limit')
-        .addSelect('warehouse.id', 'warehouse_id')
-        .addSelect('warehouse.name', 'warehouse_name')
-        .where('product.quantity > 0')
-        .andWhere('product.quantity <= product.min_limit')
-        .orderBy('product.quantity', 'ASC')
-        .getRawMany<{
-          product_id: string;
-          product_name: string;
-          quantity: string;
-          min_limit: string;
-          warehouse_id: string;
-          warehouse_name: string;
-        }>(),
-      this.productBatchRepository
-        .createQueryBuilder('batch')
-        .leftJoin('batch.product', 'product')
-        .leftJoin('batch.warehouse', 'warehouse')
-        .select('batch.id', 'batch_id')
-        .addSelect('batch.product_id', 'product_id')
-        .addSelect('product.name', 'product_name')
-        .addSelect('batch.warehouse_id', 'warehouse_id')
-        .addSelect('warehouse.name', 'warehouse_name')
-        .addSelect('batch.quantity', 'quantity')
-        .addSelect('batch.expiration_date', 'expiration_date')
-        .where('batch.quantity > 0')
-        .andWhere('batch.expiration_date IS NOT NULL')
-        .andWhere('batch.expiration_date < :today', { today })
-        .orderBy('batch.expiration_date', 'ASC')
-        .getRawMany<{
-          batch_id: string;
-          product_id: string;
-          product_name: string;
-          warehouse_id: string;
-          warehouse_name: string;
-          quantity: string;
-          expiration_date: string | Date | null;
-        }>(),
-      this.productBatchRepository
-        .createQueryBuilder('batch')
-        .leftJoin('batch.product', 'product')
-        .leftJoin('batch.warehouse', 'warehouse')
-        .select('batch.id', 'batch_id')
-        .addSelect('batch.product_id', 'product_id')
-        .addSelect('product.name', 'product_name')
-        .addSelect('batch.warehouse_id', 'warehouse_id')
-        .addSelect('warehouse.name', 'warehouse_name')
-        .addSelect('batch.quantity', 'quantity')
-        .addSelect('batch.expiration_date', 'expiration_date')
-        .where('batch.quantity > 0')
-        .andWhere('batch.expiration_date IS NOT NULL')
-        .andWhere('batch.expiration_date >= :today', { today })
-        .andWhere('batch.expiration_date <= :in30Days', { in30Days })
-        .orderBy('batch.expiration_date', 'ASC')
-        .getRawMany<{
-          batch_id: string;
-          product_id: string;
-          product_name: string;
-          warehouse_id: string;
-          warehouse_name: string;
-          quantity: string;
-          expiration_date: string | Date | null;
-        }>(),
-    ]);
-
-    const lowStockAlerts: DashboardAlertItem[] = lowStockProductsRaw.map(
-      (row) => {
-        const quantity = Number(row.quantity);
-        const minLimit = Number(row.min_limit);
-        const severity: DashboardSeverity =
-          quantity <= Math.max(1, Math.floor(minLimit / 2)) ? 'high' : 'medium';
-
-        return {
-          type: 'low_stock',
-          severity,
-          message:
-            severity === 'high'
-              ? `${row.product_name}: kritik darajada kam qoldiq`
-              : `${row.product_name}: qoldiq qayta buyurtma nuqtasiga yetgan`,
-          product_id: row.product_id,
-          product_name: row.product_name,
-          warehouse_id: row.warehouse_id,
-          warehouse_name: row.warehouse_name,
-          quantity,
-          min_limit: minLimit,
-          created_at: nowIso,
-        };
-      },
-    );
-
-    const expiredAlerts: DashboardAlertItem[] = expiredBatchesRaw.map((row) => {
-      const expirationDate = this.normalizeDateValue(row.expiration_date);
+      for (const productId of sortedProductIds) {
+        const lockedProduct = await this.lockProductForUpdate(
+          manager,
+          productId,
+        );
+        await this.recalculateProductQuantity(manager, lockedProduct);
+      }
 
       return {
-        type: 'expired',
-        severity: 'high',
-        message: `${row.product_name}: mahsulot muddati o‘tgan`,
-        product_id: row.product_id,
-        product_name: row.product_name,
-        warehouse_id: row.warehouse_id,
-        warehouse_name: row.warehouse_name,
-        quantity: Number(row.quantity),
-        batch_id: row.batch_id,
-        expiration_date: expirationDate,
-        days_left: expirationDate
-          ? this.getDayDiffFromToday(expirationDate, now)
-          : null,
-        created_at: nowIso,
+        message: 'Chiqim bekor qilindi',
+        expense,
       };
     });
 
-    const expiringAlerts: DashboardAlertItem[] = expiringBatchesRaw.map(
-      (row) => {
-        const expirationDate = this.normalizeDateValue(row.expiration_date);
-        const daysLeft = expirationDate
-          ? this.getDayDiffFromToday(expirationDate, now)
-          : null;
-        const severity: DashboardSeverity =
-          daysLeft !== null && daysLeft <= 7 ? 'high' : 'medium';
-
-        return {
-          type: 'expiring_soon',
-          severity,
-          message:
-            daysLeft !== null
-              ? `${row.product_name}: yaroqlilik muddati ${daysLeft} kundan keyin tugaydi`
-              : `${row.product_name}: yaroqlilik muddati yaqinlashmoqda`,
-          product_id: row.product_id,
-          product_name: row.product_name,
-          warehouse_id: row.warehouse_id,
-          warehouse_name: row.warehouse_name,
-          quantity: Number(row.quantity),
-          batch_id: row.batch_id,
-          expiration_date: expirationDate,
-          days_left: daysLeft,
-          created_at: nowIso,
-        };
-      },
-    );
-
-    const allAlerts = [
-      ...expiredAlerts,
-      ...expiringAlerts,
-      ...lowStockAlerts,
-    ].sort((left, right) => {
-      const severityScore =
-        this.getSeverityScore(right.severity) -
-        this.getSeverityScore(left.severity);
-      if (severityScore !== 0) {
-        return severityScore;
-      }
-
-      const leftDays = left.days_left ?? Number.MAX_SAFE_INTEGER;
-      const rightDays = right.days_left ?? Number.MAX_SAFE_INTEGER;
-      if (leftDays !== rightDays) {
-        return leftDays - rightDays;
-      }
-
-      return left.product_name.localeCompare(right.product_name);
-    });
-
-    const expiredProductIds = new Set(
-      expiredBatchesRaw.map((row) => row.product_id),
-    );
-    const lowStockProductIds = new Set(
-      lowStockProductsRaw.map((row) => row.product_id),
-    );
-
-    const expiredProducts = expiredProductIds.size;
-    const expiringProducts = new Set(
-      expiringBatchesRaw
-        .map((row) => row.product_id)
-        .filter((productId) => !expiredProductIds.has(productId)),
-    ).size;
-    const lowStockProducts = Array.from(lowStockProductIds).filter(
-      (productId) => !expiredProductIds.has(productId),
-    ).length;
-
-    const normalProducts = Math.max(
-      totalProducts - expiredProducts - lowStockProducts,
-      0,
-    );
-
-    const inventoryValueByWarehouse = inventoryValueByWarehouseRaw.map(
-      (row) => ({
-        warehouse_id: row.warehouse_id,
-        warehouse_name: row.warehouse_name,
-        total_inventory_value: Number(
-          Number(row.total_inventory_value ?? 0).toFixed(2),
-        ),
-      }),
-    );
-
-    const totalInventoryValue = Number(
-      inventoryValueByWarehouse
-        .reduce((sum, row) => sum + row.total_inventory_value, 0)
-        .toFixed(2),
-    );
-
-    const stockStatusItems = [
-      { status: 'normal' as const, label: 'Normal', count: normalProducts },
-      {
-        status: 'low_stock' as const,
-        label: 'Kam qoldiq',
-        count: lowStockProducts,
-      },
-      {
-        status: 'expired' as const,
-        label: 'Muddati o‘tgan',
-        count: expiredProducts,
-      },
-    ].map((item) => ({
-      ...item,
-      percentage:
-        totalProducts > 0
-          ? Number(((item.count / totalProducts) * 100).toFixed(2))
-          : 0,
-    }));
-
-    const result: DashboardOverview = {
-      generated_at: nowIso,
-      headline_alerts: {
-        total: allAlerts.length,
-        high: allAlerts.filter((item) => item.severity === 'high').length,
-        medium: allAlerts.filter((item) => item.severity === 'medium').length,
-        items: allAlerts.slice(0, 10),
-      },
-      summary: {
-        total_products: totalProducts,
-        low_stock_products: lowStockProducts,
-        expiring_products: expiringProducts,
-        total_inventory_value: totalInventoryValue,
-        total_warehouses: totalWarehouses,
-        pending_orders: pendingOrders,
-        expired_products: expiredProducts,
-      },
-      charts: {
-        inventory_value_by_warehouse: inventoryValueByWarehouse,
-        stock_status_distribution: {
-          total: totalProducts,
-          items: stockStatusItems,
-        },
-        products_by_category: productsByCategoryRaw.map((row) => ({
-          category_id: row.category_id,
-          category_name: row.category_name,
-          product_count: Number(row.product_count),
-        })),
-        product_count_by_warehouse: productCountByWarehouseRaw.map((row) => ({
-          warehouse_id: row.warehouse_id,
-          warehouse_name: row.warehouse_name,
-          product_count: Number(row.product_count),
-        })),
-      },
-      recent_notifications: allAlerts.slice(0, 20),
-    };
-
-    await this.redis.set(cacheKey, JSON.stringify(result), 'EX', 30);
+    await this.invalidateDashboardCache();
     return result;
   }
 
-  private getExpenseWarehouse(expense: Expense): Warehouse | null {
-    return expense.items.find((item) => item.warehouse)?.warehouse ?? null;
-  }
+  async createSystemExpense(dto: {
+    staff_name: string;
+    purpose: string;
+    type: ExpenseType;
+    items: Array<{
+      product_id: string;
+      warehouse_id: string;
+      product_batch_id: string;
+      quantity: number;
+    }>;
+  }) {
+    await this.dataSource.transaction(async (manager) => {
+      const expenseRepo = manager.getRepository(Expense);
+      const expenseItemRepo = manager.getRepository(ExpenseItem);
+      const productRepo = manager.getRepository(Product);
+      const warehouseRepo = manager.getRepository(Warehouse);
 
-  private async getApprovedWarehouseTelegramIds(expense: Expense) {
-    const warehouse = this.getExpenseWarehouse(expense);
-    if (!warehouse?.id) {
-      return [];
-    }
+      const expenseNumber = await this.generateExpenseNumber(manager);
 
-    const managedWarehouse = await this.warehouseRepository.findOne({
-      where: { id: warehouse.id },
-      select: { id: true, manager_id: true },
-    });
-
-    if (!managedWarehouse?.manager_id) {
-      return [];
-    }
-
-    const approvedBotUsers = await this.botUserService.getApprovedUsers(
-      Role.WAREHOUSE,
-    );
-
-    return approvedBotUsers
-      .filter((user) => user.linked_user_id === managedWarehouse.manager_id)
-      .map((user) => user.telegram_id);
-  }
-
-  private getExpenseCreatorName(expense: Expense) {
-    if (expense.manager) {
-      return (
-        [expense.manager.first_name, expense.manager.last_name]
-          .filter(Boolean)
-          .join(' ') || expense.manager.username
+      const createdExpense = await expenseRepo.save(
+        expenseRepo.create({
+          expense_number: expenseNumber,
+          status: ExpenseStatus.ISSUED,
+          type: dto.type,
+          total_price: 0,
+          staff_name: dto.staff_name,
+          purpose: dto.purpose,
+          manager_id: null,
+          issued_by_id: null,
+          issued_at: new Date(),
+          cancelled_by_id: null,
+          cancelled_at: null,
+        }),
       );
-    }
 
-    return expense.manager_id ?? "Noma'lum";
-  }
+      let totalPrice = 0;
+      const affectedProductIds = new Set<string>();
 
-  private async notifyAdminsAboutNewExpenseRequest(expense: Expense) {
-    const warehouse = this.getExpenseWarehouse(expense);
-    const text =
-      `📋 <b>Yangi chiqim so'rovi</b>\n\n` +
-      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
-      `👤 Hisobchi: <b>${this.escapeHtml(this.getExpenseCreatorName(expense))}</b>\n` +
-      `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
-      `🙍 Xodim: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
-      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n` +
-      `📌 Status: <b>${expense.status}</b>`;
+      for (const item of dto.items) {
+        const batch = await this.lockBatchForUpdate(
+          manager,
+          item.product_batch_id,
+        );
 
-    const keyboard = new InlineKeyboard()
-      .text('✅ Tasdiqlash', `expense_request:approve:${expense.id}`)
-      .text('❌ Bekor qilish', `expense_request:cancel:${expense.id}`);
+        const [product, warehouse] = await Promise.all([
+          productRepo.findOne({ where: { id: item.product_id } }),
+          warehouseRepo.findOne({ where: { id: item.warehouse_id } }),
+        ]);
 
-    await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
-      reply_markup: keyboard,
+        if (!product || !warehouse) {
+          throw new NotFoundException(
+            `Ma'lumot topilmadi: Product=${item.product_id}, Warehouse=${item.warehouse_id}`,
+          );
+        }
+
+        const requestedQty = Number(item.quantity);
+        const batchQty = Number(batch.quantity);
+
+        if (requestedQty > batchQty) {
+          throw new BadRequestException(
+            `Partiyada mahsulot yetarli emas: ${product.name}. Mavjud: ${batchQty}, kerak: ${requestedQty}`,
+          );
+        }
+
+        const lineTotal = requestedQty * Number(batch.price_at_purchase);
+        totalPrice += lineTotal;
+
+        await expenseItemRepo.save(
+          expenseItemRepo.create({
+            expense: createdExpense,
+            product,
+            warehouse,
+            product_batch: batch,
+            product_batch_id: batch.id,
+            quantity: requestedQty,
+          }),
+        );
+
+        batch.quantity = Number((batchQty - requestedQty).toFixed(2));
+        if (batch.quantity <= 0 && !batch.depleted_at) {
+          batch.depleted_at = new Date();
+        } else if (batch.quantity > 0) {
+          batch.depleted_at = null;
+        }
+        await manager.getRepository(ProductBatch).save(batch);
+        affectedProductIds.add(product.id);
+      }
+
+      const sortedProductIds = Array.from(affectedProductIds).sort((a, b) =>
+        a.localeCompare(b),
+      );
+
+      for (const productId of sortedProductIds) {
+        const lockedProduct = await this.lockProductForUpdate(
+          manager,
+          productId,
+        );
+        await this.recalculateProductQuantity(manager, lockedProduct);
+      }
+
+      createdExpense.total_price = Number(totalPrice.toFixed(2));
+      await expenseRepo.save(createdExpense);
     });
-  }
 
-  private async notifyWarehouseManagersAboutApprovedExpense(expense: Expense) {
-    const warehouse = this.getExpenseWarehouse(expense);
-    const telegramIds = await this.getApprovedWarehouseTelegramIds(expense);
-
-    if (!telegramIds.length) {
-      return;
-    }
-
-    const text =
-      `📦 <b>Yangi chiqim tasdiqlandi</b>\n\n` +
-      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
-      `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
-      `🙍 Xodim: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
-      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n` +
-      `📌 Status: <b>${expense.status}</b>\n\n` +
-      `Mahsulotni chiqaring va chek rasmlarini yuklang.`;
-
-    for (const telegramId of telegramIds) {
-      await this.botService.sendMessage(telegramId, text);
-    }
-  }
-
-  private async notifyWarehouseManagersAboutRevisionRequired(expense: Expense) {
-    const warehouse = this.getExpenseWarehouse(expense);
-    const telegramIds = await this.getApprovedWarehouseTelegramIds(expense);
-
-    if (!telegramIds.length) {
-      return;
-    }
-
-    const text =
-      `🔁 <b>Chiqim qayta ko'rib chiqishga yuborildi</b>\n\n` +
-      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
-      `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
-      `📝 Sabab: <b>${this.escapeHtml(expense.revision_reason ?? "Qayta tekshirish kerak")}</b>\n` +
-      `📌 Status: <b>${expense.status}</b>\n\n` +
-      `Chek yoki rasmlarni to'g'rilab qayta yuklang.`;
-
-    for (const telegramId of telegramIds) {
-      await this.botService.sendMessage(telegramId, text);
-    }
-  }
-
-  private async notifyAdminsAboutExpenseReadyForConfirmation(
-    expense: Expense,
-    isRevisionRetry = false,
-  ) {
-    const warehouse = this.getExpenseWarehouse(expense);
-    const text =
-      `📷 <b>${isRevisionRetry ? "Qayta yuklangan chiqim rasmlari" : "Chiqim uchun foto yuklandi"}</b>\n\n` +
-      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
-      `🏢 Warehouse: <b>${this.escapeHtml(warehouse?.name ?? "Noma'lum")}</b>\n` +
-      `🙍 Xodim: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
-      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n` +
-      `🖼 Rasm soni: <b>${expense.images.length}</b>\n` +
-      `📌 Status: <b>${expense.status}</b>`;
-
-    const keyboard = new InlineKeyboard()
-      .text('✅ Yakuniy tasdiqlash', `expense_final:confirm:${expense.id}`)
-      .text('🔁 Qayta ko‘rib chiqish', `expense_final:revision:${expense.id}`);
-
-    await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
-      reply_markup: keyboard,
-    });
-  }
-
-  private getLocalDateString(date: Date = new Date()): string {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, '0');
-    const day = String(date.getDate()).padStart(2, '0');
-    return `${year}-${month}-${day}`;
-  }
-
-  private normalizeDateValue(value?: Date | string | null) {
-    if (!value) return null;
-    if (typeof value === 'string') {
-      return value.slice(0, 10);
-    }
-
-    return value.toISOString().slice(0, 10);
-  }
-
-  private getDayDiffFromToday(value: string, now: Date) {
-    const startOfToday = new Date(now);
-    startOfToday.setHours(0, 0, 0, 0);
-
-    const target = new Date(`${value}T00:00:00`);
-    const msPerDay = 24 * 60 * 60 * 1000;
-    return Math.round((target.getTime() - startOfToday.getTime()) / msPerDay);
-  }
-
-  private getSeverityScore(severity: DashboardSeverity) {
-    return severity === 'high' ? 2 : 1;
-  }
-
-  private formatCurrency(value: number) {
-    return `${new Intl.NumberFormat('uz-UZ', {
-      minimumFractionDigits: value % 1 === 0 ? 0 : 2,
-      maximumFractionDigits: 2,
-    }).format(Number(value.toFixed(2)))} sum`;
-  }
-
-  private escapeHtml(value: string) {
-    return value
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#39;');
-  }
-
-  private async invalidateDashboardCache() {
-    await this.redis.del(
-      'expenses:dashboard:summary',
-      'expenses:dashboard:overview',
-    );
+    await this.invalidateDashboardCache();
   }
 
   private applyDateRangeFilter(
@@ -1592,5 +848,12 @@ export class ExpenseService {
     if (to) {
       qb.andWhere(`${field} <= :to`, { to });
     }
+  }
+
+  private async invalidateDashboardCache() {
+    await this.redis.del(
+      'expenses:dashboard:summary',
+      'expenses:dashboard:overview',
+    );
   }
 }
