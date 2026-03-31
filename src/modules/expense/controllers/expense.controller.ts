@@ -126,10 +126,7 @@ export class ExpenseController {
       });
     }
 
-    const buffer = await this.expenseExportService.buildExcelBuffer(
-      query,
-      req.user,
-    );
+    const buffer = await this.expenseExportService.buildExcelBuffer(query);
     const filename = this.buildDefaultFilename('expenses');
 
     res.setHeader(
@@ -141,14 +138,14 @@ export class ExpenseController {
   }
 
   @Get('items')
-  @Roles(Role.ADMIN, Role.ACCOUNTANT)
+  @Roles(Role.ADMIN, Role.ACCOUNTANT, Role.WAREHOUSE)
   @ApiOperation({
     summary: "Expense itemlar ro'yxati (pagination + filter)",
   })
   @ApiOkResponse({ description: "Expense itemlar ro'yxati" })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({
-    description: 'Faqat admin/hisobchi kirishi mumkin',
+    description: 'Faqat admin/hisobchi/warehouse kirishi mumkin',
   })
   findAllItems(
     @Query() query: ListExpenseItemsQueryDto,

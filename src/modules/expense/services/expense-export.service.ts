@@ -2,7 +2,6 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import ExcelJS from 'exceljs';
-import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { ExpenseItem } from '../entities/expense-item.entity';
 import { ListExpenseItemsQueryDto } from '../dto/list-expense-items-query.dto';
 
@@ -13,11 +12,8 @@ export class ExpenseExportService {
     private readonly expenseItemRepository: Repository<ExpenseItem>,
   ) {}
 
-  async buildExcelBuffer(
-    query: ListExpenseItemsQueryDto,
-    user?: AuthUser,
-  ): Promise<Buffer> {
-    const items = await this.getItemsForExport(query, user);
+  async buildExcelBuffer(query: ListExpenseItemsQueryDto): Promise<Buffer> {
+    const items = await this.getItemsForExport(query);
 
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Expenses');
@@ -59,10 +55,7 @@ export class ExpenseExportService {
     return Buffer.from(buffer);
   }
 
-  private async getItemsForExport(
-    query: ListExpenseItemsQueryDto,
-    user?: AuthUser,
-  ) {
+  private async getItemsForExport(query: ListExpenseItemsQueryDto) {
     const search = query.search?.trim();
 
     const qb = this.expenseItemRepository
