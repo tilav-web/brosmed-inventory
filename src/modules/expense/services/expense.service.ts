@@ -121,30 +121,17 @@ export class ExpenseService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
-    const assignedWarehouse =
-      user.role === Role.WAREHOUSE
-        ? await this.getAssignedWarehouseForUser(user.id)
-        : null;
+    const isWarehouse = user.role === Role.WAREHOUSE;
 
     const qb = this.expenseRepository
       .createQueryBuilder('expense')
       .leftJoinAndSelect('expense.manager', 'manager');
 
-    if (assignedWarehouse) {
-      qb.leftJoinAndSelect(
-        'expense.items',
-        'item',
-        'item.warehouse_id = :warehouseId',
-        { warehouseId: assignedWarehouse.id },
-      )
+    if (isWarehouse) {
+      qb.andWhere('expense.manager_id = :managerId', { managerId: user.id });
+      qb.leftJoinAndSelect('expense.items', 'item')
         .leftJoinAndSelect('item.product', 'product')
         .leftJoinAndSelect('item.warehouse', 'warehouse');
-      qb.innerJoin(
-        'expense.items',
-        'scope_item',
-        'scope_item.warehouse_id = :warehouseId',
-        { warehouseId: assignedWarehouse.id },
-      ).distinct(true);
     } else {
       qb.leftJoinAndSelect('expense.items', 'item')
         .leftJoinAndSelect('item.product', 'product')
@@ -189,16 +176,17 @@ export class ExpenseService {
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
-    const assignedWarehouseId =
-      user?.role === Role.WAREHOUSE
-        ? (await this.getAssignedWarehouseForUser(user.id)).id
-        : undefined;
+    const isWarehouse = user?.role === Role.WAREHOUSE;
 
     const qb = this.expenseItemRepository
       .createQueryBuilder('item')
       .leftJoinAndSelect('item.expense', 'expense')
       .leftJoinAndSelect('item.product', 'product')
       .leftJoinAndSelect('item.warehouse', 'warehouse');
+
+    if (isWarehouse && user) {
+      qb.andWhere('expense.manager_id = :managerId', { managerId: user.id });
+    }
 
     if (search) {
       qb.andWhere(
@@ -215,11 +203,7 @@ export class ExpenseService {
       qb.andWhere('expense.type = :type', { type: query.type });
     }
 
-    if (assignedWarehouseId) {
-      qb.andWhere('warehouse.id = :warehouseId', {
-        warehouseId: assignedWarehouseId,
-      });
-    } else if (query.warehouse_id) {
+    if (query.warehouse_id) {
       qb.andWhere('warehouse.id = :warehouseId', {
         warehouseId: query.warehouse_id,
       });
