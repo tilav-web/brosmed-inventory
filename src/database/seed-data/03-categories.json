@@ -22,5 +22,13 @@
   {
     "name": "Antiseptiklar",
     "description": "Yara davolash va dezinfeksiya vositalari"
+  },
+  {
+    "name": "Oziq-ovqat",
+    "description": "Oshxona uchun oziq-ovqat mahsulotlari"
+  },
+  {
+    "name": "Tozalash vositalari",
+    "description": "Maishiy tozalash va gigiena vositalari"
   }
 ]

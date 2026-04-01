@@ -106,13 +106,7 @@ export class SeedService implements OnApplicationBootstrap {
   // ─── JSON loader ──────────────────────────────────────────
 
   private load<T>(filename: string): T[] {
-    const filePath = join(
-      process.cwd(),
-      'src',
-      'database',
-      'seed-data',
-      filename,
-    );
+    const filePath = join(__dirname, '..', 'database', 'seed-data', filename);
     return JSON.parse(readFileSync(filePath, 'utf8')) as T[];
   }
 
@@ -321,11 +315,15 @@ export class SeedService implements OnApplicationBootstrap {
       if (!warehouse) throw new Error(`Warehouse topilmadi: ${row.warehouse}`);
 
       const totalQty = row.batches.reduce((s, b) => s + b.quantity, 0);
-      const maxExpiry = Math.max(...row.batches.map((b) => b.expiry_days));
-      const expDate = maxExpiry > 0 ? this.offsetDate(maxExpiry) : null;
-      const alertDate = expDate
-        ? this.offsetDate(maxExpiry > 30 ? maxExpiry - 30 : maxExpiry - 3)
-        : null;
+      const expiryDaysArr = row.batches.map((b) => b.expiry_days);
+      const maxExpiry = Math.max(...expiryDaysArr);
+      const expDate = this.offsetDate(maxExpiry);
+      const alertDate =
+        maxExpiry > 30
+          ? this.offsetDate(maxExpiry - 30)
+          : maxExpiry > 0
+            ? this.offsetDate(maxExpiry - 3)
+            : this.offsetDate(maxExpiry);
 
       const product = await this.productRepo.save(
         this.productRepo.create({
