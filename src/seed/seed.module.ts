@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BotUser } from 'src/modules/bot-user/entities/bot-user.entity';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
@@ -30,7 +29,6 @@ import { SeedService } from './seed.service';
       OrderItem,
       Expense,
       ExpenseItem,
-      BotUser,
     ]),
   ],
   providers: [SeedService],
