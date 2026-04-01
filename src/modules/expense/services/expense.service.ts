@@ -185,7 +185,7 @@ export class ExpenseService {
       .leftJoinAndSelect('item.warehouse', 'warehouse');
 
     if (isWarehouse && user) {
-      qb.andWhere('expense.manager_id = :managerId', { managerId: user.id });
+      qb.andWhere('warehouse.manager_id = :managerId', { managerId: user.id });
     }
 
     if (search) {
