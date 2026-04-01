@@ -1,0 +1,20 @@
+[
+  {
+    "name": "Asosiy tibbiy ombor",
+    "type": "medical",
+    "location": "Toshkent sh., Chilonzor tumani, Bog'ishamol ko'chasi 12",
+    "manager_username": "warehouse1"
+  },
+  {
+    "name": "Oshxona ombori",
+    "type": "kitchen",
+    "location": "Toshkent sh., Yunusobod tumani, Amir Temur ko'chasi 45",
+    "manager_username": "warehouse2"
+  },
+  {
+    "name": "Maishiy ombor",
+    "type": "household",
+    "location": "Toshkent sh., Mirobod tumani, Navoiy ko'chasi 78",
+    "manager_username": "warehouse3"
+  }
+]

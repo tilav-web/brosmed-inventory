@@ -1,0 +1,253 @@
+[
+  {
+    "name": "Amoksitsillin 500mg",
+    "min_limit": 30,
+    "unit": "quti",
+    "category": "Antibiotiklar",
+    "supplier": "Medline Pharma Supply",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 120, "price": 22000, "expiry_days": 360, "batch_number": "B-2026-001", "serial_number": "S-AMX-001" },
+      { "quantity": 160, "price": 24000, "expiry_days": 300, "batch_number": "B-2026-002", "serial_number": "S-AMX-002" }
+    ]
+  },
+  {
+    "name": "Paratsetamol 500mg",
+    "min_limit": 20,
+    "unit": "quti",
+    "category": "Og'riq qoldiruvchi",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 30, "price": 10800, "expiry_days": 200, "batch_number": "B-2026-003", "serial_number": "S-PCT-001" },
+      { "quantity": 22, "price": 12000, "expiry_days": 15,  "batch_number": "B-2026-004", "serial_number": "S-PCT-002" }
+    ]
+  },
+  {
+    "name": "Shprits 5ml",
+    "min_limit": 100,
+    "unit": "dona",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Medline Pharma Supply",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 300, "price": 1200, "expiry_days": 720, "batch_number": "B-2026-005", "serial_number": "S-SYR-001" },
+      { "quantity": 200, "price": 1500, "expiry_days": 600, "batch_number": "B-2026-006", "serial_number": "S-SYR-002" }
+    ]
+  },
+  {
+    "name": "Shprits 10ml",
+    "min_limit": 80,
+    "unit": "dona",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Medline Pharma Supply",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 200, "price": 1800, "expiry_days": 700, "batch_number": "B-2026-007", "serial_number": "S-SY10-001" },
+      { "quantity": 150, "price": 2000, "expiry_days": 650, "batch_number": "B-2026-008", "serial_number": "S-SY10-002" }
+    ]
+  },
+  {
+    "name": "Bint steril 10m",
+    "min_limit": 30,
+    "unit": "dona",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 40, "price": 3000, "expiry_days": 400, "batch_number": "B-2026-009", "serial_number": "S-BND-001" },
+      { "quantity": 25, "price": 3200, "expiry_days": 80,  "batch_number": "B-2026-010", "serial_number": "S-BND-002" }
+    ]
+  },
+  {
+    "name": "Natriy xlorid 0.9% 500ml",
+    "min_limit": 20,
+    "unit": "quti",
+    "category": "Infuzion eritmalar",
+    "supplier": "Global Med Import",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 10, "price": 8500, "expiry_days": -3,  "batch_number": "B-2025-050", "serial_number": "S-SAL-001" },
+      { "quantity": 8,  "price": 9000, "expiry_days": 180, "batch_number": "B-2026-011", "serial_number": "S-SAL-002" }
+    ]
+  },
+  {
+    "name": "Glyukoza 5% 400ml",
+    "min_limit": 15,
+    "unit": "quti",
+    "category": "Infuzion eritmalar",
+    "supplier": "Global Med Import",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 25, "price": 7500, "expiry_days": 250, "batch_number": "B-2026-012", "serial_number": "S-GLU-001" },
+      { "quantity": 20, "price": 8000, "expiry_days": 200, "batch_number": "B-2026-013", "serial_number": "S-GLU-002" }
+    ]
+  },
+  {
+    "name": "C Vitamin 1000mg",
+    "min_limit": 15,
+    "unit": "quti",
+    "category": "Vitaminlar",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 15, "price": 16500, "expiry_days": 28,  "batch_number": "B-2026-014", "serial_number": "S-VTC-001" },
+      { "quantity": 10, "price": 18000, "expiry_days": 180, "batch_number": "B-2026-015", "serial_number": "S-VTC-002" }
+    ]
+  },
+  {
+    "name": "Ibuprofen 400mg",
+    "min_limit": 20,
+    "unit": "quti",
+    "category": "Og'riq qoldiruvchi",
+    "supplier": "Samarqand Farm",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 50, "price": 14000, "expiry_days": 320, "batch_number": "B-2026-016", "serial_number": "S-IBU-001" },
+      { "quantity": 30, "price": 15500, "expiry_days": 280, "batch_number": "B-2026-017", "serial_number": "S-IBU-002" }
+    ]
+  },
+  {
+    "name": "Xlorgeksidin 0.05% 1l",
+    "min_limit": 10,
+    "unit": "litr",
+    "category": "Antiseptiklar",
+    "supplier": "Medline Pharma Supply",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 18, "price": 12000, "expiry_days": 360, "batch_number": "B-2026-018", "serial_number": "S-CHX-001" },
+      { "quantity": 12, "price": 13000, "expiry_days": 300, "batch_number": "B-2026-019", "serial_number": "S-CHX-002" }
+    ]
+  },
+  {
+    "name": "Nitril qo'lqop (100 dona)",
+    "min_limit": 10,
+    "unit": "paket",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Global Med Import",
+    "warehouse": "Asosiy tibbiy ombor",
+    "batches": [
+      { "quantity": 10, "price": 45000, "expiry_days": 500, "batch_number": "B-2026-020", "serial_number": "S-GLV-001" },
+      { "quantity": 5,  "price": 48000, "expiry_days": 480, "batch_number": "B-2026-021", "serial_number": "S-GLV-002" }
+    ]
+  },
+  {
+    "name": "Shakar",
+    "min_limit": 50,
+    "unit": "kg",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Oshxona ombori",
+    "batches": [
+      { "quantity": 120, "price": 12000, "expiry_days": 360, "batch_number": "B-2026-022", "serial_number": "S-SGR-001" },
+      { "quantity": 80,  "price": 13500, "expiry_days": 300, "batch_number": "B-2026-023", "serial_number": "S-SGR-002" }
+    ]
+  },
+  {
+    "name": "Un 1-nav",
+    "min_limit": 40,
+    "unit": "kg",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Samarqand Farm",
+    "warehouse": "Oshxona ombori",
+    "batches": [
+      { "quantity": 100, "price": 8000, "expiry_days": 180, "batch_number": "B-2026-024", "serial_number": "S-FLR-001" },
+      { "quantity": 50,  "price": 8500, "expiry_days": 150, "batch_number": "B-2026-025", "serial_number": "S-FLR-002" }
+    ]
+  },
+  {
+    "name": "O'simlik yog'i",
+    "min_limit": 20,
+    "unit": "litr",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Oshxona ombori",
+    "batches": [
+      { "quantity": 35, "price": 18000, "expiry_days": 240, "batch_number": "B-2026-026", "serial_number": "S-OIL-001" },
+      { "quantity": 25, "price": 19500, "expiry_days": 200, "batch_number": "B-2026-027", "serial_number": "S-OIL-002" }
+    ]
+  },
+  {
+    "name": "Guruch",
+    "min_limit": 50,
+    "unit": "kg",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Samarqand Farm",
+    "warehouse": "Oshxona ombori",
+    "batches": [
+      { "quantity": 100, "price": 15000, "expiry_days": 400, "batch_number": "B-2026-028", "serial_number": "S-RCE-001" },
+      { "quantity": 80,  "price": 16000, "expiry_days": 360, "batch_number": "B-2026-029", "serial_number": "S-RCE-002" }
+    ]
+  },
+  {
+    "name": "Makaron",
+    "min_limit": 20,
+    "unit": "kg",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Oshxona ombori",
+    "batches": [
+      { "quantity": 8, "price": 9000, "expiry_days": -10, "batch_number": "B-2025-055", "serial_number": "S-PST-001" }
+    ]
+  },
+  {
+    "name": "Kir yuvish kukuni",
+    "min_limit": 10,
+    "unit": "kg",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Global Med Import",
+    "warehouse": "Maishiy ombor",
+    "batches": [
+      { "quantity": 25, "price": 35000, "expiry_days": 500, "batch_number": "B-2026-030", "serial_number": "S-DET-001" },
+      { "quantity": 15, "price": 38000, "expiry_days": 480, "batch_number": "B-2026-031", "serial_number": "S-DET-002" }
+    ]
+  },
+  {
+    "name": "Suyuq sovun 5l",
+    "min_limit": 8,
+    "unit": "litr",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Global Med Import",
+    "warehouse": "Maishiy ombor",
+    "batches": [
+      { "quantity": 12, "price": 28000, "expiry_days": 450, "batch_number": "B-2026-032", "serial_number": "S-SOP-001" },
+      { "quantity": 10, "price": 30000, "expiry_days": 420, "batch_number": "B-2026-033", "serial_number": "S-SOP-002" }
+    ]
+  },
+  {
+    "name": "Chiqindi paketlari (100 dona)",
+    "min_limit": 10,
+    "unit": "paket",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Maishiy ombor",
+    "batches": [
+      { "quantity": 20, "price": 22000, "expiry_days": 800, "batch_number": "B-2026-034", "serial_number": "S-TRB-001" },
+      { "quantity": 15, "price": 24000, "expiry_days": 780, "batch_number": "B-2026-035", "serial_number": "S-TRB-002" }
+    ]
+  },
+  {
+    "name": "Bartaraflovchi eritma 5l",
+    "min_limit": 8,
+    "unit": "litr",
+    "category": "Antiseptiklar",
+    "supplier": "Medline Pharma Supply",
+    "warehouse": "Maishiy ombor",
+    "batches": [
+      { "quantity": 16, "price": 32000, "expiry_days": 360, "batch_number": "B-2026-036", "serial_number": "S-DIS-001" },
+      { "quantity": 12, "price": 34000, "expiry_days": 340, "batch_number": "B-2026-037", "serial_number": "S-DIS-002" }
+    ]
+  },
+  {
+    "name": "Bir martalik sochiq",
+    "min_limit": 15,
+    "unit": "paket",
+    "category": "Tibbiy sarf materiallari",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Maishiy ombor",
+    "batches": [
+      { "quantity": 30, "price": 15000, "expiry_days": 600, "batch_number": "B-2026-038", "serial_number": "S-TSU-001" },
+      { "quantity": 20, "price": 16500, "expiry_days": 580, "batch_number": "B-2026-039", "serial_number": "S-TSU-002" }
+    ]
+  }
+]

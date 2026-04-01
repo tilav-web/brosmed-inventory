@@ -1,0 +1,188 @@
+[
+  {
+    "order_number": "PO-{YEAR}-001",
+    "status": "PENDING",
+    "supplier": "Medline Pharma Supply",
+    "warehouse": "Asosiy tibbiy ombor",
+    "order_date_offset": -1,
+    "delivery_date_offset": 5,
+    "items": [
+      { "product": "Amoksitsillin 500mg",  "quantity": 50,  "price": 22000 },
+      { "product": "Shprits 5ml",           "quantity": 200, "price": 1200  }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-002",
+    "status": "PENDING",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Asosiy tibbiy ombor",
+    "order_date_offset": -2,
+    "delivery_date_offset": 3,
+    "items": [
+      { "product": "Bint steril 10m",         "quantity": 40, "price": 2800  },
+      { "product": "Nitril qo'lqop (100 dona)", "quantity": 10, "price": 44000 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-003",
+    "status": "CONFIRMED",
+    "supplier": "Global Med Import",
+    "warehouse": "Asosiy tibbiy ombor",
+    "order_date_offset": -5,
+    "delivery_date_offset": 2,
+    "decided_at_offset": -4,
+    "decided_by": "admin",
+    "items": [
+      { "product": "Natriy xlorid 0.9% 500ml", "quantity": 30, "price": 8200 },
+      { "product": "Glyukoza 5% 400ml",         "quantity": 20, "price": 7200 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-004",
+    "status": "CONFIRMED",
+    "supplier": "Samarqand Farm",
+    "warehouse": "Asosiy tibbiy ombor",
+    "order_date_offset": -6,
+    "delivery_date_offset": 1,
+    "decided_at_offset": -5,
+    "decided_by": "admin",
+    "items": [
+      { "product": "Ibuprofen 400mg", "quantity": 30, "price": 13500 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-005",
+    "status": "DELIVERED",
+    "is_received": true,
+    "supplier": "Medline Pharma Supply",
+    "warehouse": "Asosiy tibbiy ombor",
+    "order_date_offset": -15,
+    "delivery_date_offset": -8,
+    "decided_at_offset": -14,
+    "decided_by": "admin",
+    "received_at_offset": -8,
+    "received_by": "warehouse1",
+    "items": [
+      { "product": "Amoksitsillin 500mg", "quantity": 40, "price": 21000 },
+      { "product": "Xlorgeksidin 0.05% 1l", "quantity": 10, "price": 11500 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-006",
+    "status": "DELIVERED",
+    "is_received": true,
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Asosiy tibbiy ombor",
+    "order_date_offset": -20,
+    "delivery_date_offset": -12,
+    "decided_at_offset": -19,
+    "decided_by": "admin",
+    "received_at_offset": -12,
+    "received_by": "warehouse1",
+    "items": [
+      { "product": "Paratsetamol 500mg", "quantity": 30, "price": 10500 },
+      { "product": "C Vitamin 1000mg",   "quantity": 20, "price": 16000 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-007",
+    "status": "DELIVERED",
+    "is_received": true,
+    "supplier": "Global Med Import",
+    "warehouse": "Asosiy tibbiy ombor",
+    "order_date_offset": -25,
+    "delivery_date_offset": -18,
+    "decided_at_offset": -24,
+    "decided_by": "admin",
+    "received_at_offset": -18,
+    "received_by": "warehouse1",
+    "items": [
+      { "product": "Shprits 5ml",  "quantity": 150, "price": 1100 },
+      { "product": "Shprits 10ml", "quantity": 100, "price": 1700 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-008",
+    "status": "CANCELLED",
+    "supplier": "Samarqand Farm",
+    "warehouse": "Asosiy tibbiy ombor",
+    "order_date_offset": -10,
+    "delivery_date_offset": 4,
+    "decided_at_offset": -9,
+    "decided_by": "admin",
+    "items": [
+      { "product": "Natriy xlorid 0.9% 500ml", "quantity": 20, "price": 8800 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-009",
+    "status": "DELIVERED",
+    "is_received": true,
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Oshxona ombori",
+    "order_date_offset": -12,
+    "delivery_date_offset": -6,
+    "decided_at_offset": -11,
+    "decided_by": "admin",
+    "received_at_offset": -6,
+    "received_by": "warehouse2",
+    "items": [
+      { "product": "Shakar",          "quantity": 100, "price": 11500 },
+      { "product": "O'simlik yog'i",  "quantity": 30,  "price": 17000 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-010",
+    "status": "CONFIRMED",
+    "supplier": "Samarqand Farm",
+    "warehouse": "Oshxona ombori",
+    "order_date_offset": -3,
+    "delivery_date_offset": 4,
+    "decided_at_offset": -2,
+    "decided_by": "admin",
+    "items": [
+      { "product": "Un 1-nav", "quantity": 80, "price": 7800  },
+      { "product": "Guruch",   "quantity": 60, "price": 14500 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-011",
+    "status": "PENDING",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Oshxona ombori",
+    "order_date_offset": -1,
+    "delivery_date_offset": 6,
+    "items": [
+      { "product": "Makaron", "quantity": 30, "price": 8500 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-012",
+    "status": "DELIVERED",
+    "is_received": true,
+    "supplier": "Global Med Import",
+    "warehouse": "Maishiy ombor",
+    "order_date_offset": -18,
+    "delivery_date_offset": -10,
+    "decided_at_offset": -17,
+    "decided_by": "admin",
+    "received_at_offset": -10,
+    "received_by": "warehouse3",
+    "items": [
+      { "product": "Kir yuvish kukuni", "quantity": 20, "price": 33000 },
+      { "product": "Suyuq sovun 5l",    "quantity": 15, "price": 27000 }
+    ]
+  },
+  {
+    "order_number": "PO-{YEAR}-013",
+    "status": "PENDING",
+    "supplier": "Healthy Reserve Trade",
+    "warehouse": "Maishiy ombor",
+    "order_date_offset": 0,
+    "delivery_date_offset": 7,
+    "items": [
+      { "product": "Bir martalik sochiq",       "quantity": 25, "price": 14500 },
+      { "product": "Chiqindi paketlari (100 dona)", "quantity": 15, "price": 21000 }
+    ]
+  }
+]

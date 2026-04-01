@@ -1,0 +1,328 @@
+[
+  {
+    "expense_number": "EXP-{YEAR}-001",
+    "status": "CREATED",
+    "type": "USAGE",
+    "staff_name": "Terapiya bo'limi - hamshira Dilnoza",
+    "purpose": "Kunlik bemorlar uchun dori-darmon",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -1,
+    "manager": "accountant",
+    "items": [
+      { "product": "Paratsetamol 500mg", "batch_index": 0, "quantity": 5 },
+      { "product": "Bint steril 10m",   "batch_index": 0, "quantity": 8 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-002",
+    "status": "CREATED",
+    "type": "USAGE",
+    "staff_name": "Jarrohlik bo'limi - vrach Anvar",
+    "purpose": "Operatsiya uchun materiallar",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -1,
+    "manager": "accountant",
+    "items": [
+      { "product": "Shprits 5ml",              "batch_index": 0, "quantity": 30 },
+      { "product": "Nitril qo'lqop (100 dona)", "batch_index": 0, "quantity": 2  }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-003",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Poliklinika - hamshira Mohira",
+    "purpose": "Poliklinikaga dori berildi",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -2,
+    "issued_at_offset": -1,
+    "issued_by": "warehouse1",
+    "manager": "accountant",
+    "items": [
+      { "product": "Amoksitsillin 500mg", "batch_index": 0, "quantity": 10 },
+      { "product": "Ibuprofen 400mg",     "batch_index": 0, "quantity": 8  }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-004",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Kardiologiya bo'limi - vrach Rustam",
+    "purpose": "Bemorlar uchun vitamin va dori",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -3,
+    "issued_at_offset": -2,
+    "issued_by": "warehouse1",
+    "manager": "accountant",
+    "items": [
+      { "product": "C Vitamin 1000mg",   "batch_index": 0, "quantity": 5 },
+      { "product": "Paratsetamol 500mg", "batch_index": 0, "quantity": 3 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-005",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Reanimatsiya - hamshira Nodira",
+    "purpose": "Reanimatsiya uchun shoshilinch material",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -4,
+    "issued_at_offset": -3,
+    "issued_by": "warehouse1",
+    "manager": "accountant",
+    "items": [
+      { "product": "Natriy xlorid 0.9% 500ml", "batch_index": 1, "quantity": 4  },
+      { "product": "Glyukoza 5% 400ml",         "batch_index": 0, "quantity": 6  },
+      { "product": "Shprits 10ml",               "batch_index": 0, "quantity": 15 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-006",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Laboratoriya - laborant Kamola",
+    "purpose": "Laboratoriya tekshiruvi uchun",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -5,
+    "issued_at_offset": -4,
+    "issued_by": "warehouse1",
+    "manager": "accountant",
+    "items": [
+      { "product": "Shprits 5ml",              "batch_index": 1, "quantity": 25 },
+      { "product": "Nitril qo'lqop (100 dona)", "batch_index": 1, "quantity": 3  }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-007",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Qabul bo'limi - hamshira Feruza",
+    "purpose": "Tez yordam kelgan bemorlar uchun",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -6,
+    "issued_at_offset": -5,
+    "issued_by": "warehouse1",
+    "manager": "accountant",
+    "items": [
+      { "product": "Amoksitsillin 500mg",  "batch_index": 1, "quantity": 12 },
+      { "product": "Bint steril 10m",      "batch_index": 1, "quantity": 10 },
+      { "product": "Xlorgeksidin 0.05% 1l","batch_index": 0, "quantity": 3  }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-008",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Pediatriya - vrach Shahzoda",
+    "purpose": "Bolalar bo'limiga dori berildi",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -8,
+    "issued_at_offset": -7,
+    "issued_by": "warehouse1",
+    "manager": "accountant",
+    "items": [
+      { "product": "Paratsetamol 500mg", "batch_index": 0, "quantity": 6  },
+      { "product": "Shprits 5ml",        "batch_index": 0, "quantity": 20 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-009",
+    "status": "CANCELLED",
+    "type": "USAGE",
+    "staff_name": "Travmatologiya - vrach Otabek",
+    "purpose": "Bekor qilindi: bemor ko'chirildi",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -7,
+    "cancelled_at_offset": -6,
+    "cancelled_by": "admin",
+    "manager": "accountant",
+    "items": [
+      { "product": "Ibuprofen 400mg", "batch_index": 1, "quantity": 5 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-010",
+    "status": "CANCELLED",
+    "type": "USAGE",
+    "staff_name": "Yuqumli kasalliklar - vrach Sanjar",
+    "purpose": "Bekor qilindi: alternativ dori buyurildi",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -5,
+    "cancelled_at_offset": -4,
+    "cancelled_by": "admin",
+    "manager": "accountant",
+    "items": [
+      { "product": "Amoksitsillin 500mg", "batch_index": 0, "quantity": 8 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-011",
+    "status": "ISSUED",
+    "type": "EXPIRED",
+    "staff_name": "Ombor nazorati",
+    "purpose": "Muddati o'tgan mahsulotlar yechildi",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -10,
+    "issued_at_offset": -9,
+    "issued_by": "warehouse1",
+    "manager": "accountant",
+    "items": [
+      { "product": "Natriy xlorid 0.9% 500ml", "batch_index": 0, "quantity": 10 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-012",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Stomatologiya - vrach Laylo",
+    "purpose": "Stomatologiya bo'limi uchun sarf material",
+    "warehouse": "Asosiy tibbiy ombor",
+    "created_at_offset": -9,
+    "issued_at_offset": -8,
+    "issued_by": "warehouse1",
+    "manager": "accountant",
+    "items": [
+      { "product": "Shprits 5ml",          "batch_index": 1, "quantity": 15 },
+      { "product": "Nitril qo'lqop (100 dona)", "batch_index": 0, "quantity": 2 },
+      { "product": "Xlorgeksidin 0.05% 1l","batch_index": 1, "quantity": 2  }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-013",
+    "status": "CREATED",
+    "type": "USAGE",
+    "staff_name": "Oshxona boshlig'i - Karim aka",
+    "purpose": "Kunlik ovqat tayyorlash uchun",
+    "warehouse": "Oshxona ombori",
+    "created_at_offset": -1,
+    "manager": "accountant",
+    "items": [
+      { "product": "Shakar",         "batch_index": 0, "quantity": 15 },
+      { "product": "O'simlik yog'i", "batch_index": 0, "quantity": 5  }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-014",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Oshxona boshlig'i - Karim aka",
+    "purpose": "Haftalik oziq-ovqat sarfi",
+    "warehouse": "Oshxona ombori",
+    "created_at_offset": -3,
+    "issued_at_offset": -2,
+    "issued_by": "warehouse2",
+    "manager": "accountant",
+    "items": [
+      { "product": "Un 1-nav", "batch_index": 0, "quantity": 25 },
+      { "product": "Guruch",   "batch_index": 0, "quantity": 20 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-015",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Oshxona boshlig'i - Karim aka",
+    "purpose": "Maxsus tadbir uchun oziq-ovqat",
+    "warehouse": "Oshxona ombori",
+    "created_at_offset": -5,
+    "issued_at_offset": -4,
+    "issued_by": "warehouse2",
+    "manager": "accountant",
+    "items": [
+      { "product": "Shakar",         "batch_index": 1, "quantity": 10 },
+      { "product": "Un 1-nav",       "batch_index": 1, "quantity": 15 },
+      { "product": "O'simlik yog'i", "batch_index": 1, "quantity": 8  }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-016",
+    "status": "CANCELLED",
+    "type": "USAGE",
+    "staff_name": "Oshxona boshlig'i - Karim aka",
+    "purpose": "Bekor qilindi: tadbir qoldirildi",
+    "warehouse": "Oshxona ombori",
+    "created_at_offset": -7,
+    "cancelled_at_offset": -6,
+    "cancelled_by": "admin",
+    "manager": "accountant",
+    "items": [
+      { "product": "Guruch", "batch_index": 1, "quantity": 15 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-017",
+    "status": "ISSUED",
+    "type": "EXPIRED",
+    "staff_name": "Ombor nazorati",
+    "purpose": "Muddati o'tgan makaron yechildi",
+    "warehouse": "Oshxona ombori",
+    "created_at_offset": -2,
+    "issued_at_offset": -1,
+    "issued_by": "warehouse2",
+    "manager": "accountant",
+    "items": [
+      { "product": "Makaron", "batch_index": 0, "quantity": 8 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-018",
+    "status": "CREATED",
+    "type": "USAGE",
+    "staff_name": "Tozalash xizmati - Gulnora",
+    "purpose": "Haftalik tozalash materiallari",
+    "warehouse": "Maishiy ombor",
+    "created_at_offset": -1,
+    "manager": "accountant",
+    "items": [
+      { "product": "Kir yuvish kukuni",          "batch_index": 0, "quantity": 5 },
+      { "product": "Chiqindi paketlari (100 dona)", "batch_index": 0, "quantity": 4 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-019",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Tozalash xizmati - Gulnora",
+    "purpose": "Kunlik dezinfeksiya uchun",
+    "warehouse": "Maishiy ombor",
+    "created_at_offset": -4,
+    "issued_at_offset": -3,
+    "issued_by": "warehouse3",
+    "manager": "accountant",
+    "items": [
+      { "product": "Bartaraflovchi eritma 5l", "batch_index": 0, "quantity": 3 },
+      { "product": "Suyuq sovun 5l",           "batch_index": 0, "quantity": 2 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-020",
+    "status": "ISSUED",
+    "type": "USAGE",
+    "staff_name": "Tozalash xizmati - Gulnora",
+    "purpose": "Barcha bo'limlar uchun sochiq va sovun",
+    "warehouse": "Maishiy ombor",
+    "created_at_offset": -6,
+    "issued_at_offset": -5,
+    "issued_by": "warehouse3",
+    "manager": "accountant",
+    "items": [
+      { "product": "Bir martalik sochiq", "batch_index": 0, "quantity": 8 },
+      { "product": "Suyuq sovun 5l",      "batch_index": 1, "quantity": 3 }
+    ]
+  },
+  {
+    "expense_number": "EXP-{YEAR}-021",
+    "status": "CANCELLED",
+    "type": "USAGE",
+    "staff_name": "Tozalash xizmati - Gulnora",
+    "purpose": "Bekor qilindi: material yetarli edi",
+    "warehouse": "Maishiy ombor",
+    "created_at_offset": -8,
+    "cancelled_at_offset": -7,
+    "cancelled_by": "admin",
+    "manager": "accountant",
+    "items": [
+      { "product": "Kir yuvish kukuni", "batch_index": 1, "quantity": 3 }
+    ]
+  }
+]

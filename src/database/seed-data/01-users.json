@@ -1,0 +1,37 @@
+[
+  {
+    "username": "admin",
+    "password": "admin12345",
+    "first_name": "System",
+    "last_name": "Admin",
+    "role": "admin"
+  },
+  {
+    "username": "warehouse1",
+    "password": "warehouse12345",
+    "first_name": "Ali",
+    "last_name": "Valiyev",
+    "role": "warehouse"
+  },
+  {
+    "username": "warehouse2",
+    "password": "warehouse12345",
+    "first_name": "Bekzod",
+    "last_name": "Karimov",
+    "role": "warehouse"
+  },
+  {
+    "username": "warehouse3",
+    "password": "warehouse12345",
+    "first_name": "Davron",
+    "last_name": "Rahimov",
+    "role": "warehouse"
+  },
+  {
+    "username": "accountant",
+    "password": "accountant12345",
+    "first_name": "Nilufar",
+    "last_name": "Toshmatova",
+    "role": "accountant"
+  }
+]

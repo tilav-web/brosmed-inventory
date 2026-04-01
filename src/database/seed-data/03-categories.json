@@ -1,0 +1,26 @@
+[
+  {
+    "name": "Antibiotiklar",
+    "description": "Antibakterial dori vositalari"
+  },
+  {
+    "name": "Vitaminlar",
+    "description": "Vitamin va mineral komplekslar"
+  },
+  {
+    "name": "Tibbiy sarf materiallari",
+    "description": "Shprits, bint, qo'lqop va boshqa sarf materiallari"
+  },
+  {
+    "name": "Infuzion eritmalar",
+    "description": "Tomchilatuvchi va in'ektsion eritmalar"
+  },
+  {
+    "name": "Og'riq qoldiruvchi",
+    "description": "Analgetik va og'riq qoldiruvchi preparatlar"
+  },
+  {
+    "name": "Antiseptiklar",
+    "description": "Yara davolash va dezinfeksiya vositalari"
+  }
+]

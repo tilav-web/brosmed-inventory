@@ -1,0 +1,26 @@
+[
+  {
+    "company_name": "Medline Pharma Supply",
+    "contact_person": "Aziz Karimov",
+    "email": "aziz@medline.uz",
+    "phone": "+998901112233"
+  },
+  {
+    "company_name": "Healthy Reserve Trade",
+    "contact_person": "Zarina Ismoilova",
+    "email": "zarina@healthyreserve.uz",
+    "phone": "+998907778899"
+  },
+  {
+    "company_name": "Global Med Import",
+    "contact_person": "Jasur Aliyev",
+    "email": "jasur@globalmed.uz",
+    "phone": "+998933445566"
+  },
+  {
+    "company_name": "Samarqand Farm",
+    "contact_person": "Dilshod Umarov",
+    "email": "dilshod@samarkandfarm.uz",
+    "phone": "+998909998877"
+  }
+]
