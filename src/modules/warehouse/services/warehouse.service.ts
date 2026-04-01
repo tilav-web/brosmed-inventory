@@ -362,7 +362,6 @@ export class WarehouseService {
       .addSelect('expense.status', 'status')
       .addSelect('expense.total_price', 'total_price')
       .addSelect('expense.issued_at', 'issued_at')
-      .addSelect('expense.confirmed_at', 'confirmed_at')
       .groupBy('expense.id')
       .addGroupBy('expense.expense_number')
       .addGroupBy('expense.createdAt')
@@ -371,7 +370,6 @@ export class WarehouseService {
       .addGroupBy('expense.status')
       .addGroupBy('expense.total_price')
       .addGroupBy('expense.issued_at')
-      .addGroupBy('expense.confirmed_at')
       .orderBy('expense.createdAt', 'DESC')
       .limit(recentLimit)
       .getRawMany<WarehouseRecentExpenseRow>();
@@ -637,7 +635,6 @@ export class WarehouseService {
       .addSelect('expense.status', 'status')
       .addSelect('expense.total_price', 'total_price')
       .addSelect('expense.issued_at', 'issued_at')
-      .addSelect('expense.confirmed_at', 'confirmed_at')
       .groupBy('expense.id')
       .addGroupBy('expense.expense_number')
       .addGroupBy('expense.createdAt')
@@ -646,7 +643,6 @@ export class WarehouseService {
       .addGroupBy('expense.status')
       .addGroupBy('expense.total_price')
       .addGroupBy('expense.issued_at')
-      .addGroupBy('expense.confirmed_at')
       .orderBy('expense.createdAt', 'DESC')
       .offset((page - 1) * limit)
       .limit(limit)
@@ -659,7 +655,6 @@ export class WarehouseService {
         status: ExpenseStatus;
         total_price: string;
         issued_at: Date | null;
-        confirmed_at: Date | null;
       }>();
 
     const total = Number(totalRaw?.count ?? 0);
@@ -673,7 +668,6 @@ export class WarehouseService {
       status: expense.status,
       total_price: Number(Number(expense.total_price ?? 0).toFixed(2)),
       issued_at: expense.issued_at,
-      confirmed_at: expense.confirmed_at,
     }));
 
     return {
