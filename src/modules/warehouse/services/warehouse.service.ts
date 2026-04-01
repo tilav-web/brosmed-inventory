@@ -508,11 +508,47 @@ export class WarehouseService {
     };
   }
 
-  async getMyProducts(userId: string) {
+  async getMyProducts(
+    userId: string,
+    query: { search?: string; page?: number; limit?: number },
+  ) {
     const warehouse = await this.getManagedWarehouseByUser(userId);
+    const page = query.page ?? 1;
+    const limit = Math.min(query.limit ?? 10, 100);
+    const search = query.search?.trim();
+
+    const qb = this.productRepository
+      .createQueryBuilder('product')
+      .where('product.warehouse_id = :warehouseId', {
+        warehouseId: warehouse.id,
+      });
+
+    if (search) {
+      qb.andWhere('product.name ILIKE :search', { search: `%${search}%` });
+    }
+
+    const totalRaw = await qb
+      .clone()
+      .select('COUNT(product.id)', 'count')
+      .getRawOne<{ count: string }>();
+
+    const data = await qb
+      .orderBy('product.name', 'ASC')
+      .offset((page - 1) * limit)
+      .limit(limit)
+      .getMany();
+
+    const total = Number(totalRaw?.count ?? 0);
+
     return {
       warehouse: this.mapDashboardWarehouse(warehouse),
-      data: await this.getProductsByWarehouseId(warehouse.id),
+      data,
+      meta: {
+        page,
+        limit,
+        total,
+        totalPages: Math.ceil(total / limit) || 1,
+      },
     };
   }
 

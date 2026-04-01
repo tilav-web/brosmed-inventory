@@ -31,6 +31,7 @@ import { ListWarehousesQueryDto } from '../dto/list-warehouses-query.dto';
 import { ListCategoryStatsQueryDto } from '../dto/list-category-stats-query.dto';
 import { ListWarehouseRecentExpensesQueryDto } from '../dto/list-warehouse-recent-expenses-query.dto';
 import { ListWarehouseExpensesQueryDto } from '../dto/list-warehouse-expenses-query.dto';
+import { ListWarehouseProductsQueryDto } from '../dto/list-warehouse-products-query.dto';
 import { UpdateWarehouseDto } from '../dto/update-warehouse.dto';
 import { WarehouseService } from '../services/warehouse.service';
 
@@ -126,8 +127,11 @@ export class WarehouseController {
   @ApiOkResponse({ description: 'Warehouse productlari qaytdi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat warehouse user kirishi mumkin' })
-  getMyProducts(@Req() req: { user: AuthUser }) {
-    return this.warehouseService.getMyProducts(req.user.id);
+  getMyProducts(
+    @Req() req: { user: AuthUser },
+    @Query() query: ListWarehouseProductsQueryDto,
+  ) {
+    return this.warehouseService.getMyProducts(req.user.id, query);
   }
 
   @Get('my/category-stats')
