@@ -477,8 +477,8 @@ export class ExpenseService {
           item.product_batch_id,
         );
 
-        const productId = item.product_id ?? batch.product_id;
-        const warehouseId = item.warehouse_id ?? batch.warehouse_id;
+        const productId = batch.product_id;
+        const warehouseId = batch.warehouse_id;
 
         const [product, warehouse] = await Promise.all([
           productRepo.findOne({ where: { id: productId } }),
