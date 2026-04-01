@@ -12,6 +12,7 @@ import { DataSource, EntityManager, Repository } from 'typeorm';
 import Redis from 'ioredis';
 import { InlineKeyboard } from 'grammy';
 import { BotService } from 'src/modules/bot/bot.service';
+import { BotUserService } from 'src/modules/bot-user/services/bot-user.service';
 import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
@@ -46,6 +47,7 @@ export class PurchaseOrderService {
     private readonly redis: Redis,
     @Inject(forwardRef(() => BotService))
     private readonly botService: BotService,
+    private readonly botUserService: BotUserService,
   ) {}
 
   private async generateOrderNumber(manager: EntityManager): Promise<string> {
@@ -420,6 +422,12 @@ export class PurchaseOrderService {
     });
 
     await this.invalidateRelatedCaches();
+    await this.notifyAccountantAboutDecision(result).catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : String(error);
+      this.logger.warn(
+        `Accountant decision notification yuborilmadi: ${message}`,
+      );
+    });
     return result;
   }
 
@@ -872,6 +880,32 @@ export class PurchaseOrderService {
     await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
       reply_markup: keyboard,
     });
+  }
+
+  private async notifyAccountantAboutDecision(order: PurchaseOrder) {
+    if (!order.created_by_id) {
+      return;
+    }
+
+    const botUser = await this.botUserService.findApprovedByLinkedUserId(
+      order.created_by_id,
+    );
+    if (!botUser) {
+      return;
+    }
+
+    const actionText =
+      order.status === OrderStatus.CONFIRMED ? 'tasdiqlandi' : 'bekor qilindi';
+
+    const text =
+      `🛒 <b>Xarid so'rovingiz ${actionText}</b>\n\n` +
+      `📄 Buyurtma: <b>${order.order_number}</b>\n` +
+      `📌 Status: <b>${order.status}</b>\n` +
+      `🏢 Supplier: <b>${this.escapeHtml(order.supplier?.company_name ?? order.supplier_id)}</b>\n` +
+      `📦 Warehouse: <b>${this.escapeHtml(order.warehouse?.name ?? order.warehouse_id)}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(order.total_amount))}</b>`;
+
+    await this.botService.sendMessage(botUser.telegram_id, text);
   }
 
   private formatCurrency(value: number) {

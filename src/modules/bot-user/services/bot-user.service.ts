@@ -256,6 +256,24 @@ export class BotUserService {
     return normalized.filter((user) => user.role === role);
   }
 
+  async findApprovedByLinkedUserId(
+    linkedUserId: string,
+  ): Promise<BotUserWithLinkedUser | null> {
+    const botUser = await this.botUserRepository.findOne({
+      where: {
+        linked_user_id: linkedUserId,
+        is_approved: true,
+        status: BotUserStatus.ACTIVE,
+      },
+    });
+
+    if (!botUser) {
+      return null;
+    }
+
+    return this.normalizeSingleBotUser(botUser);
+  }
+
   async findById(id: string) {
     const user = await this.botUserRepository.findOne({ where: { id } });
     if (!user) {
