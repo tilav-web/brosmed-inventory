@@ -129,16 +129,21 @@ export class ExpenseService {
     const limit = Math.min(query.limit ?? 10, 100);
     const search = query.search?.trim();
     const isWarehouse = user.role === Role.WAREHOUSE;
+    const assignedWarehouseId = isWarehouse
+      ? (await this.getAssignedWarehouseForUser(user.id)).id
+      : undefined;
 
     const qb = this.expenseRepository
       .createQueryBuilder('expense')
       .leftJoinAndSelect('expense.manager', 'manager');
 
     if (isWarehouse) {
-      qb.andWhere('expense.manager_id = :managerId', { managerId: user.id });
       qb.leftJoinAndSelect('expense.items', 'item')
         .leftJoinAndSelect('item.product', 'product')
-        .leftJoinAndSelect('item.warehouse', 'warehouse');
+        .leftJoinAndSelect('item.warehouse', 'warehouse')
+        .andWhere('warehouse.id = :warehouseId', {
+          warehouseId: assignedWarehouseId,
+        });
     } else {
       qb.leftJoinAndSelect('expense.items', 'item')
         .leftJoinAndSelect('item.product', 'product')
@@ -439,6 +444,17 @@ export class ExpenseService {
     await manager.getRepository(Product).save(product);
   }
 
+  private isExpiredDate(value?: Date | string | null): boolean {
+    if (!value) {
+      return false;
+    }
+
+    const dateValue =
+      typeof value === 'string' ? value.slice(0, 10) : this.getLocalDateString(value);
+
+    return dateValue < this.getLocalDateString();
+  }
+
   async create(dto: CreateExpenseDto, actor: AuthUser) {
     if (actor.role !== Role.WAREHOUSE) {
       throw new ForbiddenException('Faqat warehouse user chiqim yarata oladi');
@@ -518,6 +534,12 @@ export class ExpenseService {
         if (warehouse.id !== assignedWarehouse.id) {
           throw new ForbiddenException(
             "Siz faqat o'zingizga biriktirilgan warehouse mahsulotlarini chiqim qila olasiz",
+          );
+        }
+
+        if (this.isExpiredDate(batch.expiration_date)) {
+          throw new BadRequestException(
+            `Yaroqlilik muddati o'tgan partiyadan chiqim qilish mumkin emas: ${product.name}`,
           );
         }
 

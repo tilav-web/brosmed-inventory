@@ -31,6 +31,20 @@ interface InventoryItemRowRaw {
   total_value: string;
 }
 
+interface InventorySummaryRaw {
+  total_positions: string;
+  total_units: string;
+  total_value: string;
+}
+
+interface InventoryWarehouseDistributionRowRaw {
+  warehouse_id: string;
+  warehouse_name: string;
+  positions_count: string;
+  total_units: string;
+  total_value: string;
+}
+
 export interface InventoryReportItem {
   product_id: string;
   product_name: string;
@@ -139,18 +153,30 @@ export class ReportService {
     query: GetInventoryReportQueryDto,
     user?: AuthUser,
   ): Promise<InventoryReportResponse> {
-    const dataset = await this.buildInventoryDataset(query, user);
+    const effectiveQuery = await this.prepareInventoryQuery(query, user);
     const page = query.page ?? 1;
     const limit = Math.min(query.limit ?? 50, 200);
-    const total = dataset.details.length;
+
+    const [summary, warehouseDistribution, details] = await Promise.all([
+      this.getInventorySummary(effectiveQuery),
+      this.getInventoryWarehouseDistribution(effectiveQuery),
+      this.getInventoryItems(effectiveQuery, { page, limit }),
+    ]);
+
+    const total = summary.total_positions;
 
     return {
       report_type: query.report_type ?? InventoryReportType.INVENTORY_BALANCE,
-      generated_at: dataset.generated_at,
-      filters: dataset.filters,
-      summary: dataset.summary,
-      warehouse_distribution: dataset.warehouse_distribution,
-      details: dataset.details.slice((page - 1) * limit, page * limit),
+      generated_at: new Date().toISOString(),
+      filters: {
+        warehouse_id: effectiveQuery.warehouse_id ?? null,
+        date_from: effectiveQuery.date_from ?? null,
+        date_to: effectiveQuery.date_to ?? null,
+        date_filter_field: 'batch.received_at',
+      },
+      summary,
+      warehouse_distribution: warehouseDistribution,
+      details,
       meta: {
         page,
         limit,
@@ -188,14 +214,7 @@ export class ReportService {
     query: GetInventoryReportQueryDto,
     user?: AuthUser,
   ): Promise<InventoryDataset> {
-    const warehouseId = await this.resolveWarehouseScope(query.warehouse_id, user);
-    const effectiveQuery = {
-      ...query,
-      warehouse_id: warehouseId,
-    };
-
-    await this.validateWarehouse(effectiveQuery.warehouse_id);
-    this.validateDateRange(effectiveQuery.date_from, effectiveQuery.date_to);
+    const effectiveQuery = await this.prepareInventoryQuery(query, user);
 
     const generatedAt = new Date().toISOString();
     const items = await this.getInventoryItems(effectiveQuery);
@@ -247,7 +266,26 @@ export class ReportService {
     };
   }
 
-  private async getInventoryItems(query: GetInventoryReportQueryDto) {
+  private async prepareInventoryQuery(
+    query: GetInventoryReportQueryDto,
+    user?: AuthUser,
+  ): Promise<GetInventoryReportQueryDto> {
+    const warehouseId = await this.resolveWarehouseScope(
+      query.warehouse_id,
+      user,
+    );
+    const effectiveQuery = {
+      ...query,
+      warehouse_id: warehouseId,
+    };
+
+    await this.validateWarehouse(effectiveQuery.warehouse_id);
+    this.validateDateRange(effectiveQuery.date_from, effectiveQuery.date_to);
+
+    return effectiveQuery;
+  }
+
+  private createInventoryItemsQuery(query: GetInventoryReportQueryDto) {
     const qb = this.productRepository
       .createQueryBuilder('product')
       .leftJoin('product.warehouse', 'warehouse')
@@ -277,8 +315,77 @@ export class ReportService {
 
     this.applyReceivedAtFilter(qb, query);
 
+    return qb;
+  }
+
+  private async getInventoryItems(
+    query: GetInventoryReportQueryDto,
+    pagination?: {
+      page: number;
+      limit: number;
+    },
+  ) {
+    const qb = this.createInventoryItemsQuery(query);
+
+    if (pagination) {
+      qb
+        .offset((pagination.page - 1) * pagination.limit)
+        .limit(pagination.limit);
+    }
+
     const rows = await qb.getRawMany<InventoryItemRowRaw>();
 
+    return this.mapInventoryRows(rows);
+  }
+
+  private async getInventorySummary(
+    query: GetInventoryReportQueryDto,
+  ): Promise<InventoryReportResponse['summary']> {
+    const inventoryItemsQb = this.createInventoryItemsQuery(query);
+    const raw = await this.productRepository.manager
+      .createQueryBuilder()
+      .select('COUNT(*)', 'total_positions')
+      .addSelect('COALESCE(SUM(inventory_item.quantity), 0)', 'total_units')
+      .addSelect('COALESCE(SUM(inventory_item.total_value), 0)', 'total_value')
+      .from(`(${inventoryItemsQb.getQuery()})`, 'inventory_item')
+      .setParameters(inventoryItemsQb.getParameters())
+      .getRawOne<InventorySummaryRaw>();
+
+    return {
+      total_positions: Number(raw?.total_positions ?? 0),
+      total_units: Number(Number(raw?.total_units ?? 0).toFixed(2)),
+      total_value: Number(Number(raw?.total_value ?? 0).toFixed(2)),
+    };
+  }
+
+  private async getInventoryWarehouseDistribution(
+    query: GetInventoryReportQueryDto,
+  ): Promise<InventoryWarehouseDistributionItem[]> {
+    const inventoryItemsQb = this.createInventoryItemsQuery(query);
+    const rows = await this.productRepository.manager
+      .createQueryBuilder()
+      .select('inventory_item.warehouse_id', 'warehouse_id')
+      .addSelect('inventory_item.warehouse_name', 'warehouse_name')
+      .addSelect('COUNT(*)', 'positions_count')
+      .addSelect('COALESCE(SUM(inventory_item.quantity), 0)', 'total_units')
+      .addSelect('COALESCE(SUM(inventory_item.total_value), 0)', 'total_value')
+      .from(`(${inventoryItemsQb.getQuery()})`, 'inventory_item')
+      .setParameters(inventoryItemsQb.getParameters())
+      .groupBy('inventory_item.warehouse_id')
+      .addGroupBy('inventory_item.warehouse_name')
+      .orderBy('inventory_item.warehouse_name', 'ASC')
+      .getRawMany<InventoryWarehouseDistributionRowRaw>();
+
+    return rows.map((row) => ({
+      warehouse_id: row.warehouse_id,
+      warehouse_name: row.warehouse_name,
+      positions_count: Number(row.positions_count ?? 0),
+      total_units: Number(Number(row.total_units ?? 0).toFixed(2)),
+      total_value: Number(Number(row.total_value ?? 0).toFixed(2)),
+    }));
+  }
+
+  private mapInventoryRows(rows: InventoryItemRowRaw[]) {
     return rows.map((row) => {
       const quantity = Number(Number(row.quantity ?? 0).toFixed(2));
       const totalValue = Number(Number(row.total_value ?? 0).toFixed(2));

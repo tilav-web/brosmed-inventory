@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
@@ -18,6 +19,7 @@ export class ProductStatusSchedulerService {
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
     private readonly expenseService: ExpenseService,
+    private readonly configService: ConfigService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
@@ -25,7 +27,11 @@ export class ProductStatusSchedulerService {
     const today = this.getTodayDateString();
 
     try {
-      await this.writeOffExpiredBatches(today);
+      if (this.shouldAutoWriteOffExpiredBatches()) {
+        await this.writeOffExpiredBatches(today);
+      } else {
+        await this.logExpiredBatchesPendingReview(today);
+      }
     } catch (error) {
       this.logger.error('Expired write-off failed', error);
     }
@@ -60,6 +66,28 @@ export class ProductStatusSchedulerService {
     const month = String(value.getMonth() + 1).padStart(2, '0');
     const day = String(value.getDate()).padStart(2, '0');
     return `${year}-${month}-${day}`;
+  }
+
+  private shouldAutoWriteOffExpiredBatches() {
+    return (
+      this.configService.get<string>('AUTO_WRITE_OFF_EXPIRED_BATCHES', 'false') ===
+      'true'
+    );
+  }
+
+  private async logExpiredBatchesPendingReview(today: string) {
+    const count = await this.productBatchRepository
+      .createQueryBuilder('batch')
+      .where('batch.quantity > 0')
+      .andWhere('batch.expiration_date IS NOT NULL')
+      .andWhere('batch.expiration_date < :today', { today })
+      .getCount();
+
+    if (count > 0) {
+      this.logger.warn(
+        `Auto write-off o‘chiq. Review kutayotgan expired batchlar soni: ${count}`,
+      );
+    }
   }
 
   private async writeOffExpiredBatches(today: string) {

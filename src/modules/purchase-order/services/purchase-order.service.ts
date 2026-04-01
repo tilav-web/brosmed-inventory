@@ -664,9 +664,9 @@ export class PurchaseOrderService {
         throw new NotFoundException('Purchase order topilmadi');
       }
 
-      if (order.is_received || order.status === OrderStatus.DELIVERED) {
+      if (order.status !== OrderStatus.PENDING || order.is_received) {
         throw new BadRequestException(
-          'Delivered/qabul qilingan buyurtmani o`chirib bo`lmaydi',
+          "Faqat PENDING statusdagi buyurtmani o`chirish mumkin",
         );
       }
 

@@ -34,7 +34,8 @@ import { Role } from 'src/modules/user/enums/role.enum';
 @Injectable()
 export class BotService implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(BotService.name);
-  private readonly bot: Bot;
+  private readonly bot?: Bot;
+  private readonly isEnabled: boolean;
   public webhookCallback?: (req: Request, res: Response) => Promise<void>;
 
   constructor(
@@ -57,14 +58,23 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   ) {
     const token = this.configService.get<string>('TELEGRAM_BOT_TOKEN');
     if (!token) {
-      throw new Error('TELEGRAM_BOT_TOKEN is not defined!');
+      this.isEnabled = false;
+      this.logger.warn(
+        'TELEGRAM_BOT_TOKEN topilmadi. Bot funksiyalari o‘chirildi, backend ishlashda davom etadi.',
+      );
+      return;
     }
 
+    this.isEnabled = true;
     this.bot = new Bot(token);
     this.setupHandlers();
   }
 
   async onModuleInit() {
+    if (!this.isEnabled || !this.bot) {
+      return;
+    }
+
     const botMode = this.configService.get<string>('BOT_MODE', 'polling');
 
     if (botMode === 'polling') {
@@ -111,6 +121,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   private setupHandlers() {
+    if (!this.bot) {
+      return;
+    }
+
     // 1. Start command - auth talab qilmaydi
     this.startCommand.register(this.bot);
     this.helpCommand.register(this.bot);
@@ -161,8 +175,8 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  getBot(): Bot {
-    return this.bot;
+  getBot(): Bot | null {
+    return this.bot ?? null;
   }
 
   isWebhookSecretValid(req: Request): boolean {
@@ -181,6 +195,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     text: string,
     options?: { reply_markup?: InlineKeyboard },
   ): Promise<boolean> {
+    if (!this.bot) {
+      return false;
+    }
+
     try {
       await this.bot.api.sendMessage(telegramId, text, {
         parse_mode: 'HTML',
@@ -200,6 +218,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     role?: Role,
     options?: { reply_markup?: InlineKeyboard },
   ): Promise<number> {
+    if (!this.bot) {
+      return 0;
+    }
+
     const users = await this.botUserService.getApprovedUsers(role);
     let sent = 0;
 
@@ -217,6 +239,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     filename: string,
     caption?: string,
   ): Promise<boolean> {
+    if (!this.bot) {
+      return false;
+    }
+
     try {
       await this.bot.api.sendDocument(
         telegramId,
@@ -241,6 +267,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     caption?: string,
     role: Role = Role.ADMIN,
   ): Promise<number> {
+    if (!this.bot) {
+      return 0;
+    }
+
     const users = await this.botUserService.getApprovedUsers(role);
     let sent = 0;
 
@@ -258,6 +288,10 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleDestroy() {
+    if (!this.isEnabled || !this.bot) {
+      return;
+    }
+
     const botMode = this.configService.get<string>('BOT_MODE', 'polling');
 
     if (botMode === 'polling') {
