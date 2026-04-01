@@ -80,7 +80,7 @@ export class SeedService implements OnApplicationBootstrap {
 
     if (nodeEnv !== 'development' || !shouldSeed) return;
 
-    if ((await this.userRepo.count()) > 0) {
+    if ((await this.productRepo.count()) > 0) {
       this.logger.log("Seed o'tkazildi: bazada ma'lumot mavjud");
       return;
     }
@@ -182,6 +182,13 @@ export class SeedService implements OnApplicationBootstrap {
     }>('01-users.json');
 
     for (const row of rows) {
+      const existing = await this.userRepo.findOne({
+        where: { username: row.username },
+      });
+      if (existing) {
+        this.users.set(existing.username, existing);
+        continue;
+      }
       const user = await this.userRepo.save(
         this.userRepo.create({
           username: row.username,
