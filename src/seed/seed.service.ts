@@ -10,7 +10,7 @@ import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { hash } from 'bcrypt';
 import Redis from 'ioredis';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Category } from 'src/modules/category/entities/category.entity';
 import { Expense } from 'src/modules/expense/entities/expense.entity';
 import { ExpenseItem } from 'src/modules/expense/entities/expense-item.entity';
@@ -85,6 +85,7 @@ export class SeedService implements OnApplicationBootstrap {
 
   constructor(
     private readonly configService: ConfigService,
+    private readonly dataSource: DataSource,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
     @InjectRepository(User)
@@ -213,7 +214,7 @@ export class SeedService implements OnApplicationBootstrap {
       first_name: string,
       last_name: string,
       role: Role,
-    ) => {
+    ): Promise<User> => {
       const existing = await this.userRepository.findOne({
         where: { username },
       });
@@ -276,7 +277,7 @@ export class SeedService implements OnApplicationBootstrap {
       type: WarehouseType,
       location: string,
       manager: User,
-    ) => {
+    ): Promise<Warehouse> => {
       const existing = await this.warehouseRepository.findOne({
         where: { name },
       });
@@ -317,13 +318,16 @@ export class SeedService implements OnApplicationBootstrap {
   // ─── References (units, categories, suppliers) ────────────
 
   private async seedReferences(): Promise<SeedReferences> {
-    const findOrCreateUnit = async (name: string) => {
+    const findOrCreateUnit = async (name: string): Promise<Unit> => {
       const existing = await this.unitRepository.findOne({ where: { name } });
       if (existing) return existing;
       return this.unitRepository.save(this.unitRepository.create({ name }));
     };
 
-    const findOrCreateCategory = async (name: string, description: string) => {
+    const findOrCreateCategory = async (
+      name: string,
+      description: string,
+    ): Promise<Category> => {
       const existing = await this.categoryRepository.findOne({
         where: { name },
       });
@@ -333,17 +337,18 @@ export class SeedService implements OnApplicationBootstrap {
       );
     };
 
+    // BUG FIX: was using this.categoryRepository.save() instead of this.supplierRepository.save()
     const findOrCreateSupplier = async (
       company_name: string,
       contact_person: string,
       email: string,
       phone: string,
-    ) => {
+    ): Promise<Supplier> => {
       const existing = await this.supplierRepository.findOne({
         where: { company_name },
       });
       if (existing) return existing;
-      return this.categoryRepository.save(
+      return this.supplierRepository.save(
         this.supplierRepository.create({
           company_name,
           contact_person,
@@ -1252,9 +1257,9 @@ export class SeedService implements OnApplicationBootstrap {
         created_by_id: users.accountant.id,
         decided_by_id:
           od.status === OrderStatus.PENDING ? null : users.admin.id,
-        decided_at: od.decidedAt ?? null,
+        decided_at: (od as any).decidedAt ?? null,
         received_by_id: od.isReceived ? users.warehouse1.id : null,
-        received_at: od.receivedAt ?? null,
+        received_at: (od as any).receivedAt ?? null,
         order_date: od.orderDate,
         delivery_date: od.deliveryDate,
         total_amount: Number(totalAmount.toFixed(2)),
@@ -1283,7 +1288,8 @@ export class SeedService implements OnApplicationBootstrap {
     const year = new Date().getFullYear();
     const today = new Date();
 
-    const getBatch = (key: string, idx: number) => batches[key]?.[idx];
+    const getBatch = (key: string, idx: number): ProductBatch | undefined =>
+      batches[key]?.[idx];
 
     const expenseDefs = [
       // ── Medical warehouse expenses ──
@@ -1570,44 +1576,61 @@ export class SeedService implements OnApplicationBootstrap {
     ];
 
     for (const ed of expenseDefs) {
-      const validItems = ed.items.filter((i) => i.batch != null);
+      const validItems = ed.items.filter(
+        (i): i is { batch: ProductBatch; qty: number } => i.batch != null,
+      );
       if (validItems.length === 0) continue;
 
       const totalPrice = validItems.reduce(
-        (s, i) => s + i.qty * Number(i.batch!.price_at_purchase),
+        (s, i) => s + i.qty * Number(i.batch.price_at_purchase),
         0,
       );
 
+      // BUG FIX: ExpenseItem entity has no warehouse_id column — warehouse relation
+      // is set via the ManyToOne decorator only, so we assign the object directly.
+      // Also: product must be loaded from the batch relation, not set separately.
       const expenseItems = validItems.map((i) =>
         this.expenseItemRepository.create({
-          product: i.batch!.product,
+          product: i.batch.product,
+          // BUG FIX: warehouse is a ManyToOne on ExpenseItem with no explicit @Column
+          // for warehouse_id, so we assign the relation object only.
           warehouse: ed.warehouse,
-          product_batch: i.batch!,
-          product_batch_id: i.batch!.id,
+          product_batch: i.batch,
+          product_batch_id: i.batch.id,
           quantity: i.qty,
         }),
       );
 
+      // BUG FIX: createdAt is a @CreateDateColumn — TypeORM ignores it on create().
+      // Use query builder to force-set the value after saving.
       const expense = this.expenseRepository.create({
         expense_number: ed.number,
         status: ed.status,
         type: ed.type,
         total_price: Number(totalPrice.toFixed(2)),
         manager_id: users.accountant.id,
-        issued_by_id: ed.issuedAt ? users.warehouse1.id : null,
-        issued_at: ed.issuedAt ?? null,
-        cancelled_by_id: ed.cancelledAt ? users.admin.id : null,
-        cancelled_at: ed.cancelledAt ?? null,
+        issued_by_id: (ed as any).issuedAt ? users.warehouse1.id : null,
+        issued_at: (ed as any).issuedAt ?? null,
+        cancelled_by_id: (ed as any).cancelledAt ? users.admin.id : null,
+        cancelled_at: (ed as any).cancelledAt ?? null,
         staff_name: ed.staffName,
         purpose: ed.purpose,
         items: expenseItems,
-        createdAt: ed.createdAt,
       });
 
       for (const item of expenseItems) {
         item.expense = expense;
       }
-      await this.expenseRepository.save(expense);
+
+      const saved = await this.expenseRepository.save(expense);
+
+      // Force-set createdAt to the desired back-dated value via raw query
+      await this.dataSource
+        .createQueryBuilder()
+        .update('expenses')
+        .set({ createdAt: ed.createdAt })
+        .where('id = :id', { id: saved.id })
+        .execute();
     }
   }
 
