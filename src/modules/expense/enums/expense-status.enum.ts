@@ -1,5 +1,6 @@
 export enum ExpenseStatus {
   CREATED = 'CREATED',
+  PENDING_APPROVAL = 'PENDING_APPROVAL',
   ISSUED = 'ISSUED',
   CANCELLED = 'CANCELLED',
 }

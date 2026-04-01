@@ -665,6 +665,7 @@ export class BotContentService {
   private createExpenseStatusCounts(): Record<ExpenseStatus, number> {
     return {
       [ExpenseStatus.CREATED]: 0,
+      [ExpenseStatus.PENDING_APPROVAL]: 0,
       [ExpenseStatus.ISSUED]: 0,
       [ExpenseStatus.CANCELLED]: 0,
     };
@@ -692,6 +693,7 @@ export class BotContentService {
 
     let text = '📋 <b>Chiqimlar</b>\n\n';
     text += `🆕 Yaratildi: <b>${counts[ExpenseStatus.CREATED]}</b>\n`;
+    text += `⏳ Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
     text += `✅ Berildi: <b>${counts[ExpenseStatus.ISSUED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
@@ -717,16 +719,31 @@ export class BotContentService {
     linkedUserId: string,
   ): Promise<string> {
     const [recentExpenses, statusRows] = await Promise.all([
-      this.expenseRepository.find({
-        where: { manager_id: linkedUserId },
-        order: { createdAt: 'DESC' },
-        take: 10,
-      }),
+      this.expenseRepository
+        .createQueryBuilder('expense')
+        .where('expense.manager_id = :managerId', { managerId: linkedUserId })
+        .orWhere(
+          '(expense.type = :expiredType AND expense.status = :pendingStatus)',
+          {
+            expiredType: ExpenseType.EXPIRED,
+            pendingStatus: ExpenseStatus.PENDING_APPROVAL,
+          },
+        )
+        .orderBy('expense.createdAt', 'DESC')
+        .limit(10)
+        .getMany(),
       this.expenseRepository
         .createQueryBuilder('expense')
         .select('expense.status', 'status')
         .addSelect('COUNT(expense.id)', 'count')
         .where('expense.manager_id = :managerId', { managerId: linkedUserId })
+        .orWhere(
+          '(expense.type = :expiredType AND expense.status = :pendingStatus)',
+          {
+            expiredType: ExpenseType.EXPIRED,
+            pendingStatus: ExpenseStatus.PENDING_APPROVAL,
+          },
+        )
         .groupBy('expense.status')
         .getRawMany<{ status: ExpenseStatus; count: string }>(),
     ]);
@@ -739,11 +756,12 @@ export class BotContentService {
 
     let text = '📋 <b>Mening chiqimlarim</b>\n\n';
     text += `🆕 Yaratildi: <b>${counts[ExpenseStatus.CREATED]}</b>\n`;
+    text += `⏳ Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
     text += `✅ Berildi: <b>${counts[ExpenseStatus.ISSUED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
     if (!recentExpenses.length) {
-      text += '\nHozircha siz yaratgan chiqimlar mavjud emas.';
+      text += '\nHozircha siz uchun ko‘rinadigan chiqimlar mavjud emas.';
       return text;
     }
 
@@ -827,6 +845,7 @@ export class BotContentService {
 
     let text = '📋 <b>Mening chiqimlarim</b>\n\n';
     text += `🆕 Yaratildi: <b>${counts[ExpenseStatus.CREATED]}</b>\n`;
+    text += `⏳ Tasdiq kutilmoqda: <b>${counts[ExpenseStatus.PENDING_APPROVAL]}</b>\n`;
     text += `✅ Berildi: <b>${counts[ExpenseStatus.ISSUED]}</b>\n`;
     text += `❌ Bekor qilingan: <b>${counts[ExpenseStatus.CANCELLED]}</b>\n`;
 
@@ -1025,6 +1044,8 @@ export class BotContentService {
     switch (status) {
       case ExpenseStatus.CREATED:
         return '🆕 Yaratildi';
+      case ExpenseStatus.PENDING_APPROVAL:
+        return '⏳ Tasdiq kutilmoqda';
       case ExpenseStatus.ISSUED:
         return '✅ Berildi';
       case ExpenseStatus.CANCELLED:

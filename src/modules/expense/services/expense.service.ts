@@ -14,6 +14,7 @@ import {
   Repository,
   SelectQueryBuilder,
 } from 'typeorm';
+import { InlineKeyboard } from 'grammy';
 import Redis from 'ioredis';
 import { Product } from 'src/modules/product/entities/product.entity';
 import { ProductBatch } from 'src/modules/product/entities/product-batch.entity';
@@ -450,9 +451,53 @@ export class ExpenseService {
     }
 
     const dateValue =
-      typeof value === 'string' ? value.slice(0, 10) : this.getLocalDateString(value);
+      typeof value === 'string'
+        ? value.slice(0, 10)
+        : this.getLocalDateString(value);
 
     return dateValue < this.getLocalDateString();
+  }
+
+  private formatDateOnly(value?: Date | string | null): string {
+    if (!value) {
+      return "Ko'rsatilmagan";
+    }
+
+    if (typeof value === 'string') {
+      return value.slice(0, 10);
+    }
+
+    return this.getLocalDateString(value);
+  }
+
+  private async findPendingExpiredExpenseItemByBatchId(
+    manager: EntityManager,
+    batchId: string,
+  ) {
+    return manager
+      .getRepository(ExpenseItem)
+      .createQueryBuilder('item')
+      .innerJoinAndSelect('item.expense', 'expense')
+      .where('item.product_batch_id = :batchId', { batchId })
+      .andWhere('expense.type = :type', { type: ExpenseType.EXPIRED })
+      .andWhere('expense.status = :status', {
+        status: ExpenseStatus.PENDING_APPROVAL,
+      })
+      .getOne();
+  }
+
+  private ensurePendingExpiredExpense(expense: Expense) {
+    if (expense.type !== ExpenseType.EXPIRED) {
+      throw new BadRequestException(
+        "Faqat EXPIRED turidagi chiqim uchun bu amal ruxsat etilgan",
+      );
+    }
+
+    if (expense.status !== ExpenseStatus.PENDING_APPROVAL) {
+      throw new BadRequestException(
+        "Faqat 'PENDING_APPROVAL' statusdagi expired chiqim bilan ishlash mumkin",
+      );
+    }
   }
 
   async create(dto: CreateExpenseDto, actor: AuthUser) {
@@ -759,6 +804,256 @@ export class ExpenseService {
     return result;
   }
 
+  async approveExpiredExpense(id: string, actor: AuthUser) {
+    if (actor.role !== Role.ACCOUNTANT) {
+      throw new ForbiddenException(
+        'Faqat hisobchi muddati o`tgan batch chiqimini tasdiqlashi mumkin',
+      );
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const expenseRepo = manager.getRepository(Expense);
+
+      await this.lockExpenseForUpdate(manager, id);
+      const expense = await this.findById(id, actor, manager);
+      this.ensurePendingExpiredExpense(expense);
+
+      const affectedProductIds = new Set<string>();
+
+      for (const item of expense.items) {
+        if (!item.product || !item.warehouse || !item.product_batch_id) {
+          throw new BadRequestException(
+            'Expired chiqim itemida kerakli batch, product yoki warehouse topilmadi',
+          );
+        }
+
+        const batch = await this.lockBatchForUpdate(manager, item.product_batch_id);
+
+        if (
+          batch.product_id !== item.product.id ||
+          batch.warehouse_id !== item.warehouse.id
+        ) {
+          throw new BadRequestException(
+            `Tanlangan partiya (Batch: ${batch.id}) expense item ma'lumotlari bilan mos emas`,
+          );
+        }
+
+        if (!this.isExpiredDate(batch.expiration_date)) {
+          throw new BadRequestException(
+            `Partiya endi muddati o'tgan emas: ${item.product.name}`,
+          );
+        }
+
+        const requestedQty = Number(item.quantity);
+        const batchQty = Number(batch.quantity);
+
+        if (requestedQty > batchQty) {
+          throw new BadRequestException(
+            `Partiyada mahsulot yetarli emas: ${item.product.name}. Mavjud: ${batchQty}, kerak: ${requestedQty}`,
+          );
+        }
+
+        batch.quantity = Number((batchQty - requestedQty).toFixed(2));
+        if (batch.quantity <= 0 && !batch.depleted_at) {
+          batch.depleted_at = new Date();
+        } else if (batch.quantity > 0) {
+          batch.depleted_at = null;
+        }
+        await manager.getRepository(ProductBatch).save(batch);
+        affectedProductIds.add(item.product.id);
+      }
+
+      const sortedProductIds = Array.from(affectedProductIds).sort((a, b) =>
+        a.localeCompare(b),
+      );
+
+      for (const productId of sortedProductIds) {
+        const lockedProduct = await this.lockProductForUpdate(
+          manager,
+          productId,
+        );
+        await this.recalculateProductQuantity(manager, lockedProduct);
+      }
+
+      expense.status = ExpenseStatus.ISSUED;
+      expense.issued_by_id = actor.id;
+      expense.issued_at = new Date();
+      await expenseRepo.save(expense);
+
+      return {
+        message: "Muddati o'tgan batch chiqimi tasdiqlandi",
+        expense,
+      };
+    });
+
+    await this.invalidateDashboardCache();
+    await this.notifyAccountantsAboutExpiredExpenseApproved(result.expense).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Expired expense approve notification accountantlarga yuborilmadi: ${message}`,
+        );
+      },
+    );
+    return result;
+  }
+
+  async rejectExpiredExpense(id: string, actor: AuthUser) {
+    if (actor.role !== Role.ACCOUNTANT) {
+      throw new ForbiddenException(
+        'Faqat hisobchi muddati o`tgan batch chiqimini rad etishi mumkin',
+      );
+    }
+
+    const result = await this.dataSource.transaction(async (manager) => {
+      const expenseRepo = manager.getRepository(Expense);
+
+      await this.lockExpenseForUpdate(manager, id);
+      const expense = await this.findById(id, actor, manager);
+      this.ensurePendingExpiredExpense(expense);
+
+      expense.status = ExpenseStatus.CANCELLED;
+      expense.cancelled_by_id = actor.id;
+      expense.cancelled_at = new Date();
+      await expenseRepo.save(expense);
+
+      return {
+        message: "Muddati o'tgan batch chiqimi rad etildi",
+        expense,
+      };
+    });
+
+    await this.invalidateDashboardCache();
+    await this.notifyAccountantsAboutExpiredExpenseRejected(result.expense).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Expired expense reject notification accountantlarga yuborilmadi: ${message}`,
+        );
+      },
+    );
+    return result;
+  }
+
+  async handleExpiredDecisionFromBot(
+    expenseId: string,
+    action: 'approve' | 'reject',
+    accountantUserId: string | null,
+  ) {
+    if (!accountantUserId) {
+      throw new ForbiddenException("Foydalanuvchi bog'lanmagan");
+    }
+
+    if (action === 'approve') {
+      const result = await this.approveExpiredExpense(expenseId, {
+        id: accountantUserId,
+        role: Role.ACCOUNTANT,
+      } as AuthUser);
+      return result.expense;
+    }
+
+    const result = await this.rejectExpiredExpense(expenseId, {
+      id: accountantUserId,
+      role: Role.ACCOUNTANT,
+    } as AuthUser);
+    return result.expense;
+  }
+
+  async createPendingExpiredExpenseForBatch(batchId: string) {
+    const result = await this.dataSource.transaction(async (manager) => {
+      const expenseRepo = manager.getRepository(Expense);
+      const expenseItemRepo = manager.getRepository(ExpenseItem);
+      const productRepo = manager.getRepository(Product);
+      const warehouseRepo = manager.getRepository(Warehouse);
+
+      const batch = await this.lockBatchForUpdate(manager, batchId);
+
+      if (Number(batch.quantity) <= 0 || !this.isExpiredDate(batch.expiration_date)) {
+        return null;
+      }
+
+      const existingPending = await this.findPendingExpiredExpenseItemByBatchId(
+        manager,
+        batch.id,
+      );
+      if (existingPending) {
+        return null;
+      }
+
+      const [product, warehouse] = await Promise.all([
+        productRepo.findOne({ where: { id: batch.product_id } }),
+        warehouseRepo.findOne({ where: { id: batch.warehouse_id } }),
+      ]);
+
+      if (!product || !warehouse) {
+        throw new NotFoundException(
+          `Ma'lumot topilmadi: Product=${batch.product_id}, Warehouse=${batch.warehouse_id}`,
+        );
+      }
+
+      const quantity = Number(batch.quantity);
+      const totalPrice = Number(
+        (quantity * Number(batch.price_at_purchase)).toFixed(2),
+      );
+
+      const expenseNumber = await this.generateExpenseNumber(manager);
+      const createdExpense = await expenseRepo.save(
+        expenseRepo.create({
+          expense_number: expenseNumber,
+          status: ExpenseStatus.PENDING_APPROVAL,
+          type: ExpenseType.EXPIRED,
+          total_price: totalPrice,
+          staff_name: 'SYSTEM',
+          purpose:
+            "Muddati o'tgan batchni write-off qilish uchun accountant tasdig'i kutilmoqda",
+          manager_id: null,
+          issued_by_id: null,
+          issued_at: null,
+          cancelled_by_id: null,
+          cancelled_at: null,
+        }),
+      );
+
+      await expenseItemRepo.save(
+        expenseItemRepo.create({
+          expense: createdExpense,
+          product,
+          warehouse,
+          product_batch: batch,
+          product_batch_id: batch.id,
+          quantity,
+        }),
+      );
+
+      return expenseRepo.findOne({
+        where: { id: createdExpense.id },
+        relations: {
+          manager: true,
+          items: {
+            product: true,
+            warehouse: true,
+            product_batch: true,
+          },
+        },
+      });
+    });
+
+    if (!result) {
+      return null;
+    }
+
+    await this.invalidateDashboardCache();
+    await this.notifyAccountantsAboutExpiredApprovalRequired(result).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Expired expense approval notification accountantlarga yuborilmadi: ${message}`,
+        );
+      },
+    );
+    return result;
+  }
+
   async createSystemExpense(dto: {
     staff_name: string;
     purpose: string;
@@ -1016,6 +1311,63 @@ export class ExpenseService {
       `🧾 Kimga: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
       `📌 Status: <b>${expense.status}</b>\n` +
       `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>`;
+
+    await this.botService.sendToApprovedUsers(text, Role.ACCOUNTANT);
+  }
+
+  private buildExpiredExpenseItemsSummary(expense: Expense) {
+    return expense.items
+      .map((item) => {
+        const productName = item.product?.name ?? "Noma'lum mahsulot";
+        const expirationDate = this.formatDateOnly(
+          item.product_batch?.expiration_date,
+        );
+        return (
+          `• ${this.escapeHtml(productName)} - <b>${Number(item.quantity)}</b>` +
+          ` | srok: <b>${this.escapeHtml(expirationDate)}</b>`
+        );
+      })
+      .join('\n');
+  }
+
+  private async notifyAccountantsAboutExpiredApprovalRequired(expense: Expense) {
+    const keyboard = new InlineKeyboard()
+      .text('✅ Tasdiqlash', `expired_expense:approve:${expense.id}`)
+      .text('❌ Rad etish', `expired_expense:reject:${expense.id}`);
+
+    const text =
+      `⏳ <b>Muddati o'tgan batch uchun tasdiq kutilmoqda</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(this.getExpenseWarehouseName(expense))}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n\n` +
+      `📦 <b>Mahsulotlar:</b>\n${this.buildExpiredExpenseItemsSummary(expense)}`;
+
+    await this.botService.sendToApprovedUsers(text, Role.ACCOUNTANT, {
+      reply_markup: keyboard,
+    });
+  }
+
+  private async notifyAccountantsAboutExpiredExpenseApproved(expense: Expense) {
+    const text =
+      `✅ <b>Muddati o'tgan batch chiqimi tasdiqlandi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(this.getExpenseWarehouseName(expense))}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n\n` +
+      `📦 <b>Mahsulotlar:</b>\n${this.buildExpiredExpenseItemsSummary(expense)}`;
+
+    await this.botService.sendToApprovedUsers(text, Role.ACCOUNTANT);
+  }
+
+  private async notifyAccountantsAboutExpiredExpenseRejected(expense: Expense) {
+    const text =
+      `❌ <b>Muddati o'tgan batch chiqimi rad etildi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(this.getExpenseWarehouseName(expense))}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n\n` +
+      `📦 <b>Mahsulotlar:</b>\n${this.buildExpiredExpenseItemsSummary(expense)}`;
 
     await this.botService.sendToApprovedUsers(text, Role.ACCOUNTANT);
   }

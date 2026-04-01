@@ -225,6 +225,38 @@ export class ExpenseController {
     return this.expenseService.cancelExpense(id, req.user);
   }
 
+  @Post(':id/expired-approve')
+  @Roles(Role.ACCOUNTANT)
+  @ApiOperation({
+    summary:
+      'Muddati o`tgan batch chiqimini tasdiqlash (status: PENDING_APPROVAL -> ISSUED)',
+  })
+  @ApiOkResponse({ description: 'Muddati o`tgan batch chiqimi tasdiqlandi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat hisobchi kirishi mumkin' })
+  approveExpiredExpense(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.expenseService.approveExpiredExpense(id, req.user);
+  }
+
+  @Post(':id/expired-reject')
+  @Roles(Role.ACCOUNTANT)
+  @ApiOperation({
+    summary:
+      'Muddati o`tgan batch chiqimini rad etish (status: PENDING_APPROVAL -> CANCELLED)',
+  })
+  @ApiOkResponse({ description: 'Muddati o`tgan batch chiqimi rad etildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({ description: 'Faqat hisobchi kirishi mumkin' })
+  rejectExpiredExpense(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
+  ) {
+    return this.expenseService.rejectExpiredExpense(id, req.user);
+  }
+
   private buildDefaultFilename(prefix: string) {
     const now = new Date();
     const year = now.getFullYear();

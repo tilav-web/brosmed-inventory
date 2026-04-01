@@ -1,10 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
 import { ExpenseService } from 'src/modules/expense/services/expense.service';
-import { ExpenseType } from 'src/modules/expense/enums/expense-type.enum';
 import { Product } from '../entities/product.entity';
 import { ProductBatch } from '../entities/product-batch.entity';
 import { ProductStatus } from '../enums/product-status.enum';
@@ -19,7 +17,6 @@ export class ProductStatusSchedulerService {
     @InjectRepository(ProductBatch)
     private readonly productBatchRepository: Repository<ProductBatch>,
     private readonly expenseService: ExpenseService,
-    private readonly configService: ConfigService,
   ) {}
 
   @Cron(CronExpression.EVERY_DAY_AT_1AM)
@@ -27,13 +24,9 @@ export class ProductStatusSchedulerService {
     const today = this.getTodayDateString();
 
     try {
-      if (this.shouldAutoWriteOffExpiredBatches()) {
-        await this.writeOffExpiredBatches(today);
-      } else {
-        await this.logExpiredBatchesPendingReview(today);
-      }
+      await this.createExpiredApprovalRequests(today);
     } catch (error) {
-      this.logger.error('Expired write-off failed', error);
+      this.logger.error('Expired batch approval request creation failed', error);
     }
 
     try {
@@ -68,59 +61,35 @@ export class ProductStatusSchedulerService {
     return `${year}-${month}-${day}`;
   }
 
-  private shouldAutoWriteOffExpiredBatches() {
-    return (
-      this.configService.get<string>('AUTO_WRITE_OFF_EXPIRED_BATCHES', 'false') ===
-      'true'
-    );
-  }
-
-  private async logExpiredBatchesPendingReview(today: string) {
-    const count = await this.productBatchRepository
-      .createQueryBuilder('batch')
-      .where('batch.quantity > 0')
-      .andWhere('batch.expiration_date IS NOT NULL')
-      .andWhere('batch.expiration_date < :today', { today })
-      .getCount();
-
-    if (count > 0) {
-      this.logger.warn(
-        `Auto write-off o‘chiq. Review kutayotgan expired batchlar soni: ${count}`,
-      );
-    }
-  }
-
-  private async writeOffExpiredBatches(today: string) {
+  private async createExpiredApprovalRequests(today: string) {
     const expiredBatches = await this.productBatchRepository
       .createQueryBuilder('batch')
+      .select('batch.id', 'id')
       .where('batch.quantity > 0')
       .andWhere('batch.expiration_date IS NOT NULL')
       .andWhere('batch.expiration_date < :today', { today })
-      .getMany();
+      .getRawMany<{ id: string }>();
 
-    if (expiredBatches.length === 0) return;
-
-    for (const batch of expiredBatches) {
-      const items = [
-        {
-          product_id: batch.product_id,
-          warehouse_id: batch.warehouse_id,
-          product_batch_id: batch.id,
-          quantity: Number(batch.quantity),
-        },
-      ];
-
-      await this.expenseService.createSystemExpense({
-        staff_name: 'SYSTEM',
-        purpose: 'Auto: expired batch write-off',
-        type: ExpenseType.EXPIRED,
-        items,
-      });
+    if (expiredBatches.length === 0) {
+      return;
     }
 
-    this.logger.log(
-      `Auto write-off completed for ${expiredBatches.length} batches.`,
-    );
+    let createdCount = 0;
+
+    for (const batch of expiredBatches) {
+      const expense = await this.expenseService.createPendingExpiredExpenseForBatch(
+        batch.id,
+      );
+      if (expense) {
+        createdCount += 1;
+      }
+    }
+
+    if (createdCount > 0) {
+      this.logger.log(
+        `Expired batch approval requests created: ${createdCount}`,
+      );
+    }
   }
 
   private async refreshProductStatuses(today: string) {
