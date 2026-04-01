@@ -1,6 +1,8 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Logger,
+  forwardRef,
   Inject,
   Injectable,
   NotFoundException,
@@ -19,6 +21,7 @@ import { User } from 'src/modules/user/entities/user.entity';
 import { Role } from 'src/modules/user/enums/role.enum';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { AuthUser } from 'src/modules/auth/interfaces/auth-user.interface';
+import { BotService } from 'src/modules/bot/bot.service';
 import { CreateExpenseDto } from '../dto/create-expense.dto';
 import { ListExpensesQueryDto } from '../dto/list-expenses-query.dto';
 import { ExpenseStatus } from '../enums/expense-status.enum';
@@ -41,6 +44,8 @@ export interface ReceiptItem {
 
 @Injectable()
 export class ExpenseService {
+  private readonly logger = new Logger(ExpenseService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(Expense)
@@ -55,6 +60,8 @@ export class ExpenseService {
     private readonly warehouseRepository: Repository<Warehouse>,
     @Inject('REDIS_CLIENT')
     private readonly redis: Redis,
+    @Inject(forwardRef(() => BotService))
+    private readonly botService: BotService,
   ) {}
 
   private async getAssignedWarehouseForUser(
@@ -606,6 +613,14 @@ export class ExpenseService {
     });
 
     await this.invalidateDashboardCache();
+    await this.notifyAccountantsAboutExpenseCreated(result.expense).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Expense create notification accountantlarga yuborilmadi: ${message}`,
+        );
+      },
+    );
     return result;
   }
 
@@ -640,6 +655,14 @@ export class ExpenseService {
     });
 
     await this.invalidateDashboardCache();
+    await this.notifyAccountantsAboutExpenseIssued(result.expense).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Expense issue notification accountantlarga yuborilmadi: ${message}`,
+        );
+      },
+    );
     return result;
   }
 
@@ -703,6 +726,14 @@ export class ExpenseService {
     });
 
     await this.invalidateDashboardCache();
+    await this.notifyAccountantsAboutExpenseCancelled(result.expense).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(
+          `Expense cancel notification accountantlarga yuborilmadi: ${message}`,
+        );
+      },
+    );
     return result;
   }
 
@@ -896,5 +927,90 @@ export class ExpenseService {
       'expenses:dashboard:summary',
       'expenses:dashboard:overview',
     );
+  }
+
+  private buildExpenseItemsSummary(expense: Expense) {
+    return expense.items
+      .map((item) => {
+        const productName = item.product?.name ?? "Noma'lum mahsulot";
+        return `• ${this.escapeHtml(productName)} - <b>${Number(item.quantity)}</b>`;
+      })
+      .join('\n');
+  }
+
+  private getExpenseWarehouseName(expense: Expense) {
+    return (
+      expense.items.find((item) => item.warehouse?.name)?.warehouse?.name ??
+      "Noma'lum warehouse"
+    );
+  }
+
+  private getExpenseManagerName(expense: Expense) {
+    if (!expense.manager) {
+      return "Noma'lum";
+    }
+
+    const fullName = [expense.manager.first_name, expense.manager.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return fullName || expense.manager.username;
+  }
+
+  private async notifyAccountantsAboutExpenseCreated(expense: Expense) {
+    const text =
+      `📤 <b>Yangi chiqim yaratildi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(this.getExpenseWarehouseName(expense))}</b>\n` +
+      `👤 Warehouse user: <b>${this.escapeHtml(this.getExpenseManagerName(expense))}</b>\n` +
+      `🧾 Kimga: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>\n\n` +
+      `📦 <b>Mahsulotlar:</b>\n${this.buildExpenseItemsSummary(expense)}`;
+
+    await this.botService.sendToApprovedUsers(text, Role.ACCOUNTANT);
+  }
+
+  private async notifyAccountantsAboutExpenseIssued(expense: Expense) {
+    const text =
+      `✅ <b>Chiqim berildi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(this.getExpenseWarehouseName(expense))}</b>\n` +
+      `👤 Warehouse user: <b>${this.escapeHtml(this.getExpenseManagerName(expense))}</b>\n` +
+      `🧾 Kimga: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>`;
+
+    await this.botService.sendToApprovedUsers(text, Role.ACCOUNTANT);
+  }
+
+  private async notifyAccountantsAboutExpenseCancelled(expense: Expense) {
+    const text =
+      `❌ <b>Chiqim bekor qilindi</b>\n\n` +
+      `📄 Hujjat: <b>${expense.expense_number}</b>\n` +
+      `🏢 Warehouse: <b>${this.escapeHtml(this.getExpenseWarehouseName(expense))}</b>\n` +
+      `👤 Warehouse user: <b>${this.escapeHtml(this.getExpenseManagerName(expense))}</b>\n` +
+      `🧾 Kimga: <b>${this.escapeHtml(expense.staff_name)}</b>\n` +
+      `📌 Status: <b>${expense.status}</b>\n` +
+      `💰 Summa: <b>${this.formatCurrency(Number(expense.total_price))}</b>`;
+
+    await this.botService.sendToApprovedUsers(text, Role.ACCOUNTANT);
+  }
+
+  private formatCurrency(value: number) {
+    return `${new Intl.NumberFormat('uz-UZ', {
+      minimumFractionDigits: value % 1 === 0 ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(Number(value.toFixed(2)))} sum`;
+  }
+
+  private escapeHtml(value: string) {
+    return value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
   }
 }
