@@ -181,7 +181,35 @@ export class SeedService implements OnApplicationBootstrap {
       role: string;
     }>('01-users.json');
 
+    const defaultAdminUsername = this.configService.get<string>(
+      'ADMIN_USERNAME',
+      'nodir_hamrayev',
+    );
+    const defaultAdmin =
+      (await this.userRepo.findOne({
+        where: { username: defaultAdminUsername },
+      })) ??
+      (await this.userRepo.findOne({
+        where: { role: Role.ADMIN },
+      }));
+
+    if (!defaultAdmin) {
+      throw new Error(
+        ".env dagi admin topilmadi. Seed dan oldin default admin yaratilishi kerak",
+      );
+    }
+
+    // Legacy seed referenslari hali ham "admin" usernameidan foydalanadi.
+    // Ular uchun alohida admin yaratmaymiz, balki .env dagi yagona adminni alias qilamiz.
+    this.users.set(defaultAdmin.username, defaultAdmin);
+    this.users.set('admin', defaultAdmin);
+
     for (const row of rows) {
+      if ((row.role as Role) === Role.ADMIN) {
+        this.users.set(row.username, defaultAdmin);
+        continue;
+      }
+
       const existing = await this.userRepo.findOne({
         where: { username: row.username },
       });
@@ -200,7 +228,10 @@ export class SeedService implements OnApplicationBootstrap {
       );
       this.users.set(user.username, user);
     }
-    this.logger.log(`✓ ${this.users.size} ta user yaratildi`);
+    const uniqueUserCount = new Set(
+      Array.from(this.users.values()).map((user) => user.id),
+    ).size;
+    this.logger.log(`✓ ${uniqueUserCount} ta user yaratildi`);
   }
 
   // ─── 02 Units ─────────────────────────────────────────────

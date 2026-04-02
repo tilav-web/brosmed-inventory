@@ -1,12 +1,5 @@
 [
   {
-    "username": "admin",
-    "password": "admin12345",
-    "first_name": "System",
-    "last_name": "Admin",
-    "role": "admin"
-  },
-  {
     "username": "warehouse1",
     "password": "warehouse12345",
     "first_name": "Ali",
