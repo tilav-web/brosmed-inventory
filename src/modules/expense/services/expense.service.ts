@@ -500,6 +500,18 @@ export class ExpenseService {
     }
   }
 
+  private ensureWarehouseOwnsExpense(expense: Expense, actor: AuthUser) {
+    if (actor.role !== Role.WAREHOUSE) {
+      return;
+    }
+
+    if (!expense.manager_id || expense.manager_id !== actor.id) {
+      throw new ForbiddenException(
+        "Warehouse user faqat o'zi yaratgan chiqimni bekor qila oladi",
+      );
+    }
+  }
+
   async create(dto: CreateExpenseDto, actor: AuthUser) {
     if (actor.role !== Role.WAREHOUSE) {
       throw new ForbiddenException('Faqat warehouse user chiqim yarata oladi');
@@ -734,11 +746,18 @@ export class ExpenseService {
   }
 
   async cancelExpense(id: string, actor: AuthUser) {
+    if (![Role.ADMIN, Role.WAREHOUSE].includes(actor.role)) {
+      throw new ForbiddenException(
+        'Faqat admin yoki warehouse user chiqimni bekor qila oladi',
+      );
+    }
+
     const result = await this.dataSource.transaction(async (manager) => {
       const expenseRepo = manager.getRepository(Expense);
 
       await this.lockExpenseForUpdate(manager, id);
       const expense = await this.findById(id, actor, manager);
+      this.ensureWarehouseOwnsExpense(expense, actor);
 
       if (expense.status !== ExpenseStatus.CREATED) {
         throw new BadRequestException(

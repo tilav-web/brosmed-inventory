@@ -213,11 +213,16 @@ export class ExpenseController {
   }
 
   @Post(':id/cancel')
-  @Roles(Role.ADMIN)
-  @ApiOperation({ summary: 'Chiqimni bekor qilish (faqat CREATED dagini)' })
+  @Roles(Role.ADMIN, Role.WAREHOUSE)
+  @ApiOperation({
+    summary:
+      "Chiqimni bekor qilish: admin har qanday CREATED chiqimni, warehouse esa o'zi yaratgan CREATED chiqimni bekor qiladi",
+  })
   @ApiOkResponse({ description: 'Chiqim bekor qilindi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
-  @ApiForbiddenResponse({ description: 'Faqat admin kirishi mumkin' })
+  @ApiForbiddenResponse({
+    description: 'Faqat admin yoki warehouse kirishi mumkin',
+  })
   cancelExpense(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: { user: AuthUser },
