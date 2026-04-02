@@ -1,22 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { existsSync } from 'node:fs';
+import { existsSync, mkdirSync } from 'node:fs';
+import { writeFile } from 'node:fs/promises';
+import { dirname, join } from 'node:path';
 import PDFDocument from 'pdfkit';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import ExcelJS from 'exceljs';
 import { ExpenseItem } from '../entities/expense-item.entity';
 import { Expense } from '../entities/expense.entity';
 import { ListExpenseItemsQueryDto } from '../dto/list-expense-items-query.dto';
+import { ExpenseReceiptQueueService } from './expense-receipt-queue.service';
 
 @Injectable()
 export class ExpenseExportService {
   private readonly logger = new Logger(ExpenseExportService.name);
   private readonly pdfFontPath = this.resolvePdfFontPath();
+  private readonly serverUrl = process.env.SERVER_URL;
+  private readonly uploadsPath = join(process.cwd(), 'uploads');
+  private readonly receiptTtlMs = 60_000;
 
   constructor(
     @InjectRepository(ExpenseItem)
     private readonly expenseItemRepository: Repository<ExpenseItem>,
+    private readonly expenseReceiptQueueService: ExpenseReceiptQueueService,
   ) {
+    if (!existsSync(this.uploadsPath)) {
+      mkdirSync(this.uploadsPath, { recursive: true });
+    }
+
     if (!this.pdfFontPath) {
       this.logger.warn(
         'PDF font file topilmadi. Expense receipt PDF Helvetica bilan davom etadi, Unicode matn soddalashtirilishi mumkin.',
@@ -74,6 +85,31 @@ export class ExpenseExportService {
       buffer,
       filename: this.buildPdfFilename(expense.expense_number),
       contentType: 'application/pdf',
+    };
+  }
+
+  async createOrRefreshExpenseReceiptLink(expense: Expense) {
+    const fileKey = this.buildExpenseReceiptKey(expense);
+    const absolutePath = this.resolveAbsolutePath(fileKey);
+
+    if (!existsSync(dirname(absolutePath))) {
+      mkdirSync(dirname(absolutePath), { recursive: true });
+    }
+
+    if (!existsSync(absolutePath)) {
+      const buffer = await this.buildExpenseReceiptPdfBuffer(expense);
+      await writeFile(absolutePath, buffer);
+    }
+
+    await this.expenseReceiptQueueService.scheduleCleanup(
+      fileKey,
+      this.receiptTtlMs,
+    );
+
+    return {
+      file_key: fileKey,
+      url: this.getPublicUrl(fileKey),
+      expires_at: new Date(Date.now() + this.receiptTtlMs).toISOString(),
     };
   }
 
@@ -387,5 +423,24 @@ export class ExpenseExportService {
   private buildPdfFilename(expenseNumber: string) {
     const safeExpenseNumber = expenseNumber.replace(/[^A-Za-z0-9_-]/g, '_');
     return `expense_receipt_${safeExpenseNumber}.pdf`;
+  }
+
+  private buildExpenseReceiptKey(expense: Pick<Expense, 'id' | 'expense_number'>) {
+    return `expense-receipts/${expense.id}/${this.buildPdfFilename(expense.expense_number)}`;
+  }
+
+  private resolveAbsolutePath(fileKey: string) {
+    return join(this.uploadsPath, fileKey);
+  }
+
+  private getPublicUrl(fileKey: string) {
+    const normalized = fileKey.replace(/^\/+/, '').replace(/^uploads\//, '');
+    const baseUrl = (this.serverUrl || '').replace(/\/+$/, '');
+
+    if (!baseUrl) {
+      return `/uploads/${normalized}`;
+    }
+
+    return `${baseUrl}/uploads/${normalized}`;
   }
 }

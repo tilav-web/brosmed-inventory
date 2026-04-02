@@ -18,7 +18,6 @@ import {
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
-  ApiProduces,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -167,6 +166,35 @@ export class ExpenseController {
     return this.expenseService.getWarehouseStats(query);
   }
 
+  @Get(':id/receipt')
+  @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
+  @ApiOperation({
+    summary:
+      "Expense receipt PDF linkini olish. Fayl yo'q bo'lsa qayta yaratiladi",
+  })
+  @ApiOkResponse({ description: 'Expense receipt linki qaytarildi' })
+  @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
+  @ApiForbiddenResponse({
+    description: 'Faqat admin/warehouse/hisobchi kirishi mumkin',
+  })
+  async getReceiptLink(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: AuthUser },
+  ) {
+    const expense = await this.expenseService.findById(id, req.user);
+    const receiptFile =
+      await this.expenseExportService.createOrRefreshExpenseReceiptLink(
+        expense,
+      );
+
+    return {
+      expense_id: expense.id,
+      expense_number: expense.expense_number,
+      receipt_url: receiptFile.url,
+      expires_at: receiptFile.expires_at,
+    };
+  }
+
   @Get(':id')
   @Roles(Role.ADMIN, Role.WAREHOUSE, Role.ACCOUNTANT)
   @ApiOperation({ summary: "Bitta expense ni id bo'yicha olish" })
@@ -188,9 +216,10 @@ export class ExpenseController {
     summary:
       "Chiqim yaratish: warehouse user o'z omboridagi mahsulotlarni chiqim qiladi",
   })
-  @ApiProduces('application/pdf')
   @ApiBody({ type: CreateExpenseDto })
-  @ApiOkResponse({ description: 'Expense yaratildi va PDF receipt qaytarildi' })
+  @ApiOkResponse({
+    description: 'Expense yaratildi va vaqtinchalik receipt link qaytarildi',
+  })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({
     description: 'Faqat warehouse kirishi mumkin',
@@ -198,20 +227,20 @@ export class ExpenseController {
   async create(
     @Body() dto: CreateExpenseDto,
     @Req() req: { user: AuthUser },
-    @Res() res: Response,
   ) {
     const result = await this.expenseService.create(dto, req.user);
-    const file = await this.expenseExportService.buildExpenseReceiptPdf(
-      result.expense,
-    );
+    const receiptFile =
+      await this.expenseExportService.createOrRefreshExpenseReceiptLink(
+        result.expense,
+      );
 
-    res.setHeader('Content-Type', file.contentType);
-    res.setHeader(
-      'Content-Disposition',
-      `attachment; filename="${file.filename}"`,
-    );
-
-    return res.status(201).send(file.buffer);
+    return {
+      ...result,
+      receipt_file: {
+        url: receiptFile.url,
+        expires_at: receiptFile.expires_at,
+      },
+    };
   }
 
   @Post(':id/issue')
