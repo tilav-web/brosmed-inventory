@@ -196,6 +196,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     options?: { reply_markup?: InlineKeyboard },
   ): Promise<boolean> {
     if (!this.bot) {
+      this.logger.warn(
+        `Bot initialized emas. Xabar yuborilmadi. telegramId=${telegramId}`,
+      );
       return false;
     }
 
@@ -208,7 +211,29 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       if (error instanceof GrammyError && error.error_code === 403) {
         await this.botUserService.markAsBlocked(telegramId);
+        this.logger.warn(
+          `User ${telegramId} botni bloklagan yoki chat yopiq. status=blocked`,
+        );
+        return false;
       }
+
+      if (error instanceof GrammyError) {
+        this.logger.error(
+          `Telegram sendMessage xatosi [${error.error_code}] telegramId=${telegramId}: ${error.description ?? error.message}`,
+        );
+        return false;
+      }
+
+      if (error instanceof HttpError) {
+        this.logger.error(
+          `Telegram sendMessage HTTP xatosi telegramId=${telegramId}: ${error.message}`,
+        );
+        return false;
+      }
+
+      this.logger.error(
+        `sendMessage noma'lum xatolik telegramId=${telegramId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return false;
     }
   }
@@ -219,15 +244,39 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     options?: { reply_markup?: InlineKeyboard },
   ): Promise<number> {
     if (!this.bot) {
+      this.logger.warn(
+        `Bot initialized emas. Bulk xabar yuborilmadi. role=${role ?? 'all'}`,
+      );
       return 0;
     }
 
     const users = await this.botUserService.getApprovedUsers(role);
+    if (users.length === 0) {
+      this.logger.warn(
+        `Approved active bot user topilmadi. role=${role ?? 'all'}`,
+      );
+      return 0;
+    }
+
     let sent = 0;
 
     for (const user of users) {
       const success = await this.sendMessage(user.telegram_id, text, options);
       if (success) sent++;
+    }
+
+    if (sent === 0) {
+      this.logger.warn(
+        `Bulk xabar yuborilmadi. role=${role ?? 'all'}, recipients=${users.length}, sent=0`,
+      );
+    } else if (sent < users.length) {
+      this.logger.warn(
+        `Bulk xabar qisman yuborildi. role=${role ?? 'all'}, recipients=${users.length}, sent=${sent}`,
+      );
+    } else {
+      this.logger.log(
+        `Bulk xabar yuborildi. role=${role ?? 'all'}, recipients=${users.length}, sent=${sent}`,
+      );
     }
 
     return sent;
@@ -240,6 +289,9 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     caption?: string,
   ): Promise<boolean> {
     if (!this.bot) {
+      this.logger.warn(
+        `Bot initialized emas. Hujjat yuborilmadi. telegramId=${telegramId}`,
+      );
       return false;
     }
 
@@ -256,7 +308,29 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     } catch (error) {
       if (error instanceof GrammyError && error.error_code === 403) {
         await this.botUserService.markAsBlocked(telegramId);
+        this.logger.warn(
+          `User ${telegramId} botni bloklagan yoki chat yopiq. status=blocked`,
+        );
+        return false;
       }
+
+      if (error instanceof GrammyError) {
+        this.logger.error(
+          `Telegram sendDocument xatosi [${error.error_code}] telegramId=${telegramId}: ${error.description ?? error.message}`,
+        );
+        return false;
+      }
+
+      if (error instanceof HttpError) {
+        this.logger.error(
+          `Telegram sendDocument HTTP xatosi telegramId=${telegramId}: ${error.message}`,
+        );
+        return false;
+      }
+
+      this.logger.error(
+        `sendDocument noma'lum xatolik telegramId=${telegramId}: ${error instanceof Error ? error.message : String(error)}`,
+      );
       return false;
     }
   }
@@ -268,10 +342,18 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     role: Role = Role.ADMIN,
   ): Promise<number> {
     if (!this.bot) {
+      this.logger.warn(
+        `Bot initialized emas. Bulk hujjat yuborilmadi. role=${role}`,
+      );
       return 0;
     }
 
     const users = await this.botUserService.getApprovedUsers(role);
+    if (users.length === 0) {
+      this.logger.warn(`Approved active bot user topilmadi. role=${role}`);
+      return 0;
+    }
+
     let sent = 0;
 
     for (const user of users) {
@@ -282,6 +364,20 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
         caption,
       );
       if (success) sent++;
+    }
+
+    if (sent === 0) {
+      this.logger.warn(
+        `Bulk hujjat yuborilmadi. role=${role}, recipients=${users.length}, sent=0`,
+      );
+    } else if (sent < users.length) {
+      this.logger.warn(
+        `Bulk hujjat qisman yuborildi. role=${role}, recipients=${users.length}, sent=${sent}`,
+      );
+    } else {
+      this.logger.log(
+        `Bulk hujjat yuborildi. role=${role}, recipients=${users.length}, sent=${sent}`,
+      );
     }
 
     return sent;

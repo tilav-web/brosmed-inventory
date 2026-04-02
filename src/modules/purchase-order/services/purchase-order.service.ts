@@ -107,13 +107,17 @@ export class PurchaseOrderService {
 
   private ensureOrderVisibleToUser(order: PurchaseOrder, user: AuthUser) {
     if (user.role === Role.ACCOUNTANT && order.created_by_id !== user.id) {
-      throw new ForbiddenException("Siz faqat o'zingiz yaratgan xaridlarni ko'ra olasiz");
+      throw new ForbiddenException(
+        "Siz faqat o'zingiz yaratgan xaridlarni ko'ra olasiz",
+      );
     }
   }
 
   private ensureAccountantOwnsOrder(order: PurchaseOrder, userId: string) {
     if (order.created_by_id !== userId) {
-      throw new ForbiddenException("Siz faqat o'zingiz yaratgan xaridni boshqara olasiz");
+      throw new ForbiddenException(
+        "Siz faqat o'zingiz yaratgan xaridni boshqara olasiz",
+      );
     }
   }
 
@@ -270,7 +274,9 @@ export class PurchaseOrderService {
 
   async create(dto: CreatePurchaseOrderDto, actor: AuthUser) {
     if (actor.role !== Role.ACCOUNTANT) {
-      throw new ForbiddenException('Faqat hisobchi purchase order yarata oladi');
+      throw new ForbiddenException(
+        'Faqat hisobchi purchase order yarata oladi',
+      );
     }
 
     const result = await this.dataSource.transaction(async (manager) => {
@@ -388,9 +394,7 @@ export class PurchaseOrderService {
     }
 
     if (this.hasAnyNonStatusUpdates(dto)) {
-      throw new BadRequestException(
-        'Admin faqat statusni yangilashi mumkin',
-      );
+      throw new BadRequestException('Admin faqat statusni yangilashi mumkin');
     }
 
     const result = await this.dataSource.transaction(async (manager) => {
@@ -440,9 +444,7 @@ export class PurchaseOrderService {
       orderId,
       {
         status:
-          action === 'approve'
-            ? OrderStatus.CONFIRMED
-            : OrderStatus.CANCELLED,
+          action === 'approve' ? OrderStatus.CONFIRMED : OrderStatus.CANCELLED,
       },
       adminUserId,
     );
@@ -510,7 +512,7 @@ export class PurchaseOrderService {
             ? dto.delivery_date
               ? new Date(String(dto.delivery_date))
               : null
-            : order.delivery_date ?? new Date();
+            : (order.delivery_date ?? new Date());
 
         await orderRepo.save(order);
         return this.findById(order.id, undefined, manager);
@@ -666,7 +668,7 @@ export class PurchaseOrderService {
 
       if (order.status !== OrderStatus.PENDING || order.is_received) {
         throw new BadRequestException(
-          "Faqat PENDING statusdagi buyurtmani o`chirish mumkin",
+          'Faqat PENDING statusdagi buyurtmani o`chirish mumkin',
         );
       }
 
@@ -685,7 +687,11 @@ export class PurchaseOrderService {
     return result;
   }
 
-  async receiveOrder(id: string, dto: ReceivePurchaseOrderDto, actor: AuthUser) {
+  async receiveOrder(
+    id: string,
+    dto: ReceivePurchaseOrderDto,
+    actor: AuthUser,
+  ) {
     if (actor.role !== Role.ACCOUNTANT) {
       throw new ForbiddenException('Faqat hisobchi kirimni qabul qila oladi');
     }
@@ -811,10 +817,12 @@ export class PurchaseOrderService {
     });
 
     await this.invalidateRelatedCaches();
-    await this.notifyAdminsAboutReceivedOrder(result).catch((error: unknown) => {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Kirim bot notification yuborilmadi: ${message}`);
-    });
+    await this.notifyAdminsAboutReceivedOrder(result).catch(
+      (error: unknown) => {
+        const message = error instanceof Error ? error.message : String(error);
+        this.logger.warn(`Kirim bot notification yuborilmadi: ${message}`);
+      },
+    );
     return result;
   }
 
@@ -834,11 +842,10 @@ export class PurchaseOrderService {
         })
       : null;
 
-    const receiverName =
-      receiver
-        ? [receiver.first_name, receiver.last_name].filter(Boolean).join(' ') ||
-          receiver.username
-        : (order.received_by_id ?? "Noma'lum");
+    const receiverName = receiver
+      ? [receiver.first_name, receiver.last_name].filter(Boolean).join(' ') ||
+        receiver.username
+      : (order.received_by_id ?? "Noma'lum");
 
     const text =
       `📥 <b>Kirim qabul qilindi</b>\n\n` +
@@ -858,11 +865,10 @@ export class PurchaseOrderService {
         })
       : null;
 
-    const creatorName =
-      creator
-        ? [creator.first_name, creator.last_name].filter(Boolean).join(' ') ||
-          creator.username
-        : (order.created_by_id ?? "Noma'lum");
+    const creatorName = creator
+      ? [creator.first_name, creator.last_name].filter(Boolean).join(' ') ||
+        creator.username
+      : (order.created_by_id ?? "Noma'lum");
 
     const text =
       `🛒 <b>Yangi xarid so'rovi</b>\n\n` +
@@ -877,9 +883,20 @@ export class PurchaseOrderService {
       .text('✅ Tasdiqlash', `purchase_order:approve:${order.id}`)
       .text('❌ Bekor qilish', `purchase_order:cancel:${order.id}`);
 
-    await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
+    const sent = await this.botService.sendToApprovedUsers(text, Role.ADMIN, {
       reply_markup: keyboard,
     });
+
+    if (sent === 0) {
+      this.logger.warn(
+        `Yangi purchase order uchun admin bot notification yuborilmadi. order=${order.order_number}, sent=0`,
+      );
+      return;
+    }
+
+    this.logger.log(
+      `Yangi purchase order uchun admin bot notification yuborildi. order=${order.order_number}, sent=${sent}`,
+    );
   }
 
   private async notifyAccountantAboutDecision(order: PurchaseOrder) {

@@ -18,6 +18,7 @@ import {
   ApiForbiddenResponse,
   ApiOkResponse,
   ApiOperation,
+  ApiProduces,
   ApiTags,
   ApiUnauthorizedResponse,
 } from '@nestjs/swagger';
@@ -187,14 +188,30 @@ export class ExpenseController {
     summary:
       "Chiqim yaratish: warehouse user o'z omboridagi mahsulotlarni chiqim qiladi",
   })
+  @ApiProduces('application/pdf')
   @ApiBody({ type: CreateExpenseDto })
-  @ApiOkResponse({ description: 'Expense yaratildi va receipt qaytarildi' })
+  @ApiOkResponse({ description: 'Expense yaratildi va PDF receipt qaytarildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({
     description: 'Faqat warehouse kirishi mumkin',
   })
-  create(@Body() dto: CreateExpenseDto, @Req() req: { user: AuthUser }) {
-    return this.expenseService.create(dto, req.user);
+  async create(
+    @Body() dto: CreateExpenseDto,
+    @Req() req: { user: AuthUser },
+    @Res() res: Response,
+  ) {
+    const result = await this.expenseService.create(dto, req.user);
+    const file = await this.expenseExportService.buildExpenseReceiptPdf(
+      result.expense,
+    );
+
+    res.setHeader('Content-Type', file.contentType);
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${file.filename}"`,
+    );
+
+    return res.status(201).send(file.buffer);
   }
 
   @Post(':id/issue')
