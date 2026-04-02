@@ -30,7 +30,7 @@ export class BotUser {
   @Column({
     type: 'enum',
     enum: BotUserStatus,
-    default: BotUserStatus.PENDING,
+    default: BotUserStatus.ACTIVE,
   })
   status: BotUserStatus;
 

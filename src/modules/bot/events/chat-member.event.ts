@@ -16,12 +16,15 @@ export class ChatMemberEvent {
 
       const status = ctx.myChatMember.new_chat_member.status;
 
-      if (status === 'kicked') {
+      if (status === 'kicked' || status === 'left') {
         await this.botUserService.markAsBlocked(telegramId);
         this.logger.warn(`User ${telegramId} botni blokladi. status: blocked`);
       } else if (status === 'member' || status === 'administrator') {
         const user = await this.botUserService.findByTelegramId(telegramId);
-        if (user && user.status === BotUserStatus.BLOCKED) {
+        if (
+          user &&
+          [BotUserStatus.BLOCKED, BotUserStatus.PENDING].includes(user.status)
+        ) {
           user.status = BotUserStatus.ACTIVE;
           await this.botUserService.save(user);
           this.logger.log(

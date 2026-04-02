@@ -1071,7 +1071,7 @@ export class BotContentService {
       case BotUserStatus.ACTIVE:
         return 'faol';
       case BotUserStatus.PENDING:
-        return 'kutilyapti';
+        return 'faol';
       case BotUserStatus.BLOCKED:
         return 'bloklangan';
       default:

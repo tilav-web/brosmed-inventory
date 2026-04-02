@@ -455,6 +455,8 @@ export class PurchaseOrderService {
     dto: UpdatePurchaseOrderDto,
     accountantUserId: string,
   ) {
+    let notifyAdminsContext: 'updated' | 'resubmitted' | null = null;
+
     const result = await this.dataSource.transaction(async (manager) => {
       const orderRepo = manager.getRepository(PurchaseOrder);
       const orderItemRepo = manager.getRepository(OrderItem);
@@ -487,25 +489,31 @@ export class PurchaseOrderService {
         );
       }
 
+      const wantsPendingStatus = dto.status === OrderStatus.PENDING;
+      const hasEditableUpdates = this.hasAnyNonStatusUpdates(dto);
+      const wasCancelled = order.status === OrderStatus.CANCELLED;
+
       if (dto.status !== undefined) {
-        if (dto.status !== OrderStatus.DELIVERED) {
+        if (![OrderStatus.DELIVERED, OrderStatus.PENDING].includes(dto.status)) {
           throw new BadRequestException(
-            'Hisobchi faqat delivered holatiga o`tkaza oladi',
+            'Hisobchi faqat delivered yoki pending holatiga o`tkaza oladi',
           );
         }
 
-        if (this.hasStructuralUpdates(dto)) {
+        if (dto.status === OrderStatus.DELIVERED && this.hasStructuralUpdates(dto)) {
           throw new BadRequestException(
             'Delivered qilishda supplier, warehouse, sana yoki itemlarni o`zgartirib bo`lmaydi',
           );
         }
 
-        if (order.status !== OrderStatus.CONFIRMED) {
+        if (dto.status === OrderStatus.DELIVERED && order.status !== OrderStatus.CONFIRMED) {
           throw new BadRequestException(
             'Faqat CONFIRMED statusdagi buyurtmani delivered qilish mumkin',
           );
         }
+      }
 
+      if (dto.status === OrderStatus.DELIVERED) {
         order.status = OrderStatus.DELIVERED;
         order.delivery_date =
           dto.delivery_date !== undefined
@@ -518,9 +526,21 @@ export class PurchaseOrderService {
         return this.findById(order.id, undefined, manager);
       }
 
-      if (order.status !== OrderStatus.PENDING) {
+      if (order.status === OrderStatus.CONFIRMED) {
         throw new BadRequestException(
-          'Faqat PENDING statusdagi buyurtmani tahrirlash mumkin',
+          'Tasdiqlangan buyurtmani tahrirlash yoki pendingga qaytarish mumkin emas',
+        );
+      }
+
+      if (order.status === OrderStatus.CANCELLED && !wantsPendingStatus) {
+        throw new BadRequestException(
+          'Bekor qilingan buyurtmani qayta yuborish uchun status=PENDING yuboring',
+        );
+      }
+
+      if (![OrderStatus.PENDING, OrderStatus.CANCELLED].includes(order.status)) {
+        throw new BadRequestException(
+          'Faqat PENDING yoki CANCELLED statusdagi buyurtmani tahrirlash mumkin',
         );
       }
 
@@ -641,12 +661,37 @@ export class PurchaseOrderService {
       }, 0);
 
       order.total_amount = Number(totalAmount.toFixed(2));
+
+      if (wantsPendingStatus) {
+        order.status = OrderStatus.PENDING;
+        order.decided_by_id = null;
+        order.decided_at = null;
+      }
+
       await orderRepo.save(order);
 
-      return this.findById(order.id, undefined, manager);
+      const savedOrder = await this.findById(order.id, undefined, manager);
+
+      if (savedOrder.status === OrderStatus.PENDING && (hasEditableUpdates || wasCancelled)) {
+        notifyAdminsContext = wasCancelled ? 'resubmitted' : 'updated';
+      }
+
+      return savedOrder;
     });
 
     await this.invalidateRelatedCaches();
+
+    if (notifyAdminsContext) {
+      await this.notifyAdminsAboutNewOrder(result, notifyAdminsContext).catch(
+        (error: unknown) => {
+          const message = error instanceof Error ? error.message : String(error);
+          this.logger.warn(
+            `Yangilangan purchase order uchun admin bot notification yuborilmadi: ${message}`,
+          );
+        },
+      );
+    }
+
     return result;
   }
 
@@ -858,7 +903,10 @@ export class PurchaseOrderService {
     await this.botService.sendToApprovedUsers(text, Role.ADMIN);
   }
 
-  private async notifyAdminsAboutNewOrder(order: PurchaseOrder) {
+  private async notifyAdminsAboutNewOrder(
+    order: PurchaseOrder,
+    context: 'created' | 'updated' | 'resubmitted' = 'created',
+  ) {
     const creator = order.created_by_id
       ? await this.userRepository.findOne({
           where: { id: order.created_by_id },
@@ -870,14 +918,22 @@ export class PurchaseOrderService {
         creator.username
       : (order.created_by_id ?? "Noma'lum");
 
+    const title =
+      context === 'updated'
+        ? "Yangilangan xarid so'rovi"
+        : context === 'resubmitted'
+          ? "Qayta yuborilgan xarid so'rovi"
+          : "Yangi xarid so'rovi";
+
     const text =
-      `🛒 <b>Yangi xarid so'rovi</b>\n\n` +
+      `🛒 <b>${title}</b>\n\n` +
       `📄 Buyurtma: <b>${order.order_number}</b>\n` +
       `👤 Hisobchi: <b>${this.escapeHtml(creatorName)}</b>\n` +
       `🏢 Supplier: <b>${this.escapeHtml(order.supplier?.company_name ?? order.supplier_id)}</b>\n` +
       `📦 Warehouse: <b>${this.escapeHtml(order.warehouse?.name ?? order.warehouse_id)}</b>\n` +
       `💰 Summa: <b>${this.formatCurrency(Number(order.total_amount))}</b>\n` +
-      `📌 Status: <b>${order.status}</b>`;
+      `📌 Status: <b>${order.status}</b>\n\n` +
+      `📦 <b>Mahsulotlar:</b>\n${this.buildOrderItemsSummary(order)}`;
 
     const keyboard = new InlineKeyboard()
       .text('✅ Tasdiqlash', `purchase_order:approve:${order.id}`)
@@ -889,13 +945,13 @@ export class PurchaseOrderService {
 
     if (sent === 0) {
       this.logger.warn(
-        `Yangi purchase order uchun admin bot notification yuborilmadi. order=${order.order_number}, sent=0`,
+        `${title} uchun admin bot notification yuborilmadi. order=${order.order_number}, sent=0`,
       );
       return;
     }
 
     this.logger.log(
-      `Yangi purchase order uchun admin bot notification yuborildi. order=${order.order_number}, sent=${sent}`,
+      `${title} uchun admin bot notification yuborildi. order=${order.order_number}, sent=${sent}`,
     );
   }
 

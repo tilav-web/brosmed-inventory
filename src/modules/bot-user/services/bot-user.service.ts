@@ -48,10 +48,7 @@ export class BotUserService {
       user.last_name = data.last_name ?? user.last_name;
       user.username = data.username ?? user.username;
       user.last_active_at = new Date();
-
-      if (user.status === BotUserStatus.BLOCKED) {
-        user.status = BotUserStatus.ACTIVE;
-      }
+      user.status = BotUserStatus.ACTIVE;
 
       const saved = await this.botUserRepository.save(user);
       return this.normalizeSingleBotUser(saved);
@@ -62,7 +59,7 @@ export class BotUserService {
       first_name: data.first_name ?? null,
       last_name: data.last_name ?? null,
       username: data.username ?? null,
-      status: BotUserStatus.PENDING,
+      status: BotUserStatus.ACTIVE,
       linked_user_id: null,
       last_active_at: new Date(),
     });
@@ -74,12 +71,14 @@ export class BotUserService {
   async findByTelegramId(
     telegramId: number,
   ): Promise<BotUserWithLinkedUser | null> {
-    const user = await this.botUserRepository.findOne({
+    let user = await this.botUserRepository.findOne({
       where: { telegram_id: telegramId },
     });
     if (!user) {
       return null;
     }
+
+    user = await this.normalizeLegacyPendingStatus(user);
     return this.normalizeSingleBotUser(user);
   }
 
@@ -237,12 +236,17 @@ export class BotUserService {
     const users = await this.botUserRepository.find({
       where: {
         is_approved: true,
-        status: BotUserStatus.ACTIVE,
       },
     });
 
-    const linkedUsers = await this.loadLinkedUsersMap(users);
-    const normalized = users
+    const reachableUsers = await Promise.all(
+      users
+        .filter((user) => user.status !== BotUserStatus.BLOCKED)
+        .map((user) => this.normalizeLegacyPendingStatus(user)),
+    );
+
+    const linkedUsers = await this.loadLinkedUsersMap(reachableUsers);
+    const normalized = reachableUsers
       .map((user) => this.mapBotUser(user, linkedUsers))
       .filter(
         (user): user is BotUserWithLinkedUser =>
@@ -263,15 +267,15 @@ export class BotUserService {
       where: {
         linked_user_id: linkedUserId,
         is_approved: true,
-        status: BotUserStatus.ACTIVE,
       },
     });
 
-    if (!botUser) {
+    if (!botUser || botUser.status === BotUserStatus.BLOCKED) {
       return null;
     }
 
-    return this.normalizeSingleBotUser(botUser);
+    const normalizedUser = await this.normalizeLegacyPendingStatus(botUser);
+    return this.normalizeSingleBotUser(normalizedUser);
   }
 
   async findById(id: string) {
@@ -304,13 +308,8 @@ export class BotUserService {
 
     if (dto.status !== undefined) {
       user.status = dto.status;
-    } else if (dto.is_approved === true) {
+    } else if (user.status !== BotUserStatus.BLOCKED) {
       user.status = BotUserStatus.ACTIVE;
-    } else if (
-      dto.is_approved === false &&
-      user.status !== BotUserStatus.BLOCKED
-    ) {
-      user.status = BotUserStatus.PENDING;
     }
     if (dto.is_approved !== undefined) {
       user.is_approved = dto.is_approved;
@@ -385,8 +384,18 @@ export class BotUserService {
   private async normalizeSingleBotUser(
     user: BotUser,
   ): Promise<BotUserWithLinkedUser> {
+    user = await this.normalizeLegacyPendingStatus(user);
     const linkedUsers = await this.loadLinkedUsersMap([user]);
     return this.mapBotUser(user, linkedUsers);
+  }
+
+  private async normalizeLegacyPendingStatus(user: BotUser): Promise<BotUser> {
+    if (user.status !== BotUserStatus.PENDING) {
+      return user;
+    }
+
+    user.status = BotUserStatus.ACTIVE;
+    return this.botUserRepository.save(user);
   }
 
   private async loadLinkedUsersMap(botUsers: BotUser[]) {
