@@ -178,7 +178,9 @@ export class ExpenseExportService {
     return `${day}.${month}.${year}`;
   }
 
-  private async buildExpenseReceiptPdfBuffer(expense: Expense): Promise<Buffer> {
+  private async buildExpenseReceiptPdfBuffer(
+    expense: Expense,
+  ): Promise<Buffer> {
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'A4',
@@ -205,7 +207,9 @@ export class ExpenseExportService {
       doc.fontSize(11);
       doc.text(this.toPdfText(`Hujjat raqami: ${expense.expense_number}`));
       doc.text(
-        this.toPdfText(`Sana: ${this.formatDate(createdAt)} ${this.formatTime(createdAt)}`),
+        this.toPdfText(
+          `Sana: ${this.formatDate(createdAt)} ${this.formatTime(createdAt)}`,
+        ),
       );
       doc.text(this.toPdfText(`Ombor: ${warehouseName}`));
       doc.text(this.toPdfText(`Topshiruvchi: ${managerName}`));
@@ -254,10 +258,15 @@ export class ExpenseExportService {
           width: 55,
           align: 'right',
         });
-        doc.text(this.toPdfText(item.product?.unit ?? '-'), columns.unit, lineTop, {
-          width: 45,
-          align: 'right',
-        });
+        doc.text(
+          this.toPdfText(item.product?.unit ?? '-'),
+          columns.unit,
+          lineTop,
+          {
+            width: 45,
+            align: 'right',
+          },
+        );
         doc.text(this.formatCurrency(price), columns.price, lineTop, {
           width: 65,
           align: 'right',
@@ -274,12 +283,16 @@ export class ExpenseExportService {
       this.drawHorizontalLine(doc);
       doc.moveDown(0.8);
 
-      doc.fontSize(12).text(
-        this.toPdfText(`Jami summa: ${this.formatCurrency(Number(expense.total_price))}`),
-        {
-          align: 'right',
-        },
-      );
+      doc
+        .fontSize(12)
+        .text(
+          this.toPdfText(
+            `Jami summa: ${this.formatCurrency(Number(expense.total_price))}`,
+          ),
+          {
+            align: 'right',
+          },
+        );
 
       doc.moveDown(2);
       doc.fontSize(11);
@@ -425,7 +438,9 @@ export class ExpenseExportService {
     return `expense_receipt_${safeExpenseNumber}.pdf`;
   }
 
-  private buildExpenseReceiptKey(expense: Pick<Expense, 'id' | 'expense_number'>) {
+  private buildExpenseReceiptKey(
+    expense: Pick<Expense, 'id' | 'expense_number'>,
+  ) {
     return `expense-receipts/${expense.id}/${this.buildPdfFilename(expense.expense_number)}`;
   }
 

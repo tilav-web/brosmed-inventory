@@ -500,12 +500,6 @@ export class PurchaseOrderService {
           );
         }
 
-        if (dto.status === OrderStatus.DELIVERED && this.hasStructuralUpdates(dto)) {
-          throw new BadRequestException(
-            'Delivered qilishda supplier, warehouse, sana yoki itemlarni o`zgartirib bo`lmaydi',
-          );
-        }
-
         if (dto.status === OrderStatus.DELIVERED && order.status !== OrderStatus.CONFIRMED) {
           throw new BadRequestException(
             'Faqat CONFIRMED statusdagi buyurtmani delivered qilish mumkin',
@@ -515,12 +509,9 @@ export class PurchaseOrderService {
 
       if (dto.status === OrderStatus.DELIVERED) {
         order.status = OrderStatus.DELIVERED;
-        order.delivery_date =
-          dto.delivery_date !== undefined
-            ? dto.delivery_date
-              ? new Date(String(dto.delivery_date))
-              : null
-            : (order.delivery_date ?? new Date());
+        // Client PATCH payloadida eski fieldlar kelib qolsa, delivered o'tkazishda
+        // ularni inkor qilamiz va faqat statusni yangilaymiz.
+        order.delivery_date = order.delivery_date ?? new Date();
 
         await orderRepo.save(order);
         return this.findById(order.id, undefined, manager);
