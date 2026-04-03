@@ -1,3 +1,4 @@
+import { join } from 'node:path';
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { APP_GUARD } from '@nestjs/core';
@@ -20,25 +21,62 @@ import { AppService } from './app.service';
 import { SeedModule } from 'src/seed/seed.module';
 import { BotModule } from '../bot/bot.module';
 
+function parseBoolean(value: string | undefined): boolean | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  const normalized = value.trim().toLowerCase();
+  if (normalized === 'true') {
+    return true;
+  }
+
+  if (normalized === 'false') {
+    return false;
+  }
+
+  return undefined;
+}
+
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRootAsync({
       inject: [ConfigService],
-      useFactory: (configService: ConfigService) => ({
-        type: 'postgres' as const,
-        host: configService.get<string>('DB_HOST'),
-        port: configService.get<number>('DB_PORT'),
-        username: configService.get<string>('DB_USERNAME'),
-        password: configService.get<string>('DB_PASSWORD'),
-        database: configService.get<string>('DB_NAME'),
-        autoLoadEntities: true,
-        synchronize: process.env.NODE_ENV === 'development',
-        logging:
-          process.env.NODE_ENV === 'development'
-            ? ['query', 'error']
-            : ['error'],
-      }),
+      useFactory: (configService: ConfigService) => {
+        const nodeEnv = configService.get<string>('NODE_ENV');
+        const isTsRuntime = __filename.endsWith('.ts');
+        const fileExtension = isTsRuntime ? 'ts' : 'js';
+        const synchronize =
+          parseBoolean(configService.get<string>('DB_SYNCHRONIZE')) ??
+          nodeEnv === 'development';
+        const migrationsRun =
+          parseBoolean(configService.get<string>('DB_RUN_MIGRATIONS')) ??
+          nodeEnv === 'production';
+
+        return {
+          type: 'postgres' as const,
+          host: configService.get<string>('DB_HOST'),
+          port: configService.get<number>('DB_PORT'),
+          username: configService.get<string>('DB_USERNAME'),
+          password: configService.get<string>('DB_PASSWORD'),
+          database: configService.get<string>('DB_NAME'),
+          autoLoadEntities: true,
+          migrations: [
+            join(
+              __dirname,
+              '..',
+              '..',
+              'database',
+              'migrations',
+              `*.${fileExtension}`,
+            ),
+          ],
+          synchronize,
+          migrationsRun,
+          logging: nodeEnv === 'development' ? ['query', 'error'] : ['error'],
+        };
+      },
     }),
     ThrottlerModule.forRootAsync({
       inject: [ConfigService],

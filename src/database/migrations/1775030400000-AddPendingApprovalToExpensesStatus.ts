@@ -1,11 +1,23 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPendingApprovalToExpensesStatus1775030400000
-  implements MigrationInterface
-{
+export class AddPendingApprovalToExpensesStatus1775030400000 implements MigrationInterface {
   name = 'AddPendingApprovalToExpensesStatus1775030400000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
+    const enumExistsResult = await queryRunner.query(`
+      SELECT EXISTS (
+        SELECT 1
+        FROM pg_type t
+        JOIN pg_namespace n ON n.oid = t.typnamespace
+        WHERE t.typname = 'expenses_status_enum'
+          AND n.nspname = 'public'
+      ) AS exists
+    `);
+
+    if (!enumExistsResult[0]?.exists) {
+      return;
+    }
+
     await queryRunner.query(
       `ALTER TYPE "public"."expenses_status_enum" ADD VALUE IF NOT EXISTS 'PENDING_APPROVAL'`,
     );
