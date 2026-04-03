@@ -11,9 +11,13 @@ import { UserService } from '../user/services/user.service';
 import { AuthUser } from './interfaces/auth-user.interface';
 import { JwtPayload } from './interfaces/jwt-payload.interface';
 
+type CookieSameSite = 'strict' | 'lax' | 'none';
+
 @Injectable()
 export class AuthService {
   private static readonly SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+  private static readonly DEV_ACCESS_TOKEN_EXPIRES_IN: StringValue = '7d';
+  private static readonly PROD_ACCESS_TOKEN_EXPIRES_IN: StringValue = '15m';
 
   constructor(
     private readonly userService: UserService,
@@ -44,7 +48,30 @@ export class AuthService {
   }
 
   private getAccessTokenExpiresIn(): StringValue {
-    return this.isDevelopment() ? '7d' : '15m';
+    return (
+      this.configService.get<StringValue>('JWT_ACCESS_EXPIRES_IN') ??
+      this.configService.get<StringValue>('JWT_EXPIRES_IN') ??
+      (this.isDevelopment()
+        ? AuthService.DEV_ACCESS_TOKEN_EXPIRES_IN
+        : AuthService.PROD_ACCESS_TOKEN_EXPIRES_IN)
+    );
+  }
+
+  private getRefreshCookieSameSite(): CookieSameSite {
+    const configuredSameSite = this.configService
+      .get<string>('AUTH_REFRESH_COOKIE_SAME_SITE')
+      ?.trim()
+      .toLowerCase();
+
+    if (
+      configuredSameSite === 'strict' ||
+      configuredSameSite === 'lax' ||
+      configuredSameSite === 'none'
+    ) {
+      return configuredSameSite;
+    }
+
+    return this.isDevelopment() ? 'lax' : 'none';
   }
 
   getRefreshCookieOptions() {
@@ -54,7 +81,7 @@ export class AuthService {
     return {
       httpOnly: true,
       secure: isProduction,
-      sameSite: 'strict' as const,
+      sameSite: this.getRefreshCookieSameSite(),
       maxAge: AuthService.SEVEN_DAYS_MS,
       path: '/',
     };

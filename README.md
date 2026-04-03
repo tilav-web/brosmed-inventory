@@ -59,6 +59,17 @@ BOT_WEBHOOK_SECRET=generate-a-random-secret-token
 - `BOT_MODE=webhook` bo'lsa Telegram webhook `POST /bot/webhook` endpointiga yuboriladi.
 - `BOT_WEBHOOK_SECRET` ixtiyoriy, lekin production uchun tavsiya qilinadi.
 
+## Auth
+
+Production'da access token muddati `JWT_ACCESS_EXPIRES_IN` yoki fallback sifatida
+`JWT_EXPIRES_IN` orqali boshqariladi.
+
+Agar frontend va API turli sayt originlarida ishlasa, refresh cookie uchun quyidagini ishlating:
+
+```bash
+AUTH_REFRESH_COOKIE_SAME_SITE=none
+```
+
 ## Run tests
 
 ```bash
