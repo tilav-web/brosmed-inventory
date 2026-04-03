@@ -86,7 +86,8 @@ export class ExpenseReceiptQueueService
   }
 
   private buildJobId(fileKey: string) {
-    return `cleanup:${fileKey}`;
+    const safeKey = fileKey.replace(/[^A-Za-z0-9_-]/g, '_');
+    return `cleanup_${safeKey}`;
   }
 
   private getRedisConnection() {

@@ -253,7 +253,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
     const users = await this.botUserService.getApprovedUsers(role);
     if (users.length === 0) {
       this.logger.warn(
-        `Approved active bot user topilmadi. role=${role ?? 'all'}`,
+        `Approved reachable bot user topilmadi. role=${role ?? 'all'}`,
       );
       return 0;
     }
@@ -350,7 +350,7 @@ export class BotService implements OnModuleInit, OnModuleDestroy {
 
     const users = await this.botUserService.getApprovedUsers(role);
     if (users.length === 0) {
-      this.logger.warn(`Approved active bot user topilmadi. role=${role}`);
+      this.logger.warn(`Approved reachable bot user topilmadi. role=${role}`);
       return 0;
     }
 
