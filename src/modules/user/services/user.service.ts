@@ -1,13 +1,15 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
   OnModuleInit,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectRepository } from '@nestjs/typeorm';
-import { hash } from 'bcrypt';
+import { compare, hash } from 'bcrypt';
 import { Brackets, QueryFailedError, Repository } from 'typeorm';
 import { Warehouse } from 'src/modules/warehouse/entities/warehouse.entity';
 import { Role } from '../enums/role.enum';
@@ -125,6 +127,20 @@ export class UserService implements OnModuleInit {
       user.last_name = dto.last_name;
     }
     if (dto.password !== undefined) {
+      if (!dto.current_password) {
+        throw new BadRequestException(
+          'Parolni yangilash uchun joriy parolni kiriting',
+        );
+      }
+
+      const isCurrentPasswordValid = await compare(
+        dto.current_password,
+        user.password,
+      );
+      if (!isCurrentPasswordValid) {
+        throw new UnauthorizedException('Joriy parol xato');
+      }
+
       user.password = await hash(dto.password, 10);
     }
 
