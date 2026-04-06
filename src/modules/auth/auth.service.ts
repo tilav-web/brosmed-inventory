@@ -151,8 +151,8 @@ export class AuthService {
     };
 
     return {
-      accessToken: await this.generateAccessToken(user),
-      refreshToken: await this.generateRefreshToken(user),
+      access_token: await this.generateAccessToken(user),
+      refresh_token: await this.generateRefreshToken(user),
     };
   }
 }

@@ -101,12 +101,12 @@ export class AuthController {
     const tokens = await this.authService.refreshAccessToken(refreshToken);
     res.cookie(
       'refresh_token',
-      tokens.refreshToken,
+      tokens.refresh_token,
       this.authService.getRefreshCookieOptions(),
     );
 
     return {
-      accessToken: tokens.accessToken,
+      access_token: tokens.access_token,
     };
   }
 
