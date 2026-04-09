@@ -201,15 +201,41 @@ export class ExpenseExportService {
       const warehouseName = this.getExpenseWarehouseName(expense);
       const managerName = this.getExpenseManagerName(expense);
       const createdAt = expense.createdAt ?? new Date();
+      const issuedAt = expense.issued_at ?? null;
 
-      this.renderReceiptHeader(doc, {
-        expenseNumber: expense.expense_number,
-        createdAt,
-        warehouseName,
-        managerName,
-        staffName: expense.staff_name,
-        purpose: expense.purpose ?? null,
-      });
+      doc
+        .fontSize(16)
+        .text(this.toPdfText('Chiqim dalolatnomasi'), {
+          align: 'center',
+        });
+      doc.moveDown(0.6);
+
+      doc.fontSize(11);
+      doc.text(this.toPdfText(`Hujjat raqami: ${expense.expense_number}`));
+      doc.text(
+        this.toPdfText(
+          `Sana: ${this.formatDate(createdAt)} ${this.formatTime(createdAt)}`,
+        ),
+      );
+      doc.text(
+        this.toPdfText(
+          `Chiqim berilgan sana: ${
+            issuedAt
+              ? `${this.formatDate(issuedAt)} ${this.formatTime(issuedAt)}`
+              : '-'
+          }`,
+        ),
+      );
+      doc.text(this.toPdfText(`Ombor: ${warehouseName}`));
+      doc.text(this.toPdfText(`Topshiruvchi: ${managerName}`));
+      doc.text(this.toPdfText(`Qabul qiluvchi: ${expense.staff_name}`));
+      if (expense.purpose) {
+        doc.text(this.toPdfText(`Maqsad: ${expense.purpose}`));
+      }
+
+      doc.moveDown(0.8);
+      this.drawHorizontalLine(doc);
+      doc.moveDown(0.6);
 
       const columns = {
         index: 40,
@@ -228,20 +254,6 @@ export class ExpenseExportService {
           doc.addPage();
           this.applyPdfFont(doc);
           this.renderReceiptTableHeader(doc, columns);
-        }
-
-        if (index % 2 === 1) {
-          const rowTop = doc.y - 2;
-          doc
-            .save()
-            .rect(
-              doc.page.margins.left,
-              rowTop,
-              doc.page.width - doc.page.margins.left - doc.page.margins.right,
-              18,
-            )
-            .fill('#F7F7F7')
-            .restore();
         }
 
         const lineTop = doc.y;
@@ -281,14 +293,22 @@ export class ExpenseExportService {
         doc.moveDown(1.2);
       });
 
-      doc.moveDown(0.6);
+      doc.moveDown(0.4);
       this.drawHorizontalLine(doc);
-      doc.moveDown(1);
+      doc.moveDown(0.6);
 
-      this.renderReceiptSummary(doc, {
-        total: Number(expense.total_price),
-        managerName,
-        staffName: expense.staff_name,
+      doc
+        .fontSize(11)
+        .text(
+          this.toPdfText(
+            `Jami summa: ${this.formatCurrency(Number(expense.total_price))}`,
+          ),
+          { align: 'right' },
+        );
+
+      doc.moveDown(1.4);
+      this.renderSignatureBlock(doc, {
+        warehouseUserName: managerName,
       });
 
       doc.end();
@@ -336,124 +356,31 @@ export class ExpenseExportService {
     doc
       .moveTo(doc.page.margins.left, y)
       .lineTo(doc.page.width - doc.page.margins.right, y)
-      .stroke('#A8A8A8');
+      .stroke('#000000');
   }
 
-  private renderReceiptHeader(
+  private renderSignatureBlock(
     doc: InstanceType<typeof PDFDocument>,
-    info: {
-      expenseNumber: string;
-      createdAt: Date;
-      warehouseName: string;
-      managerName: string;
-      staffName: string;
-      purpose: string | null;
-    },
+    info: { warehouseUserName: string },
   ) {
-    const left = doc.page.margins.left;
-    const right = doc.page.width - doc.page.margins.right;
-    const headerTop = doc.y;
-    const headerHeight = info.purpose ? 92 : 78;
+    doc.fontSize(11);
 
-    doc
-      .save()
-      .rect(left, headerTop, right - left, headerHeight)
-      .fill('#F3F4F6')
-      .restore();
-
-    doc
-      .fontSize(18)
-      .fillColor('#111111')
-      .text(this.toPdfText('Chiqim dalolatnomasi'), left, headerTop + 10, {
-        width: right - left,
-        align: 'center',
-      });
-
-    const metaTop = headerTop + 40;
-    doc.fontSize(11).fillColor('#111111');
-    doc.text(
-      this.toPdfText(`Hujjat raqami: ${info.expenseNumber}`),
-      left + 12,
-      metaTop,
-    );
     doc.text(
       this.toPdfText(
-        `Sana: ${this.formatDate(info.createdAt)} ${this.formatTime(
-          info.createdAt,
-        )}`,
+        `Ombor (warehouse user): F.I.Sh: ${info.warehouseUserName}`,
       ),
-      left + 12,
-      metaTop + 16,
     );
+    doc.text(this.toPdfText('Imzo: ________________________________'));
+    doc.moveDown(0.8);
 
-    const rightColumn = left + 300;
     doc.text(
-      this.toPdfText(`Ombor: ${info.warehouseName}`),
-      rightColumn,
-      metaTop,
+      this.toPdfText('Hisobchi (accountant): F.I.Sh: ______________________'),
     );
-    doc.text(
-      this.toPdfText(`Topshiruvchi: ${info.managerName}`),
-      rightColumn,
-      metaTop + 16,
-    );
-    doc.text(
-      this.toPdfText(`Qabul qiluvchi: ${info.staffName}`),
-      rightColumn,
-      metaTop + 32,
-    );
+    doc.text(this.toPdfText('Imzo: ________________________________'));
+    doc.moveDown(0.8);
 
-    if (info.purpose) {
-      doc.text(
-        this.toPdfText(`Maqsad: ${info.purpose}`),
-        left + 12,
-        metaTop + 32,
-        { width: 260 },
-      );
-    }
-
-    doc.y = headerTop + headerHeight + 14;
-  }
-
-  private renderReceiptSummary(
-    doc: InstanceType<typeof PDFDocument>,
-    info: { total: number; managerName: string; staffName: string },
-  ) {
-    const left = doc.page.margins.left;
-    const right = doc.page.width - doc.page.margins.right;
-    const boxWidth = 240;
-    const boxLeft = right - boxWidth;
-    const boxTop = doc.y;
-
-    doc
-      .save()
-      .rect(boxLeft, boxTop, boxWidth, 46)
-      .fill('#F3F4F6')
-      .restore();
-
-    doc
-      .fontSize(12)
-      .fillColor('#111111')
-      .text(
-        this.toPdfText(`Jami summa: ${this.formatCurrency(info.total)}`),
-        boxLeft + 12,
-        boxTop + 14,
-        { width: boxWidth - 24, align: 'right' },
-      );
-
-    doc.y = boxTop + 60;
-    doc.fontSize(11);
-    doc.text(
-      this.toPdfText(`Topshiruvchi: ${info.managerName}`),
-      left,
-      doc.y,
-    );
-    doc.moveDown(1);
-    doc.text(
-      this.toPdfText(`Qabul qiluvchi: ${info.staffName}`),
-      left,
-      doc.y,
-    );
+    doc.text(this.toPdfText('Admin: F.I.Sh: ________________________________'));
+    doc.text(this.toPdfText('Imzo: ________________________________'));
   }
 
   private renderReceiptTableHeader(
@@ -469,17 +396,7 @@ export class ExpenseExportService {
   ) {
     doc.fontSize(10);
     const headerY = doc.y;
-    const headerHeight = 18;
-    const left = doc.page.margins.left;
-    const right = doc.page.width - doc.page.margins.right;
 
-    doc
-      .save()
-      .rect(left, headerY - 2, right - left, headerHeight)
-      .fill('#E5E7EB')
-      .restore();
-
-    doc.fillColor('#111111');
     doc.text('#', columns.index, headerY, { width: 20 });
     doc.text(this.toPdfText('Mahsulot'), columns.product, headerY, {
       width: 220,
@@ -501,7 +418,7 @@ export class ExpenseExportService {
       align: 'right',
     });
 
-    doc.y = headerY + headerHeight;
+    doc.y = headerY + 16;
     this.drawHorizontalLine(doc);
     doc.moveDown(0.6);
   }
