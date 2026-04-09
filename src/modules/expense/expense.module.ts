@@ -3,6 +3,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { Product } from '../product/entities/product.entity';
 import { ProductBatch } from '../product/entities/product-batch.entity';
 import { Warehouse } from '../warehouse/entities/warehouse.entity';
+import { User } from '../user/entities/user.entity';
 import { BotModule } from '../bot/bot.module';
 import { BotUserModule } from '../bot-user/bot-user.module';
 import { ExpenseController } from './controllers/expense.controller';
@@ -23,6 +24,7 @@ import { ExpenseService } from './services/expense.service';
       Product,
       ProductBatch,
       Warehouse,
+      User,
     ]),
   ],
   controllers: [ExpenseController],
