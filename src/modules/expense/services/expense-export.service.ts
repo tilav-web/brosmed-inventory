@@ -10,6 +10,8 @@ import { ExpenseItem } from '../entities/expense-item.entity';
 import { Expense } from '../entities/expense.entity';
 import { ListExpenseItemsQueryDto } from '../dto/list-expense-items-query.dto';
 import { ExpenseReceiptQueueService } from './expense-receipt-queue.service';
+import { User } from 'src/modules/user/entities/user.entity';
+import { Role } from 'src/modules/user/enums/role.enum';
 
 @Injectable()
 export class ExpenseExportService {
@@ -23,6 +25,8 @@ export class ExpenseExportService {
   constructor(
     @InjectRepository(ExpenseItem)
     private readonly expenseItemRepository: Repository<ExpenseItem>,
+    @InjectRepository(User)
+    private readonly userRepository: Repository<User>,
     private readonly expenseReceiptQueueService: ExpenseReceiptQueueService,
   ) {
     if (!existsSync(this.uploadsPath)) {
@@ -184,6 +188,9 @@ export class ExpenseExportService {
   private async buildExpenseReceiptPdfBuffer(
     expense: Expense,
   ): Promise<Buffer> {
+    const adminName = await this.getRoleUserFullName(Role.ADMIN);
+    const accountantName = await this.getRoleUserFullName(Role.ACCOUNTANT);
+
     return new Promise<Buffer>((resolve, reject) => {
       const doc = new PDFDocument({
         size: 'A4',
@@ -309,6 +316,8 @@ export class ExpenseExportService {
       doc.moveDown(1.4);
       this.renderSignatureBlock(doc, {
         warehouseUserName: managerName,
+        accountantName,
+        adminName,
       });
 
       doc.end();
@@ -351,6 +360,24 @@ export class ExpenseExportService {
     return `${hours}:${minutes}`;
   }
 
+  private async getRoleUserFullName(role: Role): Promise<string> {
+    const user = await this.userRepository.findOne({
+      where: { role },
+      order: { createdAt: 'ASC' },
+    });
+
+    if (!user) {
+      return '-';
+    }
+
+    const fullName = [user.first_name, user.last_name]
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+
+    return fullName || user.username;
+  }
+
   private drawHorizontalLine(doc: InstanceType<typeof PDFDocument>) {
     const y = doc.y;
     doc
@@ -361,26 +388,54 @@ export class ExpenseExportService {
 
   private renderSignatureBlock(
     doc: InstanceType<typeof PDFDocument>,
-    info: { warehouseUserName: string },
+    info: { warehouseUserName: string; accountantName: string; adminName: string },
   ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const columnGap = 20;
+    const columnWidth = (right - left - columnGap * 2) / 3;
+    const top = doc.y;
+    const lineY = top + 28;
+
     doc.fontSize(11);
 
     doc.text(
-      this.toPdfText(
-        `Ombor (warehouse user): F.I.Sh: ${info.warehouseUserName}`,
-      ),
+      this.toPdfText(`F.I.Sh: ${info.warehouseUserName}`),
+      left,
+      top,
+      { width: columnWidth },
     );
-    doc.text(this.toPdfText('Imzo: ________________________________'));
-    doc.moveDown(0.8);
+    doc.text(
+      this.toPdfText(`F.I.Sh: ${info.accountantName}`),
+      left + columnWidth + columnGap,
+      top,
+      { width: columnWidth },
+    );
+    doc.text(
+      this.toPdfText(`F.I.Sh: ${info.adminName}`),
+      left + (columnWidth + columnGap) * 2,
+      top,
+      { width: columnWidth },
+    );
 
     doc.text(
-      this.toPdfText('Hisobchi (accountant): F.I.Sh: ______________________'),
+      this.toPdfText('Imzo: ____________________'),
+      left,
+      lineY,
+      { width: columnWidth },
     );
-    doc.text(this.toPdfText('Imzo: ________________________________'));
-    doc.moveDown(0.8);
-
-    doc.text(this.toPdfText('Admin: F.I.Sh: ________________________________'));
-    doc.text(this.toPdfText('Imzo: ________________________________'));
+    doc.text(
+      this.toPdfText('Imzo: ____________________'),
+      left + columnWidth + columnGap,
+      lineY,
+      { width: columnWidth },
+    );
+    doc.text(
+      this.toPdfText('Imzo: ____________________'),
+      left + (columnWidth + columnGap) * 2,
+      lineY,
+      { width: columnWidth },
+    );
   }
 
   private renderReceiptTableHeader(
@@ -396,7 +451,6 @@ export class ExpenseExportService {
   ) {
     doc.fontSize(10);
     const headerY = doc.y;
-
     doc.text('#', columns.index, headerY, { width: 20 });
     doc.text(this.toPdfText('Mahsulot'), columns.product, headerY, {
       width: 220,
