@@ -138,11 +138,7 @@ function readRows(inputPath: string): BrosmedProductRow[] {
     }))
     .filter(
       (row) =>
-        row.name &&
-        row.supplier &&
-        row.category &&
-        row.warehouse &&
-        row.unit,
+        row.name && row.supplier && row.category && row.warehouse && row.unit,
     );
 
   if (rows.length === 0) {
@@ -169,8 +165,14 @@ function buildWarehouseManagerAccount(
     .replace(/[^a-z0-9]+/g, '_')
     .replace(/^_+|_+$/g, '')
     .slice(0, 32);
-  const hashSuffix = createHash('sha1').update(normalized).digest('hex').slice(0, 6);
-  const username = `import_wh_${slug || 'warehouse'}_${hashSuffix}`.slice(0, 64);
+  const hashSuffix = createHash('sha1')
+    .update(normalized)
+    .digest('hex')
+    .slice(0, 6);
+  const username = `import_wh_${slug || 'warehouse'}_${hashSuffix}`.slice(
+    0,
+    64,
+  );
 
   return {
     username,
@@ -194,10 +196,7 @@ function inferWarehouseType(
     return WarehouseType.MEDICAL;
   }
 
-  if (
-    warehouseKey.includes('oziq-ovqat') ||
-    categoryKey === 'oziq-ovqat'
-  ) {
+  if (warehouseKey.includes('oziq-ovqat') || categoryKey === 'oziq-ovqat') {
     return WarehouseType.KITCHEN;
   }
 
@@ -237,7 +236,9 @@ async function findSupplierByName(
 
   return repository
     .createQueryBuilder('supplier')
-    .where('LOWER(supplier.company_name) IN (:...keys)', { keys: normalizedKeys })
+    .where('LOWER(supplier.company_name) IN (:...keys)', {
+      keys: normalizedKeys,
+    })
     .getOne();
 }
 
@@ -386,7 +387,9 @@ async function main(): Promise<void> {
         let category = categoryCache.get(categoryKey);
         if (!category) {
           category =
-            (await findByName(categoryRepository, 'category', [row.category])) ??
+            (await findByName(categoryRepository, 'category', [
+              row.category,
+            ])) ??
             categoryRepository.create({
               name: row.category,
               description: 'Brosmed JSON import',
@@ -467,7 +470,9 @@ async function main(): Promise<void> {
           }
 
           warehouse =
-            (await findByName(warehouseRepository, 'warehouse', [row.warehouse])) ??
+            (await findByName(warehouseRepository, 'warehouse', [
+              row.warehouse,
+            ])) ??
             warehouseRepository.create({
               name: row.warehouse,
               type: inferWarehouseType(row.warehouse, row.category),
@@ -481,7 +486,10 @@ async function main(): Promise<void> {
             stats.warehousesCreated += 1;
           } else {
             let shouldSave = false;
-            const inferredType = inferWarehouseType(row.warehouse, row.category);
+            const inferredType = inferWarehouseType(
+              row.warehouse,
+              row.category,
+            );
 
             if (warehouse.name !== row.warehouse) {
               warehouse.name = row.warehouse;
