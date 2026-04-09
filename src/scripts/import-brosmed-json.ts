@@ -33,6 +33,8 @@ interface CliOptions {
 
 interface ImportStats {
   rowsProcessed: number;
+  warehouseUsersCreated: number;
+  warehouseUsersUpdated: number;
   unitsCreated: number;
   unitsUpdated: number;
   categoriesCreated: number;
@@ -46,6 +48,13 @@ interface ImportStats {
 }
 
 type NamedEntity = { name: string };
+
+interface WarehouseManagerAccount {
+  username: string;
+  password: string;
+  firstName: string;
+  lastName: string;
+}
 
 function parseArgs(argv: string[]): CliOptions {
   let input = 'data/brosmed-products.json';
@@ -152,6 +161,28 @@ function deterministicEmail(companyName: string): string {
   return `supplier-${suffix}@brosmed.local`;
 }
 
+function buildWarehouseManagerAccount(
+  warehouseName: string,
+): WarehouseManagerAccount {
+  const normalized = normalizeKey(warehouseName);
+  const slug = normalized
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 32);
+  const hashSuffix = createHash('sha1').update(normalized).digest('hex').slice(0, 6);
+  const username = `import_wh_${slug || 'warehouse'}_${hashSuffix}`.slice(0, 64);
+
+  return {
+    username,
+    password:
+      process.env.IMPORT_WAREHOUSE_PASSWORD?.trim() ||
+      process.env.WAREHOUSE_PASSWORD?.trim() ||
+      'warehouse12345',
+    firstName: warehouseName.slice(0, 64) || 'Warehouse',
+    lastName: 'test',
+  };
+}
+
 function inferWarehouseType(
   warehouseName: string,
   categoryName: string,
@@ -210,60 +241,70 @@ async function findSupplierByName(
     .getOne();
 }
 
-async function ensureImportManager(
+async function ensureWarehouseManagerUser(
   userRepository: Repository<User>,
-): Promise<User> {
-  const preferredUsername = process.env.IMPORT_MANAGER_USERNAME?.trim();
-  if (preferredUsername) {
-    const preferredUser = await userRepository.findOne({
-      where: { username: preferredUsername },
+  warehouseName: string,
+): Promise<{ user: User; created: boolean; updated: boolean }> {
+  const account = buildWarehouseManagerAccount(warehouseName);
+  const existingUser = await userRepository.findOne({
+    where: { username: account.username },
+  });
+
+  if (!existingUser) {
+    const createdUser = userRepository.create({
+      username: account.username,
+      password: await hash(account.password, 10),
+      first_name: account.firstName,
+      last_name: account.lastName,
+      role: Role.WAREHOUSE,
     });
-    if (preferredUser) {
-      return preferredUser;
-    }
+
+    return {
+      user: await userRepository.save(createdUser),
+      created: true,
+      updated: false,
+    };
   }
 
-  const warehouseUser = await userRepository.findOne({
-    where: { role: Role.WAREHOUSE },
-    order: { createdAt: 'ASC' },
-  });
-  if (warehouseUser) {
-    return warehouseUser;
+  let shouldSave = false;
+
+  if (existingUser.role !== Role.WAREHOUSE) {
+    existingUser.role = Role.WAREHOUSE;
+    shouldSave = true;
+  }
+  if (existingUser.first_name !== account.firstName) {
+    existingUser.first_name = account.firstName;
+    shouldSave = true;
+  }
+  if (existingUser.last_name !== account.lastName) {
+    existingUser.last_name = account.lastName;
+    shouldSave = true;
   }
 
-  const adminUser = await userRepository.findOne({
-    where: { role: Role.ADMIN },
-    order: { createdAt: 'ASC' },
-  });
-  if (adminUser) {
-    return adminUser;
+  if (shouldSave) {
+    return {
+      user: await userRepository.save(existingUser),
+      created: false,
+      updated: true,
+    };
   }
 
-  const baseUsername = process.env.ADMIN_USERNAME?.trim() || 'nodir_hamrayev';
-  const password = process.env.ADMIN_PASSWORD?.trim() || '12345678';
-
-  const existingWithBaseUsername = await userRepository.findOne({
-    where: { username: baseUsername },
-  });
-  const username =
-    existingWithBaseUsername && existingWithBaseUsername.role !== Role.ADMIN
-      ? `${baseUsername}_import`
-      : baseUsername;
-
-  const createdAdmin = userRepository.create({
-    username,
-    password: await hash(password, 10),
-    first_name: '-',
-    last_name: '-',
-    role: Role.ADMIN,
-  });
-
-  return userRepository.save(createdAdmin);
+  return {
+    user: existingUser,
+    created: false,
+    updated: false,
+  };
 }
 
 async function main(): Promise<void> {
   const options = parseArgs(process.argv.slice(2));
   const rows = readRows(options.input);
+  const warehouseManagers = Array.from(
+    new Set(rows.map((row) => row.warehouse)),
+  ).map((warehouse) => ({
+    warehouse,
+    username: buildWarehouseManagerAccount(warehouse).username,
+  }));
 
   if (options.dryRun) {
     console.log(
@@ -275,6 +316,7 @@ async function main(): Promise<void> {
           categories: new Set(rows.map((row) => row.category)).size,
           warehouses: new Set(rows.map((row) => row.warehouse)).size,
           units: new Set(rows.map((row) => row.unit)).size,
+          warehouse_managers: warehouseManagers,
         },
         null,
         2,
@@ -297,8 +339,7 @@ async function main(): Promise<void> {
       const supplierRepository = manager.getRepository(Supplier);
       const warehouseRepository = manager.getRepository(Warehouse);
       const productRepository = manager.getRepository(Product);
-
-      const importManager = await ensureImportManager(userRepository);
+      const warehouseUserCache = new Map<string, User>();
 
       const unitCache = new Map<string, Unit>();
       const categoryCache = new Map<string, Category>();
@@ -307,6 +348,8 @@ async function main(): Promise<void> {
 
       const stats: ImportStats = {
         rowsProcessed: 0,
+        warehouseUsersCreated: 0,
+        warehouseUsersUpdated: 0,
         unitsCreated: 0,
         unitsUpdated: 0,
         categoriesCreated: 0,
@@ -407,14 +450,30 @@ async function main(): Promise<void> {
         const warehouseKey = normalizeKey(row.warehouse);
         let warehouse = warehouseCache.get(warehouseKey);
         if (!warehouse) {
+          let managerUser = warehouseUserCache.get(warehouseKey);
+          if (!managerUser) {
+            const ensuredManager = await ensureWarehouseManagerUser(
+              userRepository,
+              row.warehouse,
+            );
+            managerUser = ensuredManager.user;
+            warehouseUserCache.set(warehouseKey, managerUser);
+            if (ensuredManager.created) {
+              stats.warehouseUsersCreated += 1;
+            }
+            if (ensuredManager.updated) {
+              stats.warehouseUsersUpdated += 1;
+            }
+          }
+
           warehouse =
             (await findByName(warehouseRepository, 'warehouse', [row.warehouse])) ??
             warehouseRepository.create({
               name: row.warehouse,
               type: inferWarehouseType(row.warehouse, row.category),
               location: `${row.warehouse} / JSON import`,
-              manager: importManager,
-              manager_id: importManager.id,
+              manager: managerUser,
+              manager_id: managerUser.id,
             });
 
           if (!warehouse.id) {
@@ -436,9 +495,9 @@ async function main(): Promise<void> {
               warehouse.location = `${row.warehouse} / JSON import`;
               shouldSave = true;
             }
-            if (!warehouse.manager_id) {
-              warehouse.manager = importManager;
-              warehouse.manager_id = importManager.id;
+            if (warehouse.manager_id !== managerUser.id) {
+              warehouse.manager = managerUser;
+              warehouse.manager_id = managerUser.id;
               shouldSave = true;
             }
 
@@ -506,7 +565,17 @@ async function main(): Promise<void> {
       return stats;
     });
 
-    console.log(JSON.stringify({ input: options.input, ...stats }, null, 2));
+    console.log(
+      JSON.stringify(
+        {
+          input: options.input,
+          ...stats,
+          warehouse_managers: warehouseManagers,
+        },
+        null,
+        2,
+      ),
+    );
   } finally {
     if (dataSource.isInitialized) {
       await dataSource.destroy();
