@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { existsSync, mkdirSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs';
 import { writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { dirname, extname, join } from 'node:path';
 import PDFDocument from 'pdfkit';
 import { Repository, SelectQueryBuilder } from 'typeorm';
 import ExcelJS from 'exceljs';
@@ -210,118 +210,348 @@ export class ExpenseExportService {
       const createdAt = expense.createdAt ?? new Date();
       const issuedAt = expense.issued_at ?? null;
 
-      doc
-        .fontSize(16)
-        .text(this.toPdfText('Chiqim dalolatnomasi'), {
-          align: 'center',
-        });
-      doc.moveDown(0.6);
-
-      doc.fontSize(11);
-      doc.text(this.toPdfText(`Hujjat raqami: ${expense.expense_number}`));
-      doc.text(
-        this.toPdfText(
-          `Sana: ${this.formatDate(createdAt)} ${this.formatTime(createdAt)}`,
-        ),
-      );
-      doc.text(
-        this.toPdfText(
-          `Chiqim berilgan sana: ${
-            issuedAt
-              ? `${this.formatDate(issuedAt)} ${this.formatTime(issuedAt)}`
-              : '-'
-          }`,
-        ),
-      );
-      doc.text(this.toPdfText(`Ombor: ${warehouseName}`));
-      doc.text(this.toPdfText(`Topshiruvchi: ${managerName}`));
-      doc.text(this.toPdfText(`Qabul qiluvchi: ${expense.staff_name}`));
-      if (expense.purpose) {
-        doc.text(this.toPdfText(`Maqsad: ${expense.purpose}`));
-      }
-
-      doc.moveDown(0.8);
-      this.drawHorizontalLine(doc);
-      doc.moveDown(0.6);
-
-      const columns = {
-        index: 40,
-        product: 70,
-        quantity: 300,
-        unit: 365,
-        price: 415,
-        total: 490,
-      };
-
-      this.renderReceiptTableHeader(doc, columns);
-
-      const items = expense.items ?? [];
-      items.forEach((item, index) => {
-        if (doc.y > 730) {
-          doc.addPage();
-          this.applyPdfFont(doc);
-          this.renderReceiptTableHeader(doc, columns);
-        }
-
-        const lineTop = doc.y;
-        const quantity = Number(item.quantity);
-        const price = Number(item.product_batch?.price_at_purchase ?? 0);
-        const lineTotal = quantity * price;
-
-        doc.text(String(index + 1), columns.index, lineTop, { width: 20 });
-        doc.text(
-          this.toPdfText(item.product?.name ?? "Noma'lum mahsulot"),
-          columns.product,
-          lineTop,
-          { width: 220 },
-        );
-        doc.text(this.formatNumber(quantity), columns.quantity, lineTop, {
-          width: 55,
-          align: 'right',
-        });
-        doc.text(
-          this.toPdfText(item.product?.unit ?? '-'),
-          columns.unit,
-          lineTop,
-          {
-            width: 45,
-            align: 'right',
-          },
-        );
-        doc.text(this.formatCurrency(price), columns.price, lineTop, {
-          width: 65,
-          align: 'right',
-        });
-        doc.text(this.formatCurrency(lineTotal), columns.total, lineTop, {
-          width: 65,
-          align: 'right',
-        });
-
-        doc.moveDown(1.2);
+      this.renderDocumentHeader(doc, expense, createdAt);
+      this.renderInfoBlock(doc, {
+        warehouseName,
+        managerName,
+        staffName: expense.staff_name,
+        purpose: expense.purpose,
+        issuedAt,
+        status: this.formatStatus(expense.status),
+        type: this.formatType(expense.type),
       });
 
-      doc.moveDown(0.4);
-      this.drawHorizontalLine(doc);
-      doc.moveDown(0.6);
+      this.renderItemsTable(doc, expense);
 
-      doc
-        .fontSize(11)
-        .text(
-          this.toPdfText(
-            `Jami summa: ${this.formatCurrency(Number(expense.total_price))}`,
-          ),
-          { align: 'right' },
-        );
-
-      doc.moveDown(1.4);
       this.renderSignatureBlock(doc, {
         warehouseUserName: managerName,
+        staffName: expense.staff_name,
         accountantName,
         adminName,
       });
 
+      this.renderPageFooters(doc);
+
       doc.end();
     });
+  }
+
+  private renderDocumentHeader(
+    doc: InstanceType<typeof PDFDocument>,
+    expense: Expense,
+    createdAt: Date,
+  ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const width = right - left;
+    const top = doc.y;
+
+    doc
+      .fillColor('#0F172A')
+      .fontSize(18)
+      .text(this.toPdfText('BROSMED INVENTORY'), left, top, {
+        width,
+        align: 'left',
+      });
+
+    doc
+      .fillColor('#475569')
+      .fontSize(9)
+      .text(
+        this.toPdfText(`Hujjat raqami: ${expense.expense_number}`),
+        left,
+        top + 2,
+        { width, align: 'right' },
+      )
+      .text(
+        this.toPdfText(
+          `Yaratildi: ${this.formatDate(createdAt)} ${this.formatTime(createdAt)}`,
+        ),
+        left,
+        top + 16,
+        { width, align: 'right' },
+      );
+
+    doc.fillColor('#000000');
+    doc.moveDown(1.2);
+
+    const titleY = doc.y;
+    doc
+      .fontSize(15)
+      .fillColor('#0F172A')
+      .text(this.toPdfText('CHIQIM DALOLATNOMASI'), left, titleY, {
+        width,
+        align: 'center',
+      });
+
+    const underlineY = doc.y + 4;
+    doc
+      .moveTo(left + width / 2 - 80, underlineY)
+      .lineTo(left + width / 2 + 80, underlineY)
+      .lineWidth(1.2)
+      .strokeColor('#0F172A')
+      .stroke();
+
+    doc.fillColor('#000000');
+    doc.y = underlineY + 14;
+  }
+
+  private renderInfoBlock(
+    doc: InstanceType<typeof PDFDocument>,
+    info: {
+      warehouseName: string;
+      managerName: string;
+      staffName: string;
+      purpose: string | null;
+      issuedAt: Date | null;
+      status: string;
+      type: string;
+    },
+  ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const width = right - left;
+    const padding = 10;
+    const lineHeight = 16;
+
+    const rows: Array<[string, string]> = [
+      ['Ombor', info.warehouseName],
+      ['Topshiruvchi', info.managerName],
+      ['Qabul qiluvchi', info.staffName],
+      [
+        'Berilgan sana',
+        info.issuedAt
+          ? `${this.formatDate(info.issuedAt)} ${this.formatTime(info.issuedAt)}`
+          : '—',
+      ],
+      ['Holati', info.status],
+      ['Turi', info.type],
+    ];
+
+    if (info.purpose) {
+      rows.push(['Maqsad', info.purpose]);
+    }
+
+    const rowsPerColumn = Math.ceil(rows.length / 2);
+    const blockHeight = padding * 2 + rowsPerColumn * lineHeight;
+    const top = doc.y;
+
+    doc
+      .roundedRect(left, top, width, blockHeight, 4)
+      .lineWidth(0.6)
+      .strokeColor('#CBD5E1')
+      .stroke();
+
+    const columnWidth = (width - padding * 3) / 2;
+    const labelWidth = 95;
+    const valueWidth = columnWidth - labelWidth - 6;
+
+    doc.fontSize(10);
+
+    rows.forEach((row, index) => {
+      const isRight = index >= rowsPerColumn;
+      const rowIndex = isRight ? index - rowsPerColumn : index;
+      const x = isRight ? left + padding * 2 + columnWidth : left + padding;
+      const y = top + padding + rowIndex * lineHeight;
+
+      doc
+        .fillColor('#64748B')
+        .text(this.toPdfText(`${row[0]}:`), x, y, {
+          width: labelWidth,
+        });
+      doc
+        .fillColor('#0F172A')
+        .text(this.toPdfText(row[1]), x + labelWidth, y, {
+          width: valueWidth,
+        });
+    });
+
+    doc.fillColor('#000000');
+    doc.y = top + blockHeight + 14;
+  }
+
+  private renderItemsTable(
+    doc: InstanceType<typeof PDFDocument>,
+    expense: Expense,
+  ) {
+    const left = doc.page.margins.left;
+    const right = doc.page.width - doc.page.margins.right;
+    const tableWidth = right - left;
+
+    const widths = {
+      index: 28,
+      product: tableWidth - 28 - 65 - 45 - 85 - 120,
+      quantity: 65,
+      unit: 45,
+      price: 85,
+      total: 120,
+    };
+
+    const xs = {
+      index: left,
+      product: left + widths.index,
+      quantity: left + widths.index + widths.product,
+      unit: left + widths.index + widths.product + widths.quantity,
+      price: left + widths.index + widths.product + widths.quantity + widths.unit,
+      total:
+        left +
+        widths.index +
+        widths.product +
+        widths.quantity +
+        widths.unit +
+        widths.price,
+    };
+
+    const cellPaddingY = 6;
+    const cellPaddingX = 6;
+    const headerHeight = 24;
+    const minRowHeight = 22;
+    const bottomLimit = doc.page.height - doc.page.margins.bottom - 140;
+
+    const drawHeader = () => {
+      const headerY = doc.y;
+      doc
+        .rect(left, headerY, tableWidth, headerHeight)
+        .fillColor('#0F172A')
+        .fill();
+
+      doc.fillColor('#FFFFFF').fontSize(10);
+      const textY = headerY + cellPaddingY + 1;
+
+      doc.text('#', xs.index, textY, {
+        width: widths.index,
+        align: 'center',
+      });
+      doc.text(
+        this.toPdfText('Mahsulot'),
+        xs.product + cellPaddingX,
+        textY,
+        { width: widths.product - cellPaddingX * 2, align: 'left' },
+      );
+      doc.text(this.toPdfText('Miqdor'), xs.quantity, textY, {
+        width: widths.quantity - cellPaddingX,
+        align: 'right',
+      });
+      doc.text(this.toPdfText('Birlik'), xs.unit, textY, {
+        width: widths.unit - cellPaddingX,
+        align: 'right',
+      });
+      doc.text(this.toPdfText('Narx'), xs.price, textY, {
+        width: widths.price - cellPaddingX,
+        align: 'right',
+      });
+      doc.text(this.toPdfText('Jami'), xs.total, textY, {
+        width: widths.total - cellPaddingX,
+        align: 'right',
+      });
+
+      doc.fillColor('#000000');
+      doc.y = headerY + headerHeight;
+    };
+
+    drawHeader();
+
+    const items = expense.items ?? [];
+
+    items.forEach((item, index) => {
+      const productName = this.toPdfText(
+        item.product?.name ?? "Noma'lum mahsulot",
+      );
+      const productWidth = widths.product - cellPaddingX * 2;
+      const productHeight = doc.heightOfString(productName, {
+        width: productWidth,
+      });
+      const rowHeight = Math.max(
+        minRowHeight,
+        productHeight + cellPaddingY * 2,
+      );
+
+      if (doc.y + rowHeight > bottomLimit) {
+        doc.addPage();
+        this.applyPdfFont(doc);
+        drawHeader();
+      }
+
+      const rowY = doc.y;
+      const isEven = index % 2 === 1;
+
+      if (isEven) {
+        doc
+          .rect(left, rowY, tableWidth, rowHeight)
+          .fillColor('#F8FAFC')
+          .fill();
+      }
+
+      doc
+        .rect(left, rowY, tableWidth, rowHeight)
+        .lineWidth(0.4)
+        .strokeColor('#E2E8F0')
+        .stroke();
+
+      const quantity = Number(item.quantity);
+      const price = Number(item.product_batch?.price_at_purchase ?? 0);
+      const lineTotal = quantity * price;
+      const textY = rowY + cellPaddingY;
+
+      doc.fillColor('#0F172A').fontSize(10);
+
+      doc.text(String(index + 1), xs.index, textY, {
+        width: widths.index,
+        align: 'center',
+      });
+      doc.text(productName, xs.product + cellPaddingX, textY, {
+        width: productWidth,
+        align: 'left',
+      });
+      doc.text(this.formatNumber(quantity), xs.quantity, textY, {
+        width: widths.quantity - cellPaddingX,
+        align: 'right',
+      });
+      doc.text(
+        this.toPdfText(item.product?.unit ?? '-'),
+        xs.unit,
+        textY,
+        { width: widths.unit - cellPaddingX, align: 'right' },
+      );
+      doc.text(this.formatCurrency(price), xs.price, textY, {
+        width: widths.price - cellPaddingX,
+        align: 'right',
+      });
+      doc.text(this.formatCurrency(lineTotal), xs.total, textY, {
+        width: widths.total - cellPaddingX,
+        align: 'right',
+      });
+
+      doc.y = rowY + rowHeight;
+    });
+
+    const totalRowHeight = 26;
+    if (doc.y + totalRowHeight > bottomLimit) {
+      doc.addPage();
+      this.applyPdfFont(doc);
+    }
+
+    const totalY = doc.y;
+    doc
+      .rect(left, totalY, tableWidth, totalRowHeight)
+      .fillColor('#0F172A')
+      .fill();
+
+    doc.fillColor('#FFFFFF').fontSize(10.5);
+    const totalTextY = totalY + cellPaddingY + 2;
+    doc.text(this.toPdfText('JAMI SUMMA'), left + cellPaddingX, totalTextY, {
+      width: tableWidth - widths.total - cellPaddingX * 2,
+      align: 'right',
+    });
+    doc.text(
+      this.formatCurrency(Number(expense.total_price)),
+      xs.total,
+      totalTextY,
+      { width: widths.total - cellPaddingX, align: 'right' },
+    );
+
+    doc.fillColor('#000000');
+    doc.y = totalY + totalRowHeight + 24;
   }
 
   private getExpenseWarehouseName(expense: Expense) {
@@ -378,119 +608,254 @@ export class ExpenseExportService {
     return fullName || user.username;
   }
 
-  private drawHorizontalLine(doc: InstanceType<typeof PDFDocument>) {
-    const y = doc.y;
-    doc
-      .moveTo(doc.page.margins.left, y)
-      .lineTo(doc.page.width - doc.page.margins.right, y)
-      .stroke('#000000');
-  }
-
   private renderSignatureBlock(
     doc: InstanceType<typeof PDFDocument>,
-    info: { warehouseUserName: string; accountantName: string; adminName: string },
+    info: {
+      warehouseUserName: string;
+      staffName: string;
+      accountantName: string;
+      adminName: string;
+    },
   ) {
     const left = doc.page.margins.left;
     const right = doc.page.width - doc.page.margins.right;
-    const columnGap = 20;
+    const columnGap = 14;
     const columnWidth = (right - left - columnGap * 2) / 3;
+    const blockHeight = 96;
+    const bottomLimit = doc.page.height - doc.page.margins.bottom - 40;
+
+    if (doc.y + blockHeight > bottomLimit) {
+      doc.addPage();
+      this.applyPdfFont(doc);
+    }
+
     const top = doc.y;
-    const lineY = top + 28;
 
-    doc.fontSize(11);
+    const columns: Array<{
+      title: string;
+      role: string;
+      name: string;
+      hint: string;
+      x: number;
+    }> = [
+      {
+        title: 'TOPSHIRDI',
+        role: 'Omborchi',
+        name: info.warehouseUserName,
+        hint: 'F.I.Sh va imzo',
+        x: left,
+      },
+      {
+        title: 'QABUL QILDI',
+        role: 'Xodim',
+        name: info.staffName || '—',
+        hint: 'F.I.Sh va imzo',
+        x: left + columnWidth + columnGap,
+      },
+      {
+        title: 'TASDIQLADI',
+        role: 'Hisobchi',
+        name: info.accountantName,
+        hint:
+          info.adminName && info.adminName !== '-'
+            ? `Admin: ${info.adminName}`
+            : 'F.I.Sh va imzo',
+        x: left + (columnWidth + columnGap) * 2,
+      },
+    ];
 
-    doc.text(
-      this.toPdfText(`F.I.Sh: ${info.warehouseUserName}`),
-      left,
-      top,
-      { width: columnWidth },
-    );
-    doc.text(
-      this.toPdfText(`F.I.Sh: ${info.accountantName}`),
-      left + columnWidth + columnGap,
-      top,
-      { width: columnWidth },
-    );
-    doc.text(
-      this.toPdfText(`F.I.Sh: ${info.adminName}`),
-      left + (columnWidth + columnGap) * 2,
-      top,
-      { width: columnWidth },
-    );
+    columns.forEach((column) => {
+      doc
+        .fillColor('#0F172A')
+        .fontSize(10)
+        .text(this.toPdfText(column.title), column.x, top, {
+          width: columnWidth,
+          align: 'left',
+        });
 
-    doc.text(
-      this.toPdfText('Imzo: ____________________'),
-      left,
-      lineY,
-      { width: columnWidth },
-    );
-    doc.text(
-      this.toPdfText('Imzo: ____________________'),
-      left + columnWidth + columnGap,
-      lineY,
-      { width: columnWidth },
-    );
-    doc.text(
-      this.toPdfText('Imzo: ____________________'),
-      left + (columnWidth + columnGap) * 2,
-      lineY,
-      { width: columnWidth },
-    );
+      doc
+        .fillColor('#64748B')
+        .fontSize(8.5)
+        .text(this.toPdfText(column.role), column.x, top + 14, {
+          width: columnWidth,
+          align: 'left',
+        });
+
+      const lineY = top + 54;
+      doc
+        .moveTo(column.x, lineY)
+        .lineTo(column.x + columnWidth, lineY)
+        .lineWidth(0.6)
+        .strokeColor('#0F172A')
+        .stroke();
+
+      doc
+        .fillColor('#0F172A')
+        .fontSize(10)
+        .text(this.toPdfText(column.name), column.x, lineY + 4, {
+          width: columnWidth,
+          align: 'left',
+        });
+
+      doc
+        .fillColor('#94A3B8')
+        .fontSize(8)
+        .text(this.toPdfText(column.hint), column.x, lineY + 18, {
+          width: columnWidth,
+          align: 'left',
+        });
+    });
+
+    doc.fillColor('#000000');
+    doc.y = top + blockHeight;
   }
 
-  private renderReceiptTableHeader(
-    doc: InstanceType<typeof PDFDocument>,
-    columns: {
-      index: number;
-      product: number;
-      quantity: number;
-      unit: number;
-      price: number;
-      total: number;
-    },
-  ) {
-    doc.fontSize(10);
-    const headerY = doc.y;
-    doc.text('#', columns.index, headerY, { width: 20 });
-    doc.text(this.toPdfText('Mahsulot'), columns.product, headerY, {
-      width: 220,
-    });
-    doc.text(this.toPdfText('Miqdor'), columns.quantity, headerY, {
-      width: 55,
-      align: 'right',
-    });
-    doc.text(this.toPdfText('Birlik'), columns.unit, headerY, {
-      width: 45,
-      align: 'right',
-    });
-    doc.text(this.toPdfText('Narx'), columns.price, headerY, {
-      width: 65,
-      align: 'right',
-    });
-    doc.text(this.toPdfText('Jami'), columns.total, headerY, {
-      width: 65,
-      align: 'right',
-    });
+  private renderPageFooters(doc: InstanceType<typeof PDFDocument>) {
+    const range = doc.bufferedPageRange();
+    const generatedAt = new Date();
+    const generatedLabel = `${this.formatDate(generatedAt)} ${this.formatTime(generatedAt)}`;
 
-    doc.y = headerY + 16;
-    this.drawHorizontalLine(doc);
-    doc.moveDown(0.6);
+    for (let i = 0; i < range.count; i += 1) {
+      doc.switchToPage(range.start + i);
+      this.applyPdfFont(doc);
+
+      const left = doc.page.margins.left;
+      const right = doc.page.width - doc.page.margins.right;
+      const width = right - left;
+      const lineY = doc.page.height - doc.page.margins.bottom - 22;
+      const textY = lineY + 6;
+
+      doc
+        .moveTo(left, lineY)
+        .lineTo(right, lineY)
+        .lineWidth(0.4)
+        .strokeColor('#E2E8F0')
+        .stroke();
+
+      doc
+        .fillColor('#94A3B8')
+        .fontSize(8)
+        .text(this.toPdfText(`Yaratilgan: ${generatedLabel}`), left, textY, {
+          width,
+          align: 'left',
+          lineBreak: false,
+        })
+        .text(
+          this.toPdfText(`Sahifa ${i + 1} / ${range.count}`),
+          left,
+          textY,
+          { width, align: 'right', lineBreak: false },
+        );
+    }
+
+    doc.fillColor('#000000');
+  }
+
+  private formatStatus(status?: string | null) {
+    switch (status) {
+      case 'CREATED':
+        return 'Yaratildi';
+      case 'PENDING_APPROVAL':
+        return 'Tasdiqlash kutilmoqda';
+      case 'ISSUED':
+        return 'Berildi';
+      case 'CANCELLED':
+        return 'Bekor qilindi';
+      default:
+        return status ?? '—';
+    }
+  }
+
+  private formatType(type?: string | null) {
+    switch (type) {
+      case 'USAGE':
+        return 'Foydalanish';
+      case 'EXPIRED':
+        return 'Muddati o`tgan';
+      default:
+        return type ?? '—';
+    }
   }
 
   private resolvePdfFontPath() {
     const candidates = [
       process.env.PDF_FONT_PATH,
-      '/usr/share/fonts/TTF/DejaVuSans.ttf',
-      '/usr/share/fonts/TTF/DejaVuSans.ttf',
-      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+      join(process.cwd(), 'assets', 'fonts', 'DejaVuSans.ttf'),
+      join(process.cwd(), 'assets', 'fonts', 'NotoSans-Regular.ttf'),
+      // Alpine (production Docker)
+      '/usr/share/fonts/dejavu/DejaVuSans.ttf',
       '/usr/share/fonts/ttf-dejavu/DejaVuSans.ttf',
+      // Arch
+      '/usr/share/fonts/TTF/DejaVuSans.ttf',
+      // Debian / Ubuntu
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+      '/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+      // Misc
       '/usr/share/fonts/noto/NotoSans-Regular.ttf',
       '/usr/share/fonts/liberation/LiberationSans-Regular.ttf',
     ];
 
-    return candidates.find(
+    const direct = candidates.find(
       (candidate): candidate is string => !!candidate && existsSync(candidate),
     );
+
+    if (direct) {
+      return direct;
+    }
+
+    return this.findFallbackUnicodeFont('/usr/share/fonts');
+  }
+
+  private findFallbackUnicodeFont(root: string): string | undefined {
+    if (!existsSync(root)) {
+      return undefined;
+    }
+
+    const preferredNames = [
+      'DejaVuSans.ttf',
+      'NotoSans-Regular.ttf',
+      'LiberationSans-Regular.ttf',
+      'FreeSans.ttf',
+    ];
+
+    const stack: string[] = [root];
+    let firstAnyTtf: string | undefined;
+
+    while (stack.length > 0) {
+      const dir = stack.pop()!;
+      let entries: string[];
+      try {
+        entries = readdirSync(dir);
+      } catch {
+        continue;
+      }
+
+      for (const entry of entries) {
+        const full = join(dir, entry);
+        let stats;
+        try {
+          stats = statSync(full);
+        } catch {
+          continue;
+        }
+
+        if (stats.isDirectory()) {
+          stack.push(full);
+          continue;
+        }
+
+        if (preferredNames.includes(entry)) {
+          return full;
+        }
+
+        if (!firstAnyTtf && extname(entry).toLowerCase() === '.ttf') {
+          firstAnyTtf = full;
+        }
+      }
+    }
+
+    return firstAnyTtf;
   }
 
   private applyPdfFont(doc: InstanceType<typeof PDFDocument>) {

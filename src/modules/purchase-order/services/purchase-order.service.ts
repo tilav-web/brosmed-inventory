@@ -864,11 +864,25 @@ export class PurchaseOrderService {
 
   private buildOrderItemsSummary(order: PurchaseOrder) {
     return order.items
-      .map((item) => {
+      .map((item, index) => {
         const productName = item.product?.name ?? "Noma'lum mahsulot";
-        return `• ${this.escapeHtml(productName)} - <b>${Number(item.quantity)}</b>`;
+        const quantity = Number(item.quantity);
+        const unitPrice = Number(item.price_at_purchase);
+        const lineTotal = quantity * unitPrice;
+
+        return (
+          `${index + 1}. <b>${this.escapeHtml(productName)}</b>\n` +
+          `   ${this.formatQuantity(quantity)} × ${this.formatCurrency(unitPrice)} = <b>${this.formatCurrency(lineTotal)}</b>`
+        );
       })
       .join('\n');
+  }
+
+  private formatQuantity(value: number) {
+    return new Intl.NumberFormat('uz-UZ', {
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(value);
   }
 
   private async notifyAdminsAboutReceivedOrder(order: PurchaseOrder) {

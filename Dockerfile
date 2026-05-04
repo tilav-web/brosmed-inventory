@@ -24,6 +24,7 @@ COPY package*.json ./
 RUN npm ci --omit=dev
 
 COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/assets ./assets
 
 RUN addgroup app && adduser -S -G app app
 
