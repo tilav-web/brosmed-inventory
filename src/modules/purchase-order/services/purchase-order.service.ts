@@ -754,7 +754,7 @@ export class PurchaseOrderService {
       const itemUpdates = new Map<string, ReceiveOrderItemDto>();
       const orderItemIds = new Set(order.items.map((item) => item.id));
 
-      for (const update of dto.items) {
+      for (const update of dto.items ?? []) {
         if (itemUpdates.has(update.order_item_id)) {
           throw new BadRequestException(
             `Order item takror yuborilgan: ${update.order_item_id}`,
@@ -783,37 +783,27 @@ export class PurchaseOrderService {
       for (const [index, item] of order.items.entries()) {
         const update = itemUpdates.get(item.id);
 
-        let expiration_date: Date | null = null;
-        let expiration_alert_date: Date | null = null;
-        let batch_number = this.buildAutoBatchNumber(order.order_number, index);
-        let serial_number: string | null = null;
+        const expiration_date = update?.expiration_date
+          ? new Date(update.expiration_date)
+          : null;
+        const expiration_alert_date = update?.expiration_alert_date
+          ? new Date(update.expiration_alert_date)
+          : null;
 
-        if (update) {
-          if (update.expiration_alert_date && !update.expiration_date) {
-            throw new BadRequestException(
-              `Item ${item.id}: expiration_alert_date berilsa, expiration_date ham berilishi kerak`,
-            );
-          }
+        if (expiration_alert_date && !expiration_date) {
+          throw new BadRequestException(
+            `Item ${item.id}: expiration_alert_date berilsa, expiration_date ham berilishi kerak`,
+          );
+        }
 
-          if (update.expiration_alert_date && update.expiration_date) {
-            const alertDate = new Date(update.expiration_alert_date);
-            const expirationDate = new Date(update.expiration_date);
-            if (alertDate > expirationDate) {
-              throw new BadRequestException(
-                `Item ${item.id}: expiration_alert_date expiration_date dan oldin bo‘lishi kerak`,
-              );
-            }
-          }
-
-          expiration_date = update.expiration_date
-            ? new Date(update.expiration_date)
-            : null;
-          expiration_alert_date = update.expiration_alert_date
-            ? new Date(update.expiration_alert_date)
-            : null;
-          const requestedBatchNumber = update.batch_number?.trim();
-          batch_number = requestedBatchNumber || batch_number;
-          serial_number = update.serial_number?.trim() || null;
+        if (
+          expiration_alert_date &&
+          expiration_date &&
+          expiration_alert_date > expiration_date
+        ) {
+          throw new BadRequestException(
+            `Item ${item.id}: expiration_alert_date expiration_date dan oldin bo‘lishi kerak`,
+          );
         }
 
         const product = lockedProducts.get(item.product.id);
@@ -834,8 +824,8 @@ export class PurchaseOrderService {
             price_at_purchase: Number(item.price_at_purchase),
             expiration_date,
             expiration_alert_date,
-            batch_number,
-            serial_number,
+            batch_number: this.buildAutoBatchNumber(order.order_number, index),
+            serial_number: null,
           }),
         );
       }
