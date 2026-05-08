@@ -48,7 +48,9 @@ export class SupplierController {
 
   @Get(':id')
   @Roles(Role.ADMIN, Role.ACCOUNTANT)
-  @ApiOperation({ summary: 'Bitta supplierni id bo`yicha olish (admin/hisobchi)' })
+  @ApiOperation({
+    summary: 'Bitta supplierni id bo`yicha olish (admin/hisobchi)',
+  })
   @ApiOkResponse({ description: 'Supplier topildi' })
   @ApiUnauthorizedResponse({ description: "Token yoq yoki noto'g'ri" })
   @ApiForbiddenResponse({ description: 'Faqat admin/hisobchi kirishi mumkin' })
@@ -57,6 +59,7 @@ export class SupplierController {
   }
 
   @Post()
+  @Roles(Role.ADMIN, Role.ACCOUNTANT)
   @ApiOperation({ summary: 'Supplier qo`shish (faqat admin)' })
   @ApiBody({ type: CreateSupplierDto })
   @ApiOkResponse({ description: 'Supplier yaratildi' })
